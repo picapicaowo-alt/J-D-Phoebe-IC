@@ -119,13 +119,11 @@ export default async function LeaderboardPage({
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{t(locale, "navLeaderboards")}</h1>
-        <p className="mt-1 text-sm text-[hsl(var(--muted))]">
-          Category boards with period and scope filters. Home stays personal — no rank pressure on first screen.
-        </p>
+        <p className="mt-1 text-sm text-[hsl(var(--muted))]">{t(locale, "lbPageSubtitle")}</p>
       </div>
 
       <Card className="space-y-3 p-4">
-        <CardTitle>Filters</CardTitle>
+        <CardTitle>{t(locale, "lbFiltersCardTitle")}</CardTitle>
         <div className="flex flex-wrap gap-2 text-sm">
           {CATS.map((c) => (
             <Link key={c} href={`/leaderboard${qs({ cat: c })}`}>
@@ -166,10 +164,10 @@ export default async function LeaderboardPage({
             ))}
           </select>
           <Button type="submit" variant="secondary" className="h-9 text-xs">
-            Apply
+            {t(locale, "btnApply")}
           </Button>
           <Link className="self-center text-xs underline" href="/leaderboard">
-            Reset
+            {t(locale, "btnReset")}
           </Link>
         </form>
       </Card>
@@ -177,7 +175,8 @@ export default async function LeaderboardPage({
       <Card className="space-y-3 p-4">
         <CardTitle>{catTitle(locale, cat)}</CardTitle>
         <p className="text-xs text-[hsl(var(--muted))]">
-          Period {periodStart.toISOString().slice(0, 10)} – {new Date(periodEnd.getTime() - 1).toISOString().slice(0, 10)} · Scores sum structured ledger entries.
+          {t(locale, "lbPeriodPrefix")} {periodStart.toISOString().slice(0, 10)} –{" "}
+          {new Date(periodEnd.getTime() - 1).toISOString().slice(0, 10)} · {t(locale, "lbScoresExplain")}
         </p>
         <ol className="space-y-2 text-sm">
           {totals.length ? (
@@ -186,11 +185,13 @@ export default async function LeaderboardPage({
                 <span>
                   <span className="text-[hsl(var(--muted))]">{i + 1}.</span> {nameById.get(row.userId) ?? row.userId}
                 </span>
-                <span className="text-xs text-[hsl(var(--muted))]">{row.total} pts</span>
+                <span className="text-xs text-[hsl(var(--muted))]">
+                  {row.total} {t(locale, "lbPtsUnit")}
+                </span>
               </li>
             ))
           ) : (
-            <li className="text-sm text-[hsl(var(--muted))]">No entries in this window yet.</li>
+            <li className="text-sm text-[hsl(var(--muted))]">{t(locale, "lbEmptyPeriod")}</li>
           )}
         </ol>
       </Card>

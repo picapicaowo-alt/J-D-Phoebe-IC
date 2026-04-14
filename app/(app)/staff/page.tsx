@@ -6,9 +6,12 @@ import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { getLocale } from "@/lib/locale";
+import { t } from "@/lib/messages";
 
 export default async function StaffDirectoryPage() {
   const user = (await requireUser()) as AccessUser;
+  const locale = await getLocale();
   if (!(await userHasPermission(user, "staff.read"))) redirect("/projects");
 
   const canCreate =
@@ -28,15 +31,12 @@ export default async function StaffDirectoryPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Staff directory</h1>
-          <p className="mt-2 max-w-2xl text-sm text-[hsl(var(--muted))]">
-            Identity is keyed by stable user IDs. Names and emails can be edited from each profile without breaking
-            assignments.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t(locale, "staffDirectoryTitle")}</h1>
+          <p className="mt-2 max-w-2xl text-sm text-[hsl(var(--muted))]">{t(locale, "staffDirectorySubtitle")}</p>
         </div>
         {canCreate ? (
           <Link href="/staff/new">
-            <Button type="button">Add member</Button>
+            <Button type="button">{t(locale, "staffAddMemberBtn")}</Button>
           </Link>
         ) : null}
       </div>
@@ -50,13 +50,23 @@ export default async function StaffDirectoryPage() {
               </Link>
               <div className="text-xs text-[hsl(var(--muted))]">{s.email}</div>
               <div className="mt-2 text-xs text-[hsl(var(--muted))]">
-                Companies:{" "}
-                {s.companyMemberships.length ? s.companyMemberships.map((m) => m.company.name).join(", ") : "—"}
+                {t(locale, "staffCompaniesPrefix")}:{" "}
+                {s.companyMemberships.length
+                  ? s.companyMemberships.map((m) => m.company.name).join(", ")
+                  : t(locale, "staffListEmDash")}
               </div>
             </div>
             <div className="text-xs">
-              {s.active ? <span className="text-emerald-700 dark:text-emerald-300">Active</span> : <span>Inactive</span>}
-              {s.isSuperAdmin ? <span className="ml-2">· Super Admin</span> : null}
+              {s.active ? (
+                <span className="text-emerald-700 dark:text-emerald-300">{t(locale, "staffStatusActive")}</span>
+              ) : (
+                <span>{t(locale, "staffStatusInactive")}</span>
+              )}
+              {s.isSuperAdmin ? (
+                <span className="ml-2">
+                  · {t(locale, "superAdminBadge")}
+                </span>
+              ) : null}
             </div>
           </Card>
         ))}

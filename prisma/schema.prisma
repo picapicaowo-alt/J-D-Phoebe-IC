@@ -81,6 +81,7 @@ enum AuditEntityType {
   KNOWLEDGE
   PROJECT_RELATION
   SCORE_LEDGER
+  MEMBER_OUTPUT
 }
 
 enum RecognitionMode {
@@ -213,6 +214,7 @@ model Company {
   memberships CompanyMembership[]
   projects    Project[]
   knowledgeAssets KnowledgeAsset[]
+  memberOutputs   MemberOutput[]
 }
 
 model User {
@@ -247,6 +249,7 @@ model User {
   knowledgeAssets      KnowledgeAsset[]      @relation("KnowledgeAuthor")
   knowledgeReuses      KnowledgeReuseEvent[] @relation("KnowledgeReuseActor")
   attachmentsAsContributor Attachment[]      @relation("AttachmentContributor")
+  memberOutputs        MemberOutput[]
 }
 
 model Session {
@@ -348,6 +351,7 @@ model Project {
   outgoingRelations ProjectRelation[] @relation("ProjectRelationFrom")
   incomingRelations ProjectRelation[] @relation("ProjectRelationTo")
   attachments       Attachment[]      @relation("ProjectAttachment")
+  memberOutputs     MemberOutput[]
 
   @@index([companyId])
 }
@@ -399,6 +403,7 @@ model WorkflowNode {
   sortOrder       Int                  @default(0)
   archivedAt      DateTime?
   deletedAt       DateTime?
+  dueAt           DateTime?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
@@ -458,6 +463,8 @@ model Attachment {
   knowledgeAssetId   String?
   projectId          String?
   contributorUserId  String?
+  memberOutputId     String?
+  previousVersionId String?
   fileName           String
   mimeType           String?
   sizeBytes          Int       @default(0)
@@ -465,6 +472,8 @@ model Attachment {
   blobUrl            String?
   description        String?
   labels             String?
+  titleEn            String?
+  titleZh            String?
   uploadedById       String
   deletedAt          DateTime?
   createdAt          DateTime  @default(now())
@@ -473,12 +482,41 @@ model Attachment {
   knowledgeAsset KnowledgeAsset? @relation("KnowledgeAttachment", fields: [knowledgeAssetId], references: [id], onDelete: Cascade)
   project       Project?      @relation("ProjectAttachment", fields: [projectId], references: [id], onDelete: Cascade)
   contributor   User?         @relation("AttachmentContributor", fields: [contributorUserId], references: [id], onDelete: SetNull)
+  memberOutput  MemberOutput? @relation(fields: [memberOutputId], references: [id], onDelete: Cascade)
+  previousVersion Attachment?  @relation("AttachmentVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions  Attachment[]   @relation("AttachmentVersionChain")
   uploadedBy    User          @relation("AttachmentUploader", fields: [uploadedById], references: [id])
 
   @@index([workflowNodeId])
   @@index([knowledgeAssetId])
   @@index([projectId])
   @@index([contributorUserId])
+  @@index([memberOutputId])
+  @@index([previousVersionId])
+}
+
+model MemberOutput {
+  id          String    @id @default(cuid())
+  userId      String
+  projectId   String?
+  companyId   String?
+  title       String
+  titleEn     String?
+  titleZh     String?
+  description String?
+  labels      String?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  company Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  attachments Attachment[]
+
+  @@index([userId, createdAt])
+  @@index([projectId])
+  @@index([companyId])
 }
 
 model RecognitionEvent {

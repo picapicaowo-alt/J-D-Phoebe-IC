@@ -26,9 +26,12 @@ type Props = {
   initialNodes: Node[];
   initialEdges: Edge[];
   editable: boolean;
+  savingLabel: string;
+  dragHint: string;
+  readOnlyHint: string;
 };
 
-export function WorkflowEditor({ projectId, initialNodes, initialEdges, editable }: Props) {
+export function WorkflowEditor({ projectId, initialNodes, initialEdges, editable, savingLabel, dragHint, readOnlyHint }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [pending, startTransition] = useTransition();
@@ -111,11 +114,9 @@ export function WorkflowEditor({ projectId, initialNodes, initialEdges, editable
         </ReactFlow>
       </div>
       {editable ? (
-        <p className="text-xs text-[hsl(var(--muted))]">
-          {pending ? "Saving…" : "Drag nodes to reposition. Drag from a node handle to another to connect. Select an edge and press Delete to remove."}
-        </p>
+        <p className="text-xs text-[hsl(var(--muted))]">{pending ? savingLabel : dragHint}</p>
       ) : (
-        <p className="text-xs text-[hsl(var(--muted))]">Read-only: you need workflow update access on this project to edit the graph.</p>
+        <p className="text-xs text-[hsl(var(--muted))]">{readOnlyHint}</p>
       )}
     </div>
   );

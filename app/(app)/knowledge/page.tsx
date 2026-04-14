@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { KnowledgeLayer } from "@prisma/client";
+import type { KnowledgeLayer } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import type { AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
@@ -9,14 +9,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getLocale } from "@/lib/locale";
-import { t } from "@/lib/messages";
-
-const LAYER_LABEL: Record<KnowledgeLayer, string> = {
-  TEMPLATE_PLAYBOOK: "Templates / Playbooks",
-  REFERENCE_RESOURCE: "References / Resources",
-  INTERNAL_INSIGHT: "Internal Insights / Notes",
-  REUSABLE_OUTPUT: "Reusable Outputs",
-};
+import { t, tKnowledgeLayer } from "@/lib/messages";
 
 const ORDER: KnowledgeLayer[] = [
   "TEMPLATE_PLAYBOOK",
@@ -63,7 +56,7 @@ export default async function KnowledgeHubPage() {
       <Card className="space-y-3 p-4">
         <CardTitle>{t(locale, "knowledgeSearch")}</CardTitle>
         <form action="/knowledge/browse" method="get" className="flex flex-wrap gap-2">
-          <Input name="q" placeholder="Keyword, title, content…" className="max-w-md flex-1" />
+          <Input name="q" placeholder={t(locale, "kbPlaceholderKeyword")} className="max-w-md flex-1" />
           <Button type="submit" variant="secondary">{t(locale, "knowledgeSearch")}</Button>
           <Link href="/knowledge/browse">
             <Button type="button" variant="secondary">{t(locale, "knowledgeSeeAll")}</Button>
@@ -77,8 +70,8 @@ export default async function KnowledgeHubPage() {
           {ORDER.map((layer) => (
             <Link key={layer} href={`/knowledge/browse?layer=${layer}`}>
               <Card className="h-full p-4 transition hover:border-[hsl(var(--accent))]/40">
-                <CardTitle className="text-base">{LAYER_LABEL[layer]}</CardTitle>
-                <p className="mt-2 text-xs text-[hsl(var(--muted))]">Open filtered list</p>
+                <CardTitle className="text-base">{tKnowledgeLayer(locale, layer)}</CardTitle>
+                <p className="mt-2 text-xs text-[hsl(var(--muted))]">{t(locale, "kbOpenFiltered")}</p>
               </Card>
             </Link>
           ))}
@@ -124,18 +117,19 @@ export default async function KnowledgeHubPage() {
               mine.map((a) => (
                 <li key={a.id} className="rounded-md border border-[hsl(var(--border))] px-2 py-1">
                   <span className="font-medium">{a.title}</span>
-                  <div className="text-xs text-[hsl(var(--muted))]">{LAYER_LABEL[a.layer]}</div>
+                  <div className="text-xs text-[hsl(var(--muted))]">{tKnowledgeLayer(locale, a.layer)}</div>
                 </li>
               ))
             ) : (
-              <li className="text-xs text-[hsl(var(--muted))]">No contributions yet.</li>
+              <li className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbNoContributions")}</li>
             )}
           </ul>
         </Card>
       </div>
 
       <p className="text-xs text-[hsl(var(--muted))]">
-        {projects.length} projects · {companies.length} companies indexed for filters on the browse view.
+        {projects.length} {t(locale, "kbProjectsUnit")} · {companies.length} {t(locale, "kbCompaniesUnit")}{" "}
+        {t(locale, "kbIndexedForFilters")}
       </p>
     </div>
   );

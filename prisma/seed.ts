@@ -95,6 +95,7 @@ async function main() {
   await prisma.performanceSnapshot.deleteMany();
   await prisma.companionProfile.deleteMany();
   await prisma.attachment.deleteMany();
+  await prisma.memberOutput.deleteMany();
   await prisma.rolePermission.deleteMany();
   await prisma.permissionDefinition.deleteMany();
   await prisma.workflowEdge.deleteMany();
@@ -386,6 +387,7 @@ async function main() {
       progressPercent: 0,
       posX: 440,
       posY: 40,
+      dueAt: new Date(Date.now() - 2 * 86400000),
     },
   });
 

@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { setRolePermissionAction } from "@/app/actions/permissions";
+import type { Locale } from "@/lib/locale";
+import { describePermissionKey } from "@/lib/permission-labels";
+import { t } from "@/lib/messages";
 
 type Role = { id: string; key: string; displayName: string };
 type Perm = { id: string; key: string; category: string | null };
@@ -12,13 +15,14 @@ type Props = {
   perms: Perm[];
   allowedKeys: Set<string>;
   readOnly?: boolean;
+  locale: Locale;
 };
 
 function key(roleId: string, permId: string) {
   return `${roleId}:${permId}`;
 }
 
-export function PermissionMatrix({ roles, perms, allowedKeys, readOnly }: Props) {
+export function PermissionMatrix({ roles, perms, allowedKeys, readOnly, locale }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -36,12 +40,12 @@ export function PermissionMatrix({ roles, perms, allowedKeys, readOnly }: Props)
   return (
     <div className="overflow-x-auto rounded-xl border border-[hsl(var(--border))]">
       {pending ? (
-        <p className="bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--muted))]">Saving permission change…</p>
+        <p className="bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--muted))]">{t(locale, "permSaving")}</p>
       ) : null}
       <table className="w-full min-w-[720px] border-collapse text-left text-xs">
         <thead>
           <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--muted))]/10">
-            <th className="sticky left-0 z-10 bg-[hsl(var(--background))] px-2 py-2 font-medium">Permission</th>
+            <th className="sticky left-0 z-10 bg-[hsl(var(--background))] px-2 py-2 font-medium">{t(locale, "permColPermission")}</th>
             {roles.map((r) => (
               <th key={r.id} className="px-2 py-2 font-medium">
                 <div className="max-w-[120px] leading-tight">{r.displayName}</div>
@@ -53,8 +57,9 @@ export function PermissionMatrix({ roles, perms, allowedKeys, readOnly }: Props)
         <tbody>
           {perms.map((p) => (
             <tr key={p.id} className="border-b border-[hsl(var(--border))] odd:bg-black/[0.02] dark:odd:bg-white/[0.02]">
-              <td className="sticky left-0 z-10 bg-[hsl(var(--background))] px-2 py-1.5 font-mono text-[10px] leading-tight">
-                <div>{p.key}</div>
+              <td className="sticky left-0 z-10 bg-[hsl(var(--background))] px-2 py-1.5 text-[10px] leading-tight">
+                <div className="font-medium text-[hsl(var(--foreground))]">{describePermissionKey(locale, p.key)}</div>
+                <div className="font-mono text-[hsl(var(--muted))]">{p.key}</div>
                 {p.category ? <div className="text-[hsl(var(--muted))]">{p.category}</div> : null}
               </td>
               {roles.map((r) => {
@@ -69,7 +74,7 @@ export function PermissionMatrix({ roles, perms, allowedKeys, readOnly }: Props)
                             : "border-[hsl(var(--border))] text-[hsl(var(--muted))]"
                         }`}
                       >
-                        {on ? "Y" : "—"}
+                        {on ? t(locale, "permYes") : t(locale, "permNo")}
                       </span>
                     ) : (
                       <button
@@ -83,7 +88,7 @@ export function PermissionMatrix({ roles, perms, allowedKeys, readOnly }: Props)
                         }`}
                         aria-label={`Toggle ${p.key} for ${r.key}`}
                       >
-                        {on ? "Y" : "—"}
+                        {on ? t(locale, "permYes") : t(locale, "permNo")}
                       </button>
                     )}
                   </td>

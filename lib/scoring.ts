@@ -161,6 +161,73 @@ export async function appendFeedbackScores(
   await prisma.scoreLedgerEntry.createMany({ data: rows });
 }
 
+/** When a map node moves to DONE, credit assignees (or project owner if unassigned). Idempotent per node + reason. */
+export async function appendNodeCompletionLedgers(
+  prisma: PrismaClient,
+  input: {
+    nodeId: string;
+    projectId: string;
+    companyId?: string | null;
+    userIds: string[];
+    onTime: boolean;
+  },
+) {
+  const reasonKey = input.onTime ? "node_completed_on_time" : "node_completed_late";
+  const existing = await prisma.scoreLedgerEntry.findFirst({
+    where: { sourceType: "WORKFLOW_NODE", sourceId: input.nodeId, reasonKey },
+  });
+  if (existing) return;
+
+  const polarity = input.onTime ? ScorePolarity.POSITIVE : ScorePolarity.NEGATIVE;
+  const delta = input.onTime ? 3 : -2;
+  await prisma.scoreLedgerEntry.createMany({
+    data: input.userIds.map((userId) => ({
+      userId,
+      leaderboardCategory: "EXECUTION" as const,
+      abilityDimension: "EXECUTION" as const,
+      polarity,
+      delta,
+      reasonKey,
+      sourceType: "WORKFLOW_NODE",
+      sourceId: input.nodeId,
+      companyId: input.companyId ?? undefined,
+      projectId: input.projectId,
+    })),
+  });
+}
+
+/** Open node still not DONE after effective due — call from status updates when appropriate. */
+export async function appendNodeOverdueOpenLedger(
+  prisma: PrismaClient,
+  input: {
+    nodeId: string;
+    projectId: string;
+    companyId?: string | null;
+    userIds: string[];
+  },
+) {
+  const reasonKey = "node_overdue_while_open";
+  const existing = await prisma.scoreLedgerEntry.findFirst({
+    where: { sourceType: "WORKFLOW_NODE", sourceId: input.nodeId, reasonKey },
+  });
+  if (existing) return;
+
+  await prisma.scoreLedgerEntry.createMany({
+    data: input.userIds.map((userId) => ({
+      userId,
+      leaderboardCategory: "EXECUTION" as const,
+      abilityDimension: "RELIABILITY" as const,
+      polarity: ScorePolarity.NEGATIVE,
+      delta: -1,
+      reasonKey,
+      sourceType: "WORKFLOW_NODE",
+      sourceId: input.nodeId,
+      companyId: input.companyId ?? undefined,
+      projectId: input.projectId,
+    })),
+  });
+}
+
 export async function sumAbilityByUser(
   prisma: PrismaClient,
   userId: string,

@@ -8,9 +8,12 @@ import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { getLocale } from "@/lib/locale";
+import { t, tRbacScope } from "@/lib/messages";
 
 export default async function RolesSettingsPage() {
   const user = (await requireUser()) as AccessUser;
+  const locale = await getLocale();
   if (!(await userHasPermission(user, "role.display_name.update"))) redirect("/group");
 
   const roles = await prisma.roleDefinition.findMany({ orderBy: { key: "asc" } });
@@ -18,29 +21,27 @@ export default async function RolesSettingsPage() {
   return (
     <div className="space-y-6">
       <div className="text-xs text-[hsl(var(--muted))]">
-        <Link href="/group">Group</Link> / Roles
+        <Link href="/group">{t(locale, "navGroup")}</Link> / {t(locale, "navRoles")}
       </div>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Role definitions</h1>
-        <p className="mt-2 max-w-2xl text-sm text-[hsl(var(--muted))]">
-          Machine keys (<code className="rounded bg-black/5 px-1">key</code>) are stable identifiers for permissions logic.
-          Display names are editable and should be renamed here so the UI stays consistent everywhere.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t(locale, "rolesDefinitionsTitle")}</h1>
+        <p className="mt-2 max-w-2xl text-sm text-[hsl(var(--muted))]">{t(locale, "rolesDefinitionsBody")}</p>
       </div>
 
       <div className="grid gap-4">
         {roles.map((r) => (
           <Card key={r.id} className="space-y-3 p-4">
             <div className="text-xs text-[hsl(var(--muted))]">
-              Key: <span className="font-mono text-[hsl(var(--foreground))]">{r.key}</span> · Scope: {r.appliesScope}
+              {t(locale, "rolesRowKey")}: <span className="font-mono text-[hsl(var(--foreground))]">{r.key}</span> ·{" "}
+              {t(locale, "rolesRowScope")}: {tRbacScope(locale, r.appliesScope)}
             </div>
             <form action={updateRoleDisplayNameAction} className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="roleId" value={r.id} />
               <div className="min-w-[200px] flex-1 space-y-1">
-                <label className="text-xs font-medium">Display name</label>
+                <label className="text-xs font-medium">{t(locale, "staffDisplayName")}</label>
                 <Input name="displayName" defaultValue={r.displayName} required />
               </div>
-              <Button type="submit">Save</Button>
+              <Button type="submit">{t(locale, "btnSave")}</Button>
             </form>
             {r.description ? <p className="text-xs text-[hsl(var(--muted))]">{r.description}</p> : null}
           </Card>

@@ -6,7 +6,6 @@ import { getPermissionKeysForUser } from "@/lib/permissions";
 import { SignOutControl } from "@/components/sign-out-control";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
-import { LanguageSwitcher } from "@/components/language-switcher";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
@@ -77,12 +76,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-[hsl(var(--muted))]">
-            <LanguageSwitcher locale={locale} />
             {user ? (
               <>
                 <span>
                   {user.name}
-                  {user.isSuperAdmin ? " · Super Admin" : ""}
+                  {user.isSuperAdmin ? ` · ${t(locale, "superAdminBadge")}` : ""}
                 </span>
                 <SignOutControl clerkEnabled={isClerkEnabled()} />
               </>

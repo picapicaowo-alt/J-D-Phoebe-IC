@@ -6,11 +6,12 @@ import { canViewProject, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Card, CardTitle } from "@/components/ui/card";
-import { labelProjectStatus, labelRecognitionCategory } from "@/lib/labels";
 import { countdownPhrase } from "@/lib/deadlines";
 import { getLocale } from "@/lib/locale";
 import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
 import { getCompanionManifest } from "@/lib/companion-manifest";
+import { HomeLocaleToggle } from "@/components/home-locale-toggle";
+import { t, tProjectStatus, tRecognitionTagCategory, type MessageKey } from "@/lib/messages";
 
 function startOfWeekUTC() {
   const d = new Date();
@@ -32,6 +33,13 @@ async function sumLedger(userId: string, cat: LeaderboardCategory, start: Date, 
   });
   return a._sum.delta ?? 0;
 }
+
+const LB_LABEL: Record<LeaderboardCategory, MessageKey> = {
+  EXECUTION: "lbExecution",
+  COLLABORATION: "lbCollaboration",
+  KNOWLEDGE: "lbKnowledge",
+  RECOGNITION: "lbRecognition",
+};
 
 export default async function HomePage() {
   const user = (await requireUser()) as AccessUser;
@@ -83,14 +91,16 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-6">
+      <HomeLocaleToggle locale={locale} />
+
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Today Dashboard</h1>
-        <p className="mt-1 text-sm text-[hsl(var(--muted))]">Priority first, reward second. Keep execution clear and calm.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t(locale, "homeTitle")}</h1>
+        <p className="mt-1 text-sm text-[hsl(var(--muted))]">{t(locale, "homeSubtitle")}</p>
       </div>
 
       <section className="grid gap-4 lg:grid-cols-2">
         <Card className="space-y-3">
-          <CardTitle>Today&apos;s Priorities</CardTitle>
+          <CardTitle>{t(locale, "homePriorities")}</CardTitle>
           {priorities.length ? (
             <ul className="space-y-2 text-sm">
               {priorities.map((p) => (
@@ -101,43 +111,47 @@ export default async function HomePage() {
                     </Link>
                   </div>
                   <div className="text-xs text-[hsl(var(--muted))]">
-                    {p.company.name} · Owner {p.owner.name} · {labelProjectStatus(p.status)} · {countdownPhrase(p.deadline)}
+                    {p.company.name} · {t(locale, "homeOwner")} {p.owner.name} · {tProjectStatus(locale, p.status)} ·{" "}
+                    {countdownPhrase(p.deadline)}
                   </div>
                   <div className="mt-2 h-2 w-full rounded bg-black/10 dark:bg-white/10">
-                    <div className="h-2 rounded bg-[hsl(var(--accent))]" style={{ width: `${Math.max(0, Math.min(100, p.progressPercent))}%` }} />
+                    <div
+                      className="h-2 rounded bg-[hsl(var(--accent))]"
+                      style={{ width: `${Math.max(0, Math.min(100, p.progressPercent))}%` }}
+                    />
                   </div>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-[hsl(var(--muted))]">No active priorities yet.</p>
+            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "homeNoPriorities")}</p>
           )}
         </Card>
 
         <Card className="space-y-3">
-          <CardTitle>Execution Snapshot</CardTitle>
+          <CardTitle>{t(locale, "homeExecutionSnapshot")}</CardTitle>
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-md border border-[hsl(var(--border))] p-3">
-              <div className="text-xs text-[hsl(var(--muted))]">Blocked nodes</div>
+              <div className="text-xs text-[hsl(var(--muted))]">{t(locale, "homeBlockedNodes")}</div>
               <div className="text-lg font-semibold">{blockedCount}</div>
             </div>
             <div className="rounded-md border border-[hsl(var(--border))] p-3">
-              <div className="text-xs text-[hsl(var(--muted))]">Waiting approvals</div>
+              <div className="text-xs text-[hsl(var(--muted))]">{t(locale, "homeWaitingApprovals")}</div>
               <div className="text-lg font-semibold">{waitingApprovalCount}</div>
             </div>
             <div className="rounded-md border border-[hsl(var(--border))] p-3">
-              <div className="text-xs text-[hsl(var(--muted))]">Due in 7 days</div>
+              <div className="text-xs text-[hsl(var(--muted))]">{t(locale, "homeDue7d")}</div>
               <div className="text-lg font-semibold">{dueSoonCount}</div>
             </div>
             <div className="rounded-md border border-[hsl(var(--border))] p-3">
-              <div className="text-xs text-[hsl(var(--muted))]">Open projects</div>
+              <div className="text-xs text-[hsl(var(--muted))]">{t(locale, "homeOpenProjects")}</div>
               <div className="text-lg font-semibold">{visible.length}</div>
             </div>
           </div>
         </Card>
 
         <Card className="space-y-3">
-          <CardTitle>One Good Thing Today</CardTitle>
+          <CardTitle>{t(locale, "homeOneGoodThing")}</CardTitle>
           {latestRec ? (
             <div className="rounded-md border border-[hsl(var(--border))] p-3 text-sm">
               <div className="font-medium">
@@ -146,13 +160,15 @@ export default async function HomePage() {
                   : (latestRec.tagLabel ?? "")}
               </div>
               <div className="text-xs text-[hsl(var(--muted))]">
-                {labelRecognitionCategory(latestRec.tagCategory)} · {latestRec.project?.name ?? "General"}
+                {tRecognitionTagCategory(locale, latestRec.tagCategory)} · {latestRec.project?.name ?? t(locale, "kbGeneralProject")}
               </div>
-              <p className="mt-1 text-sm">{latestRec.message ?? "You were recognized for meaningful contribution."}</p>
-              <div className="mt-1 text-xs text-[hsl(var(--muted))]">From {latestRec.fromUser?.name ?? "A teammate"}</div>
+              <p className="mt-1 text-sm">{latestRec.message ?? t(locale, "homeRecognizedDefault")}</p>
+              <div className="mt-1 text-xs text-[hsl(var(--muted))]">
+                {t(locale, "homeFrom")} {latestRec.fromUser?.name ?? "—"}
+              </div>
             </div>
           ) : (
-            <p className="text-sm text-[hsl(var(--muted))]">No recognition yet this cycle. Keep shipping.</p>
+            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "homeNoRecognition")}</p>
           )}
           {companion ? (
             <div className="mt-2 flex items-center gap-3 rounded-md border border-[hsl(var(--border))] p-2">
@@ -164,38 +180,37 @@ export default async function HomePage() {
                 ) : null;
               })()}
               <p className="text-xs text-[hsl(var(--muted))]">
-                Companion welcome: {companion.name ?? (locale === "zh" ? "小伙伴" : "Companion")} · mood {companion.mood} · level {companion.level}
+                {t(locale, "homeCompanionLine")}: {companion.name ?? (locale === "zh" ? "小伙伴" : "Companion")} · {t(locale, "homeMood")}{" "}
+                {companion.mood} · {t(locale, "homeLevel")} {companion.level}
               </p>
             </div>
           ) : null}
         </Card>
 
         <Card className="space-y-3">
-          <CardTitle>Score / Reward Preview</CardTitle>
+          <CardTitle>{t(locale, "scorePreview")}</CardTitle>
           <div className="space-y-2 text-sm">
-            <p className="text-xs text-[hsl(var(--muted))]">
-              Personal signals for this week — trend compares this week to last week (ledger-based). No rank on home.
-            </p>
+            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "homeScoreHint")}</p>
             {scoreRows.map((row) => (
               <div key={row.c} className="flex items-center justify-between gap-2 rounded-md border border-[hsl(var(--border))] px-2 py-1 text-xs">
-                <span className="font-medium">{row.c}</span>
+                <span className="font-medium">{t(locale, LB_LABEL[row.c])}</span>
                 <span className="text-right text-[hsl(var(--muted))]">
-                  {row.cur} pts
+                  {row.cur} {t(locale, "homePts")}
                   <span className="ml-2 text-[hsl(var(--foreground))]">
                     {row.delta >= 0 ? "▲" : "▼"} {row.delta >= 0 ? "+" : ""}
-                    {row.delta} vs prior week
+                    {row.delta} {t(locale, "homeVsPrior")}
                   </span>
                 </span>
               </div>
             ))}
             {latestSnapshot ? (
               <p className="text-xs text-[hsl(var(--muted))]">
-                Snapshot reference: E {latestSnapshot.executionScore} · C {latestSnapshot.collaborationScore} · K{" "}
+                {t(locale, "homeSnapshotRef")}: E {latestSnapshot.executionScore} · C {latestSnapshot.collaborationScore} · K{" "}
                 {latestSnapshot.knowledgeScore} · R {latestSnapshot.recognitionScore}
               </p>
             ) : null}
             <Link className="text-xs font-medium text-[hsl(var(--accent))] underline" href="/leaderboard">
-              Open category leaderboards
+              {t(locale, "homeOpenLb")}
             </Link>
           </div>
         </Card>

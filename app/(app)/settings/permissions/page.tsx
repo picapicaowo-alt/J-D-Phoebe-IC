@@ -5,11 +5,14 @@ import type { AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { PermissionMatrix } from "@/components/permission-matrix";
+import { getLocale } from "@/lib/locale";
+import { t } from "@/lib/messages";
 
 export default async function PermissionsMatrixPage() {
   const user = (await requireUser()) as AccessUser;
   if (!(await userHasPermission(user, "permission.matrix.read"))) redirect("/group");
 
+  const locale = await getLocale();
   const canEdit = await userHasPermission(user, "permission.matrix.update");
 
   const [roles, perms, links] = await Promise.all([
@@ -26,17 +29,17 @@ export default async function PermissionsMatrixPage() {
   return (
     <div className="space-y-6">
       <div className="text-xs text-[hsl(var(--muted))]">
-        <Link href="/group">Group</Link> / Permissions
+        <Link href="/group">{t(locale, "breadcrumbGroup")}</Link> / {t(locale, "breadcrumbPermissions")}
       </div>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Permission matrix</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t(locale, "permPageTitle")}</h1>
         <p className="mt-2 max-w-3xl text-sm text-[hsl(var(--muted))]">
-          Each role accumulates permissions from group, company, and project memberships. Super admins bypass the matrix.
-          {canEdit ? " Click a cell to toggle." : " You have read-only access."}
+          {t(locale, "permMatrixLead")}
+          {canEdit ? t(locale, "permPageHintEdit") : t(locale, "permPageHintReadonly")}
         </p>
       </div>
 
-      <PermissionMatrix roles={roles} perms={perms} allowedKeys={allowedKeys} readOnly={!canEdit} />
+      <PermissionMatrix roles={roles} perms={perms} allowedKeys={allowedKeys} readOnly={!canEdit} locale={locale} />
     </div>
   );
 }

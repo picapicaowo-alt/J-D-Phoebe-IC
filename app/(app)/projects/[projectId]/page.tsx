@@ -28,9 +28,21 @@ import {
   updateProjectRelationNoteAction,
   updateProjectAction,
 } from "@/app/actions/project";
+import { uploadProjectAttachmentAction } from "@/app/actions/attachments";
 import { requireUser } from "@/lib/auth";
 import { canEditProjectMap, canManageProject, canViewProject, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
+import {
+  t,
+  tKnowledgeLayer,
+  tPriority,
+  tProjectRelationType,
+  tProjectStatus,
+  tRecognitionMode,
+  tRecognitionTagCategory,
+  tWorkflowNodeStatus,
+  tWorkflowNodeType,
+} from "@/lib/messages";
 import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -38,10 +50,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { labelNodeType, labelPriority, labelProjectStatus, labelRecognitionCategory } from "@/lib/labels";
 import { countdownPhrase, isOverdue } from "@/lib/deadlines";
 import { RecognitionSecondarySelect } from "@/components/recognition-secondary-select";
 import { FeedbackSecondarySelect } from "@/components/feedback-secondary-select";
+import { AttachmentVersionTree } from "@/components/attachment-version-tree";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const STATUSES: ProjectStatus[] = [
@@ -55,6 +67,7 @@ const STATUSES: ProjectStatus[] = [
 ];
 
 const RELATION_TYPES: ProjectRelationType[] = [
+  "INDEPENDENT",
   "PARENT_CHILD",
   "LINKED",
   "DEPENDS_ON",
@@ -105,6 +118,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   if (!project) notFound();
   if (!canViewProject(user, project)) notFound();
 
+  const projectFiles = await prisma.attachment.findMany({
+    where: {
+      projectId: project.id,
+      deletedAt: null,
+      workflowNodeId: null,
+      knowledgeAssetId: null,
+      memberOutputId: null,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
   const canManage = canManageProject(user, project);
   const canRecognize = await userHasPermission(user, "recognition.create");
   const canSoftDeleteProject =
@@ -146,44 +170,44 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   return (
     <div className="space-y-8">
       <div className="text-xs text-[hsl(var(--muted))]">
-        <Link href="/projects">Projects</Link> / {project.name}
+        <Link href="/projects">{t(locale, "projBreadcrumbProjects")}</Link> / {project.name}
       </div>
 
       <div>
-        <p className="text-xs uppercase tracking-wide text-[hsl(var(--muted))]">Project Summary</p>
+        <p className="text-xs uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "projSummary")}</p>
         <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
         <p className="mt-1 text-sm text-[hsl(var(--muted))]">
-          {project.company.name} · {labelProjectStatus(project.status)} · {labelPriority(project.priority)}
+          {project.company.name} · {tProjectStatus(locale, project.status)} · {tPriority(locale, project.priority)}
         </p>
         {project.deadline ? (
           <p className="mt-1 text-xs text-[hsl(var(--muted))]">
             {countdownPhrase(project.deadline)}
-            {isOverdue(project.deadline) && project.status !== "COMPLETED" ? " · overdue" : ""}
+            {isOverdue(project.deadline) && project.status !== "COMPLETED" ? ` · ${t(locale, "projOverdue")}` : ""}
           </p>
         ) : null}
       </div>
 
       <div className="flex flex-wrap gap-2">
         <Link href={`/projects/${project.id}/workflow`}>
-          <Button type="button">Open advanced workflow view</Button>
+          <Button type="button">{t(locale, "wfOpenAdvanced")}</Button>
         </Link>
       </div>
 
       <Card className="space-y-3 p-4">
-        <CardTitle>Project map (lightweight default)</CardTitle>
-        <p className="text-xs text-[hsl(var(--muted))]">
-          Route-map style overview for daily use. Use Advanced Workflow for complex graph editing.
-        </p>
+        <CardTitle>{t(locale, "wfMapTitle")}</CardTitle>
+        <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfMapCaption")}</p>
         <div className="space-y-2">
           {project.nodes.length ? (
-            [...project.layers, { id: "__ungrouped__", name: "Ungrouped lane" }].map((layer) => {
+            [...project.layers, { id: "__ungrouped__", name: "" }].map((layer) => {
               const laneNodes = project.nodes.filter((n) =>
                 layer.id === "__ungrouped__" ? !n.layerId : n.layerId === layer.id,
               );
               if (!laneNodes.length) return null;
               return (
                 <div key={layer.id} className="space-y-2 rounded-md border border-dashed border-[hsl(var(--border))] p-2">
-                  <div className="text-xs font-medium text-[hsl(var(--muted))]">{layer.name}</div>
+                  <div className="text-xs font-medium text-[hsl(var(--muted))]">
+                    {layer.id === "__ungrouped__" ? t(locale, "wfUngroupedLane") : layer.name}
+                  </div>
                   {laneNodes.map((n, idx) => {
               const statusColor =
                 n.status === "DONE"
@@ -217,7 +241,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                       {n.title}
                     </div>
                     <div className="text-xs text-[hsl(var(--muted))]">
-                      {labelNodeType(n.nodeType)} · {n.status}
+                      {tWorkflowNodeType(locale, n.nodeType)} · {tWorkflowNodeStatus(locale, n.status)}
                     </div>
                   </div>
                   <div className="w-28">
@@ -235,38 +259,110 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               );
             })
           ) : (
-            <p className="text-sm text-[hsl(var(--muted))]">No map nodes yet. Add them in the advanced workflow view.</p>
+            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "wfNoNodes")}</p>
           )}
         </div>
         <div className="text-xs text-[hsl(var(--muted))]">
-          {project.nodes.length} nodes · {project.edges.length} dependencies
+          {project.nodes.length} {t(locale, "wfNodesCount")} · {project.edges.length} {t(locale, "wfDeps")}
         </div>
+      </Card>
+
+      <Card className="space-y-3 p-4">
+        <CardTitle>{t(locale, "wfProjectFiles")}</CardTitle>
+        <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfProjectFilesCaption")}</p>
+        {projectFiles.length ? (
+          <AttachmentVersionTree
+            attachments={projectFiles.map((f) => ({
+              id: f.id,
+              previousVersionId: f.previousVersionId,
+              fileName: f.fileName,
+              createdAt: f.createdAt,
+              description: f.description,
+            }))}
+            locale={locale}
+            showTrash={canManage}
+          />
+        ) : (
+          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
+        )}
+        {canManage ? (
+          <form
+            action={uploadProjectAttachmentAction}
+            encType="multipart/form-data"
+            className="grid gap-2 border-t border-[hsl(var(--border))] pt-3 md:grid-cols-2"
+          >
+            <input type="hidden" name="projectId" value={project.id} />
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium">{t(locale, "btnUpload")}</label>
+              <Input type="file" name="file" required className="text-xs" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "commonTitleEn")}</label>
+              <Input name="titleEn" className="text-xs" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "commonTitleZh")}</label>
+              <Input name="titleZh" className="text-xs" />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
+              <Input name="description" className="text-xs" />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium">{t(locale, "commonLabels")}</label>
+              <Input name="labels" className="text-xs" />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
+              <select
+                name="previousVersionId"
+                className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                defaultValue=""
+              >
+                <option value="">{t(locale, "wfNewVersionNone")}</option>
+                {projectFiles.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.fileName}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <Button type="submit" variant="secondary" className="h-8 text-xs">
+                {t(locale, "btnUpload")}
+              </Button>
+            </div>
+          </form>
+        ) : null}
       </Card>
 
       {canEditMap ? (
         <Card className="space-y-4 p-4">
-          <CardTitle>Edit project map</CardTitle>
-          <p className="text-xs text-[hsl(var(--muted))]">
-            Lightweight edits stay on this page. Open Advanced Workflow for full graph layout and attachment tools.
-          </p>
+          <CardTitle>{t(locale, "wfEditMapTitle")}</CardTitle>
+          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfEditMapCaption")}</p>
           <form action={createProjectMapNodeAction} className="grid gap-2 border-b pb-3 md:grid-cols-3">
             <input type="hidden" name="projectId" value={project.id} />
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">New node title</label>
-              <Input name="title" required placeholder="Node title" />
+              <label className="text-xs font-medium">{t(locale, "wfNewNodeTitle")}</label>
+              <Input name="title" required placeholder={t(locale, "wfNodePlaceholder")} />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Type</label>
+              <label className="text-xs font-medium">{t(locale, "projTypeLabel")}</label>
               <Select name="nodeType" defaultValue="TASK">
-                {NODE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {labelNodeType(t)}
+                {NODE_TYPES.map((nt) => (
+                  <option key={nt} value={nt}>
+                    {tWorkflowNodeType(locale, nt)}
                   </option>
                 ))}
               </Select>
             </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium">{t(locale, "wfNodeDue")}</label>
+              <Input name="dueAt" type="datetime-local" className="text-xs" />
+              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfNodeDueHelp")}</p>
+            </div>
             <div className="space-y-1 md:col-span-3">
-              <label className="text-xs font-medium">Layer</label>
+              <label className="text-xs font-medium">{t(locale, "projLayerLabel")}</label>
               <Select name="layerId">
                 {project.layers.map((l) => (
                   <option key={l.id} value={l.id}>
@@ -277,7 +373,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </div>
             <div className="md:col-span-3">
               <Button type="submit" variant="secondary">
-                Add node
+                {t(locale, "wfAddNode")}
               </Button>
             </div>
           </form>
@@ -285,9 +381,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <input type="hidden" name="projectId" value={project.id} />
             <input type="hidden" name="kind" value={WorkflowEdgeKind.DEPENDENCY} />
             <div className="space-y-1">
-              <label className="text-xs font-medium">From node</label>
+              <label className="text-xs font-medium">{t(locale, "wfFromNode")}</label>
               <Select name="fromNodeId" required>
-                <option value="">Select</option>
+                <option value="">{t(locale, "wfSelect")}</option>
                 {project.nodes.map((n) => (
                   <option key={n.id} value={n.id}>
                     {n.title}
@@ -296,9 +392,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">To node</label>
+              <label className="text-xs font-medium">{t(locale, "wfToNode")}</label>
               <Select name="toNodeId" required>
-                <option value="">Select</option>
+                <option value="">{t(locale, "wfSelect")}</option>
                 {project.nodes.map((n) => (
                   <option key={n.id} value={n.id}>
                     {n.title}
@@ -308,12 +404,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </div>
             <div className="flex items-end">
               <Button type="submit" variant="secondary">
-                Add dependency
+                {t(locale, "wfAddDependency")}
               </Button>
             </div>
           </form>
           <div className="space-y-2 text-sm">
-            <p className="text-xs font-medium text-[hsl(var(--muted))]">Nodes</p>
+            <p className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "wfNodesLabel")}</p>
             <ul className="space-y-2">
               {project.nodes.map((n) => (
                 <li key={n.id} className="rounded-md border border-[hsl(var(--border))] p-2">
@@ -323,26 +419,38 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                     <Select name="status" defaultValue={n.status} className="min-w-[140px]">
                       {NODE_STATUSES.map((s) => (
                         <option key={s} value={s}>
-                          {s}
+                          {tWorkflowNodeStatus(locale, s)}
                         </option>
                       ))}
                     </Select>
                     <Select name="nodeType" defaultValue={n.nodeType} className="min-w-[120px]">
-                      {NODE_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {labelNodeType(t)}
+                      {NODE_TYPES.map((nt) => (
+                        <option key={nt} value={nt}>
+                          {tWorkflowNodeType(locale, nt)}
                         </option>
                       ))}
                     </Select>
                     <Input name="sortOrder" type="number" defaultValue={String(n.sortOrder)} className="w-20" />
+                    <Input
+                      name="dueAt"
+                      type="datetime-local"
+                      defaultValue={
+                        n.dueAt
+                          ? new Date(n.dueAt.getTime() - new Date().getTimezoneOffset() * 60000)
+                              .toISOString()
+                              .slice(0, 16)
+                          : ""
+                      }
+                      className="w-[180px] text-xs"
+                    />
                     <Button type="submit" variant="secondary" className="h-8 text-xs">
-                      Save
+                      {t(locale, "btnSave")}
                     </Button>
                   </form>
                   <form action={softDeleteProjectMapNodeAction} className="mt-1">
                     <input type="hidden" name="nodeId" value={n.id} />
                     <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
-                      Remove node
+                      {t(locale, "wfRemoveNode")}
                     </Button>
                   </form>
                 </li>
@@ -374,24 +482,24 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       ) : null}
 
       <Card className="space-y-3 p-4">
-        <CardTitle>Project relations (project-level)</CardTitle>
+        <CardTitle>{t(locale, "projRelationsTitle")}</CardTitle>
         {canManage ? (
           <form action={addProjectRelationAction} className="grid gap-2 border-b pb-3 md:grid-cols-3">
             <input type="hidden" name="fromProjectId" value={project.id} />
             <div className="space-y-1">
-              <label className="text-xs font-medium">Relation type</label>
+              <label className="text-xs font-medium">{t(locale, "projRelationType")}</label>
               <Select name="relationType" defaultValue="LINKED" required>
-                {RELATION_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {RELATION_TYPES.map((relType) => (
+                  <option key={relType} value={relType}>
+                    {tProjectRelationType(locale, relType)}
                   </option>
                 ))}
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Target project</label>
+              <label className="text-xs font-medium">{t(locale, "projTargetProject")}</label>
               <Select name="toProjectId" required>
-                <option value="">Select project</option>
+                <option value="">{t(locale, "commonSelectProject")}</option>
                 {relationTargetProjects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.company.name} / {p.name}
@@ -400,12 +508,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Note</label>
-              <Input name="note" placeholder="Optional relation context" />
+              <label className="text-xs font-medium">{t(locale, "projNote")}</label>
+              <Input name="note" placeholder={t(locale, "projOptionalRelationNote")} />
             </div>
             <div className="md:col-span-3">
               <Button type="submit" variant="secondary">
-                Add relation
+                {t(locale, "projAddRelation")}
               </Button>
             </div>
           </form>
@@ -413,34 +521,34 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         <ul className="space-y-2 text-sm">
           {project.outgoingRelations.map((rel) => (
             <li key={rel.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-              <div className="font-medium">{rel.relationType}</div>
+              <div className="font-medium">{tProjectRelationType(locale, rel.relationType)}</div>
               <div className="text-xs text-[hsl(var(--muted))]">
-                This project → {rel.toProject.company.name} / {rel.toProject.name}
+                {t(locale, "projThisTo")} {rel.toProject.company.name} / {rel.toProject.name}
               </div>
               {rel.note ? <p className="mt-1 text-xs text-[hsl(var(--muted))]">{rel.note}</p> : null}
               {canManage ? (
                 <div className="mt-2 flex flex-wrap gap-2">
                   <details>
                     <summary className="cursor-pointer text-xs text-[hsl(var(--muted))] underline underline-offset-2">
-                      Edit note
+                      {t(locale, "projEditNote")}
                     </summary>
                     <form action={updateProjectRelationNoteAction} className="mt-2 flex flex-wrap items-end gap-2">
                       <input type="hidden" name="relationId" value={rel.id} />
                       <Input
                         name="note"
                         defaultValue={rel.note ?? ""}
-                        placeholder="Edit note"
+                        placeholder={t(locale, "projEditNote")}
                         className="h-7 min-w-[220px] text-xs"
                       />
                       <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
-                        Save note
+                        {t(locale, "projSaveNote")}
                       </Button>
                     </form>
                   </details>
                   <form action={removeProjectRelationAction}>
                     <input type="hidden" name="relationId" value={rel.id} />
                     <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
-                      Remove
+                      {t(locale, "btnRemove")}
                     </Button>
                   </form>
                 </div>
@@ -449,30 +557,31 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           ))}
           {project.incomingRelations.map((rel) => (
             <li key={rel.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-              <div className="font-medium">{rel.relationType}</div>
+              <div className="font-medium">{tProjectRelationType(locale, rel.relationType)}</div>
               <div className="text-xs text-[hsl(var(--muted))]">
-                Depends from {rel.fromProject.company.name} / {rel.fromProject.name} → this project
+                {t(locale, "projDependsFromLine")} {rel.fromProject.company.name} / {rel.fromProject.name} →{" "}
+                {t(locale, "projThisProject")}
               </div>
               {rel.note ? <p className="mt-1 text-xs text-[hsl(var(--muted))]">{rel.note}</p> : null}
             </li>
           ))}
           {!project.outgoingRelations.length && !project.incomingRelations.length ? (
-            <li className="text-sm text-[hsl(var(--muted))]">No project-level relation declared yet.</li>
+            <li className="text-sm text-[hsl(var(--muted))]">{t(locale, "projNoRelations")}</li>
           ) : null}
         </ul>
       </Card>
 
       {canManage ? (
         <Card className="space-y-4 p-4">
-          <CardTitle>Edit project</CardTitle>
+          <CardTitle>{t(locale, "projEditProject")}</CardTitle>
           <form action={updateProjectAction} className="space-y-3">
             <input type="hidden" name="projectId" value={project.id} />
             <div className="space-y-1">
-              <label className="text-xs font-medium">Name</label>
+              <label className="text-xs font-medium">{t(locale, "commonName")}</label>
               <Input name="name" defaultValue={project.name} required />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Description</label>
+              <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
               <textarea
                 name="description"
                 rows={3}
@@ -481,7 +590,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Owner</label>
+              <label className="text-xs font-medium">{t(locale, "commonOwner")}</label>
               <Select name="ownerId" defaultValue={project.ownerId}>
                 {staff.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -492,41 +601,41 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <label className="text-xs font-medium">Priority</label>
+                <label className="text-xs font-medium">{t(locale, "commonPriority")}</label>
                 <Select name="priority" defaultValue={project.priority}>
                   {PRIORITIES.map((p) => (
                     <option key={p} value={p}>
-                      {labelPriority(p)}
+                      {tPriority(locale, p)}
                     </option>
                   ))}
                 </Select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium">Status</label>
+                <label className="text-xs font-medium">{t(locale, "commonStatus")}</label>
                 <Select name="status" defaultValue={project.status}>
                   {STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {labelProjectStatus(s)}
+                      {tProjectStatus(locale, s)}
                     </option>
                   ))}
                 </Select>
               </div>
             </div>
-            <Button type="submit">Save</Button>
+            <Button type="submit">{t(locale, "btnSave")}</Button>
           </form>
           <div className="flex gap-2 border-t pt-4">
             {project.status !== "ARCHIVED" ? (
               <form action={archiveProjectAction}>
                 <input type="hidden" name="projectId" value={project.id} />
                 <Button type="submit" variant="secondary">
-                  Archive project
+                  {t(locale, "projArchive")}
                 </Button>
               </form>
             ) : (
               <form action={restoreProjectAction}>
                 <input type="hidden" name="projectId" value={project.id} />
                 <Button type="submit" variant="secondary">
-                  Restore project
+                  {t(locale, "projRestore")}
                 </Button>
               </form>
             )}
@@ -535,7 +644,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <form action={softDeleteProjectAction} className="border-t pt-4">
               <input type="hidden" name="projectId" value={project.id} />
               <Button type="submit" variant="secondary" className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100">
-                Move project to trash
+                {t(locale, "projMoveTrash")}
               </Button>
             </form>
           ) : null}
@@ -543,12 +652,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       ) : null}
 
       <Card className="space-y-2 p-4">
-        <CardTitle>Project members</CardTitle>
+        <CardTitle>{t(locale, "projMembersTitle")}</CardTitle>
         {canMemberManage ? (
           <form action={assignMultipleToProjectAction} className="mb-3 space-y-2 border-b pb-3">
             <input type="hidden" name="projectId" value={project.id} />
             <div className="space-y-1">
-              <label className="text-xs font-medium">Add one or more staff (hold Cmd/Ctrl to multi-select)</label>
+              <label className="text-xs font-medium">{t(locale, "projAddStaffHelp")}</label>
               <select
                 name="memberIds"
                 multiple
@@ -565,7 +674,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Role in project</label>
+              <label className="text-xs font-medium">{t(locale, "projRoleInProject")}</label>
               <Select name="roleDefinitionId" required className="min-w-[220px]">
                 {projectRoles.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -575,7 +684,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </Select>
             </div>
             <Button type="submit" variant="secondary">
-              Add selected to project
+              {t(locale, "projAddSelectedBtn")}
             </Button>
           </form>
         ) : null}
@@ -584,32 +693,32 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[hsl(var(--border))] px-2 py-1">
               <span>
                 {m.user.name} — {m.roleDefinition.displayName}
-                {m.user.active ? "" : " · inactive"}
+                {m.user.active ? "" : ` · ${t(locale, "projInactive")}`}
               </span>
               {canMemberManage ? (
                 <form action={removeProjectMembershipAction}>
                   <input type="hidden" name="userId" value={m.userId} />
                   <input type="hidden" name="projectId" value={project.id} />
                   <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
-                    Remove
+                    {t(locale, "btnRemove")}
                   </Button>
                 </form>
               ) : null}
             </li>
           ))}
         </ul>
-        <p className="text-xs text-[hsl(var(--muted))]">Staff can belong to multiple companies and multiple projects.</p>
+        <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "projStaffMultiCompanyHint")}</p>
       </Card>
 
       <Card className="space-y-3 p-4">
-        <CardTitle>Recognition wall</CardTitle>
+        <CardTitle>{t(locale, "projRecognitionWall")}</CardTitle>
         {canRecognize ? (
           <form action={createRecognitionAction} className="mb-3 grid gap-2 border-b pb-3 md:grid-cols-2">
             <input type="hidden" name="projectId" value={project.id} />
             <div className="space-y-1">
-              <label className="text-xs font-medium">To member</label>
+              <label className="text-xs font-medium">{t(locale, "projRecToMember")}</label>
               <Select name="toUserId" required>
-                <option value="">Select member</option>
+                <option value="">{t(locale, "commonSelectMember")}</option>
                 {project.memberships.map((m) => (
                   <option key={m.userId} value={m.userId}>{m.user.name}</option>
                 ))}
@@ -619,7 +728,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <RecognitionSecondarySelect defaultCategory="COLLABORATION" locale={locale} />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Link to node (optional)</label>
+              <label className="text-xs font-medium">{t(locale, "projRecLinkNode")}</label>
               <Select name="workflowNodeId">
                 <option value="">—</option>
                 {project.nodes.map((n) => (
@@ -628,7 +737,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Link to knowledge (optional)</label>
+              <label className="text-xs font-medium">{t(locale, "projRecLinkKnowledge")}</label>
               <Select name="knowledgeAssetId">
                 <option value="">—</option>
                 {project.knowledgeAssets.map((k) => (
@@ -637,19 +746,21 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Identity mode</label>
+              <label className="text-xs font-medium">{t(locale, "projRecIdentity")}</label>
               <Select name="mode" defaultValue={RecognitionMode.PUBLIC}>
-                <option value={RecognitionMode.PUBLIC}>Named (public)</option>
-                <option value={RecognitionMode.SEMI_ANONYMOUS}>Semi-anonymous</option>
-                <option value={RecognitionMode.ANONYMOUS}>Anonymous</option>
+                <option value={RecognitionMode.PUBLIC}>{tRecognitionMode(locale, RecognitionMode.PUBLIC)}</option>
+                <option value={RecognitionMode.SEMI_ANONYMOUS}>
+                  {tRecognitionMode(locale, RecognitionMode.SEMI_ANONYMOUS)}
+                </option>
+                <option value={RecognitionMode.ANONYMOUS}>{tRecognitionMode(locale, RecognitionMode.ANONYMOUS)}</option>
               </Select>
             </div>
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">Comment (optional)</label>
-              <Input name="message" placeholder="What was valuable in this contribution?" />
+              <label className="text-xs font-medium">{t(locale, "projRecComment")}</label>
+              <Input name="message" placeholder={t(locale, "projRecCommentPh")} />
             </div>
             <div className="md:col-span-2">
-              <Button type="submit" variant="secondary">Send recognition</Button>
+              <Button type="submit" variant="secondary">{t(locale, "projRecSend")}</Button>
             </div>
           </form>
         ) : null}
@@ -664,29 +775,30 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                     : (r.tagLabel ?? r.secondaryLabelKey)}
                 </div>
                 <div className="text-xs text-[hsl(var(--muted))]">
-                  {labelRecognitionCategory(r.tagCategory)} · to {r.toUser.name} · by {r.fromUser?.name ?? "Anonymous"}
+                  {tRecognitionTagCategory(locale, r.tagCategory)} · {t(locale, "projRecTo")} {r.toUser.name} ·{" "}
+                  {t(locale, "projRecBy")} {r.fromUser?.name ?? t(locale, "projRecAnonymous")}
                 </div>
                 {r.message ? <p className="mt-1 text-sm">{r.message}</p> : null}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-[hsl(var(--muted))]">No recognition yet for this project.</p>
+          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "projRecEmpty")}</p>
         )}
       </Card>
 
       {canFeedback ? (
         <Card className="space-y-3 p-4">
-          <CardTitle>Growth observations (structured)</CardTitle>
+          <CardTitle>{t(locale, "projGrowthCard")}</CardTitle>
           <p className="text-xs text-[hsl(var(--muted))]">
-            For improvement themes only. Praise stays in Recognition — this path is calm, factual, and actionable.
+            {t(locale, "projGrowthCardIntro")}
           </p>
           <form action={createFeedbackEventAction} className="grid gap-2 md:grid-cols-2">
             <input type="hidden" name="projectId" value={project.id} />
             <div className="space-y-1">
-              <label className="text-xs font-medium">About member</label>
+              <label className="text-xs font-medium">{t(locale, "projFeedAboutMember")}</label>
               <Select name="toUserId" required>
-                <option value="">Select member</option>
+                <option value="">{t(locale, "commonSelectMember")}</option>
                 {project.memberships.map((m) => (
                   <option key={m.userId} value={m.userId}>{m.user.name}</option>
                 ))}
@@ -696,31 +808,36 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <FeedbackSecondarySelect defaultCategory="COMMUNICATION" locale={locale} />
             </div>
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">Growth note (optional)</label>
-              <Input name="message" placeholder="What would help them improve?" />
+              <label className="text-xs font-medium">{t(locale, "projGrowthNote")}</label>
+              <Input name="message" placeholder={t(locale, "projFeedPlaceholder")} />
             </div>
             <div className="md:col-span-2">
-              <Button type="submit" variant="secondary">Record observation</Button>
+              <Button type="submit" variant="secondary">{t(locale, "projFeedRecordBtn")}</Button>
             </div>
           </form>
         </Card>
       ) : null}
 
       <Card className="space-y-3 p-4">
-        <CardTitle>Knowledge assets linked to this project</CardTitle>
+        <CardTitle>{t(locale, "projKnowledgeLinkedTitle")}</CardTitle>
         {project.knowledgeAssets.length ? (
           <ul className="space-y-2 text-sm">
             {project.knowledgeAssets.map((asset) => (
               <li key={asset.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
                 <div className="font-medium">{asset.title}</div>
-                <div className="text-xs text-[hsl(var(--muted))]">Layer {asset.layer} · by {asset.author.name}</div>
+                <div className="text-xs text-[hsl(var(--muted))]">
+                  {tKnowledgeLayer(locale, asset.layer)} · {t(locale, "kbByAuthor")} {asset.author.name}
+                </div>
                 {asset.summary ? <p className="mt-1 text-xs text-[hsl(var(--muted))]">{asset.summary}</p> : null}
               </li>
             ))}
           </ul>
         ) : (
           <p className="text-sm text-[hsl(var(--muted))]">
-            No knowledge assets linked yet. Add from <Link className="underline" href="/knowledge">Knowledge</Link>.
+            {t(locale, "projKnowledgeEmpty")}{" "}
+            <Link className="underline" href="/knowledge">
+              {t(locale, "projKnowledgeOpenLink")}
+            </Link>
           </p>
         )}
       </Card>

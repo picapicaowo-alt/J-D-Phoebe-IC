@@ -2,10 +2,9 @@ import { readFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
 import type { AccessUser } from "@/lib/access";
-import { canViewProject } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
-import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { canViewAttachment } from "@/lib/attachment-access";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -22,23 +21,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       project: { include: { company: true } },
       knowledgeAsset: { include: { author: true } },
       contributor: true,
+      memberOutput: true,
     },
   });
   if (!att) return new NextResponse("Not found", { status: 404 });
 
-  let allowed = false;
-  if (att.node?.project) {
-    allowed = canViewProject(accessUser, att.node.project);
-  } else if (att.project) {
-    allowed = canViewProject(accessUser, att.project);
-  } else if (att.knowledgeAsset) {
-    allowed =
-      accessUser.id === att.knowledgeAsset.authorId ||
-      accessUser.isSuperAdmin ||
-      (await userHasPermission(accessUser, "knowledge.read"));
-  } else if (att.contributorUserId) {
-    allowed = accessUser.id === att.contributorUserId || accessUser.isSuperAdmin;
-  }
+  const allowed = await canViewAttachment(accessUser, att);
 
   if (!allowed) {
     return new NextResponse("Forbidden", { status: 403 });
