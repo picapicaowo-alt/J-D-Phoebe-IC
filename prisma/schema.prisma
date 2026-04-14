@@ -1,0 +1,519 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Lifecycle (separate per entity as required) ---
+
+enum OrgGroupStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum CompanyStatus {
+  ACTIVE
+  ARCHIVED
+  SUSPENDED
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  AT_RISK
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+  CANCELLED
+}
+
+enum WorkflowNodeStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  WAITING
+  BLOCKED
+  APPROVED
+  DONE
+  SKIPPED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum WorkflowNodeType {
+  MILESTONE
+  TASK
+  APPROVAL
+  WAITING
+  COMPLETED
+}
+
+enum WorkflowEdgeKind {
+  DEPENDENCY
+  SEQUENTIAL
+  BRANCH
+  PARALLEL
+  LOOPBACK
+}
+
+enum AuditEntityType {
+  ORG_GROUP
+  COMPANY
+  PROJECT
+  USER
+  ROLE_DEFINITION
+  WORKFLOW_LAYER
+  WORKFLOW_NODE
+  WORKFLOW_EDGE
+  ATTACHMENT
+  PERMISSION
+  RECOGNITION
+  PERFORMANCE
+  COMPANION
+  KNOWLEDGE
+  PROJECT_RELATION
+}
+
+enum RecognitionMode {
+  PUBLIC
+  SEMI_ANONYMOUS
+  ANONYMOUS
+}
+
+enum RecognitionTagCategory {
+  RESULT
+  COLLABORATION
+  THINKING
+  CREATIVITY
+  CULTURE
+  STABILITY
+  LEADERSHIP
+}
+
+enum CompanionSpecies {
+  RABBIT
+  HAMSTER
+  CAT
+  DOG
+  BIRD
+  PENGUIN
+  BEAR
+  OTTER
+}
+
+enum KnowledgeLayer {
+  TEMPLATE_PLAYBOOK
+  REFERENCE_RESOURCE
+  INTERNAL_INSIGHT
+  REUSABLE_OUTPUT
+}
+
+enum ProjectRelationType {
+  INDEPENDENT
+  PARENT_CHILD
+  LINKED
+  DEPENDS_ON
+  CROSS_COMPANY
+  SHARED_ASSET
+}
+
+// --- RBAC: permission matrix (roleDefinitionId + permissionKey) ---
+
+model PermissionDefinition {
+  id          String @id @default(cuid())
+  key         String @unique
+  description String?
+  category    String?
+
+  rolePermissions RolePermission[]
+}
+
+model RolePermission {
+  id                     String @id @default(cuid())
+  roleDefinitionId       String
+  permissionDefinitionId String
+  allowed                Boolean @default(true)
+
+  roleDefinition       RoleDefinition       @relation(fields: [roleDefinitionId], references: [id], onDelete: Cascade)
+  permissionDefinition PermissionDefinition @relation(fields: [permissionDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleDefinitionId, permissionDefinitionId])
+  @@index([permissionDefinitionId])
+}
+
+// Parent organization (e.g. J.D. Phoebe Group). Stable id; name is editable.
+model OrgGroup {
+  id            String         @id @default(cuid())
+  name          String
+  introduction  String?
+  status        OrgGroupStatus @default(ACTIVE)
+  archivedAt    DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  companies        Company[]
+  groupMemberships GroupMembership[]
+}
+
+// Sub-company / entity under the group.
+model Company {
+  id               String         @id @default(cuid())
+  orgGroupId       String
+  name             String
+  companyType      String?
+  introduction     String?
+  status           CompanyStatus  @default(ACTIVE)
+  archivedAt       DateTime?
+  deletedAt        DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  orgGroup    OrgGroup           @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
+  memberships CompanyMembership[]
+  projects    Project[]
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?
+  clerkId       String?   @unique
+  name          String
+  title         String?
+  timezone      String    @default("UTC")
+  active        Boolean   @default(true)
+  isSuperAdmin  Boolean   @default(false)
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  groupMemberships   GroupMembership[]
+  companyMemberships CompanyMembership[]
+  projectMemberships ProjectMembership[]
+  nodeAssignments    WorkflowNodeAssignee[]
+  ownedProjects      Project[]              @relation("ProjectOwner")
+  auditEntries       AuditLogEntry[]        @relation("AuditActor")
+  sessions           Session[]
+  attachmentsUploaded Attachment[]        @relation("AttachmentUploader")
+  companionProfile   CompanionProfile?
+  recognitionsGiven    RecognitionEvent[]    @relation("RecognitionFrom")
+  recognitionsReceived RecognitionEvent[]    @relation("RecognitionTo")
+  performanceSnapshots PerformanceSnapshot[]
+  knowledgeAssets      KnowledgeAsset[]      @relation("KnowledgeAuthor")
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model RoleDefinition {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  displayName  String
+  description  String?
+  appliesScope String
+  system       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  groupMemberships   GroupMembership[]
+  companyMemberships CompanyMembership[]
+  projectMemberships ProjectMembership[]
+  rolePermissions    RolePermission[]
+}
+
+model GroupMembership {
+  id               String @id @default(cuid())
+  userId           String
+  orgGroupId       String
+  roleDefinitionId String
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orgGroup       OrgGroup       @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
+  roleDefinition RoleDefinition @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, orgGroupId])
+  @@index([orgGroupId])
+}
+
+model CompanyMembership {
+  id               String @id @default(cuid())
+  userId           String
+  companyId        String
+  roleDefinitionId String
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roleDefinition RoleDefinition @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+}
+
+model ProjectMembership {
+  id               String @id @default(cuid())
+  userId           String
+  projectId        String
+  roleDefinitionId String
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  roleDefinition RoleDefinition @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, projectId])
+  @@index([projectId])
+}
+
+model Project {
+  id              String        @id @default(cuid())
+  companyId       String
+  name            String
+  description     String?
+  ownerId         String
+  status          ProjectStatus @default(PLANNING)
+  priority        Priority      @default(MEDIUM)
+  deadline        DateTime?
+  progressPercent Int           @default(0)
+  archivedAt      DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  owner       User    @relation("ProjectOwner", fields: [ownerId], references: [id])
+
+  memberships ProjectMembership[]
+  layers      WorkflowLayer[]
+  nodes       WorkflowNode[]
+  edges       WorkflowEdge[]
+  recognitions RecognitionEvent[]
+  knowledgeAssets KnowledgeAsset[]
+  outgoingRelations ProjectRelation[] @relation("ProjectRelationFrom")
+  incomingRelations ProjectRelation[] @relation("ProjectRelationTo")
+
+  @@index([companyId])
+}
+
+model ProjectRelation {
+  id             String              @id @default(cuid())
+  fromProjectId  String
+  toProjectId    String
+  relationType   ProjectRelationType
+  note           String?
+  createdAt      DateTime            @default(now())
+
+  fromProject Project @relation("ProjectRelationFrom", fields: [fromProjectId], references: [id], onDelete: Cascade)
+  toProject   Project @relation("ProjectRelationTo", fields: [toProjectId], references: [id], onDelete: Cascade)
+
+  @@unique([fromProjectId, toProjectId, relationType])
+  @@index([fromProjectId])
+  @@index([toProjectId])
+}
+
+model WorkflowLayer {
+  id               String   @id @default(cuid())
+  projectId        String
+  name             String
+  sortOrder        Int      @default(0)
+  collapsedDefault Boolean  @default(false)
+  deletedAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  nodes   WorkflowNode[]
+
+  @@index([projectId])
+}
+
+model WorkflowNode {
+  id              String               @id @default(cuid())
+  projectId       String
+  layerId         String?
+  parentNodeId    String?
+  nodeType        WorkflowNodeType
+  title           String
+  description     String?
+  status          WorkflowNodeStatus   @default(NOT_STARTED)
+  progressPercent Int                  @default(0)
+  posX            Float                @default(0)
+  posY            Float                @default(0)
+  sortOrder       Int                  @default(0)
+  archivedAt      DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  layer       WorkflowLayer? @relation(fields: [layerId], references: [id], onDelete: SetNull)
+  parent      WorkflowNode?  @relation("NodeTree", fields: [parentNodeId], references: [id], onDelete: SetNull)
+  children    WorkflowNode[] @relation("NodeTree")
+  assignees   WorkflowNodeAssignee[]
+  edgesOut    WorkflowEdge[] @relation("EdgeFrom")
+  edgesIn     WorkflowEdge[] @relation("EdgeTo")
+  attachments Attachment[]
+  recognitions RecognitionEvent[]
+
+  @@index([projectId])
+  @@index([layerId])
+  @@index([parentNodeId])
+}
+
+model WorkflowNodeAssignee {
+  id              String @id @default(cuid())
+  workflowNodeId  String
+  userId          String
+  responsibility  String?
+
+  node WorkflowNode @relation(fields: [workflowNodeId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowNodeId, userId])
+  @@index([userId])
+}
+
+model WorkflowEdge {
+  id         String           @id @default(cuid())
+  projectId  String
+  fromNodeId String
+  toNodeId   String
+  kind       WorkflowEdgeKind @default(DEPENDENCY)
+  label      String?
+  deletedAt  DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  project  Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fromNode WorkflowNode @relation("EdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode   WorkflowNode @relation("EdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([fromNodeId, toNodeId, kind])
+  @@index([projectId])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+}
+
+model Attachment {
+  id           String    @id @default(cuid())
+  workflowNodeId String
+  fileName     String
+  mimeType     String?
+  sizeBytes    Int       @default(0)
+  storageKey   String
+  blobUrl      String?
+  uploadedById String
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  node       WorkflowNode @relation(fields: [workflowNodeId], references: [id], onDelete: Cascade)
+  uploadedBy User         @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+
+  @@index([workflowNodeId])
+}
+
+model RecognitionEvent {
+  id            String                 @id @default(cuid())
+  fromUserId    String?
+  toUserId      String
+  projectId     String?
+  workflowNodeId String?
+  mode          RecognitionMode        @default(PUBLIC)
+  tagCategory   RecognitionTagCategory
+  tagLabel      String
+  message       String?
+  createdAt     DateTime               @default(now())
+
+  fromUser User?         @relation("RecognitionFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUser   User          @relation("RecognitionTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  project  Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  node     WorkflowNode? @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
+
+  @@index([toUserId, createdAt])
+  @@index([projectId, createdAt])
+}
+
+model CompanionProfile {
+  id        String           @id @default(cuid())
+  userId    String           @unique
+  species   CompanionSpecies @default(RABBIT)
+  name      String?
+  mood      String           @default("CURIOUS")
+  level     Int              @default(1)
+  updatedAt DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PerformanceSnapshot {
+  id                   String   @id @default(cuid())
+  userId               String
+  weekStart            DateTime
+  executionScore       Int      @default(0)
+  collaborationScore   Int      @default(0)
+  knowledgeScore       Int      @default(0)
+  recognitionScore     Int      @default(0)
+  trendDelta           Int      @default(0)
+  createdAt            DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@index([weekStart])
+}
+
+model KnowledgeAsset {
+  id          String         @id @default(cuid())
+  projectId   String?
+  authorId    String
+  title       String
+  summary     String?
+  content     String
+  layer       KnowledgeLayer
+  tags        String?
+  sourceUrl   String?
+  reuseCount  Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  author  User     @relation("KnowledgeAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([layer, createdAt])
+  @@index([projectId, createdAt])
+  @@index([authorId, createdAt])
+}
+
+model AuditLogEntry {
+  id         String          @id @default(cuid())
+  actorId    String?
+  entityType AuditEntityType
+  entityId   String
+  action     String
+  field      String?
+  oldValue   String?
+  newValue   String?
+  meta       String?
+  createdAt  DateTime        @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+}
