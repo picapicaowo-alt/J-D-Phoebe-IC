@@ -447,12 +447,56 @@ async function main() {
 
   await prisma.companionProfile.createMany({
     data: [
-      { userId: superAdmin.id, species: CompanionSpecies.BEAR, name: "Atlas", mood: "STEADY", level: 4 },
-      { userId: groupAdmin.id, species: CompanionSpecies.CAT, name: "Nova", mood: "CALM", level: 3 },
-      { userId: companyAdmin.id, species: CompanionSpecies.BEAVER, name: "Ripple", mood: "FOCUSED", level: 2 },
-      { userId: pm.id, species: CompanionSpecies.BUNNY, name: "Sprint", mood: "MOTIVATED", level: 2 },
-      { userId: staff.id, species: CompanionSpecies.HAMSTER, name: "Pebble", mood: "CURIOUS", level: 2 },
+      {
+        userId: superAdmin.id,
+        species: CompanionSpecies.BEAR,
+        companionManifestId: "bear",
+        name: "Atlas",
+        mood: "STEADY",
+        level: 4,
+        selectedAt: new Date(),
+      },
+      {
+        userId: groupAdmin.id,
+        species: CompanionSpecies.CAT,
+        companionManifestId: "cat",
+        name: "Nova",
+        mood: "CALM",
+        level: 3,
+        selectedAt: new Date(),
+      },
+      {
+        userId: companyAdmin.id,
+        species: CompanionSpecies.BEAVER,
+        companionManifestId: "beaver",
+        name: "Ripple",
+        mood: "FOCUSED",
+        level: 2,
+        selectedAt: new Date(),
+      },
+      {
+        userId: pm.id,
+        species: CompanionSpecies.BUNNY,
+        companionManifestId: "bunny",
+        name: "Sprint",
+        mood: "MOTIVATED",
+        level: 2,
+        selectedAt: new Date(),
+      },
+      {
+        userId: staff.id,
+        species: CompanionSpecies.HAMSTER,
+        companionManifestId: "hamster",
+        name: "Pebble",
+        mood: "CURIOUS",
+        level: 2,
+        selectedAt: new Date(),
+      },
     ],
+  });
+
+  await prisma.user.updateMany({
+    data: { companionIntroCompletedAt: new Date() },
   });
 
   const weekStart = new Date();

@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "crypto";
+import { AttachmentResourceKind } from "@prisma/client";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { revalidatePath } from "next/cache";
@@ -75,6 +76,31 @@ export async function createMemberOutputWithAttachmentAction(formData: FormData)
     },
   });
 
+  const linkUrl = String(formData.get("externalUrl") ?? "").trim();
+  if (linkUrl) {
+    if (!/^https?:\/\//i.test(linkUrl)) throw new Error("URL must start with http:// or https://");
+    // eslint-disable-next-line no-new
+    new URL(linkUrl);
+    const linkLabel = String(formData.get("linkLabel") ?? "").trim() || new URL(linkUrl).hostname.replace(/^www\./, "");
+    await prisma.attachment.create({
+      data: {
+        resourceKind: AttachmentResourceKind.EXTERNAL_URL,
+        externalUrl: linkUrl,
+        memberOutputId: mo.id,
+        contributorUserId: targetUserId,
+        fileName: linkLabel,
+        mimeType: "text/uri-list",
+        sizeBytes: 0,
+        storageKey: null,
+        blobUrl: null,
+        uploadedById: actor.id,
+        ...metaFromForm(formData),
+      },
+    });
+    revalidatePath(`/staff/${targetUserId}`);
+    return;
+  }
+
   const file = formData.get("file");
   if (file && typeof file !== "string" && "arrayBuffer" in file) {
     const buf = Buffer.from(await file.arrayBuffer());
@@ -83,6 +109,7 @@ export async function createMemberOutputWithAttachmentAction(formData: FormData)
     const { storageKey, blobUrl } = await storeFile(buf, fileName, `member-output/${mo.id}`);
     await prisma.attachment.create({
       data: {
+        resourceKind: AttachmentResourceKind.FILE,
         memberOutputId: mo.id,
         contributorUserId: targetUserId,
         fileName,
@@ -97,52 +124,6 @@ export async function createMemberOutputWithAttachmentAction(formData: FormData)
   }
 
   revalidatePath(`/staff/${targetUserId}`);
-}
-
-export async function uploadMemberOutputVersionAction(formData: FormData) {
-  const actor = (await requireUser()) as AccessUser;
-  const memberOutputId = String(formData.get("memberOutputId") ?? "").trim();
-  if (!memberOutputId) throw new Error("Missing memberOutputId");
-
-  const mo = await prisma.memberOutput.findFirst({ where: { id: memberOutputId, deletedAt: null } });
-  if (!mo) throw new Error("Not found");
-  await assertCanManageMemberOutput(actor, mo.userId);
-
-  const file = formData.get("file");
-  if (!file || typeof file === "string" || !("arrayBuffer" in file)) throw new Error("Missing file");
-
-  const buf = Buffer.from(await file.arrayBuffer());
-  const fileName = sanitizeFileName(file.name || "upload");
-  const mimeType = file.type || "application/octet-stream";
-  const meta = metaFromForm(formData);
-  const prevRaw = String(formData.get("previousVersionId") ?? "").trim();
-  let previousVersionId: string | null = null;
-  if (prevRaw) {
-    const p = await prisma.attachment.findFirst({
-      where: { id: prevRaw, deletedAt: null, memberOutputId },
-    });
-    if (!p) throw new Error("Invalid version");
-    previousVersionId = p.id;
-  }
-
-  const { storageKey, blobUrl } = await storeFile(buf, fileName, `member-output/${memberOutputId}`);
-
-  await prisma.attachment.create({
-    data: {
-      memberOutputId,
-      contributorUserId: mo.userId,
-      previousVersionId,
-      fileName,
-      mimeType,
-      sizeBytes: buf.length,
-      storageKey,
-      blobUrl,
-      uploadedById: actor.id,
-      ...meta,
-    },
-  });
-
-  revalidatePath(`/staff/${mo.userId}`);
 }
 
 export async function updateMemberOutputMetaAction(formData: FormData) {

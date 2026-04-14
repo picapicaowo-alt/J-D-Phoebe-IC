@@ -29,7 +29,11 @@ export async function loginAction(formData: FormData) {
   session.userId = user.id;
   session.isLoggedIn = true;
   await session.save();
-  redirect("/home");
+  const fresh = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { companionIntroCompletedAt: true },
+  });
+  redirect(fresh?.companionIntroCompletedAt ? "/home" : "/onboarding/companion");
 }
 
 export async function logoutAction() {

@@ -4,9 +4,10 @@ import { randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { revalidatePath } from "next/cache";
+import { AttachmentResourceKind } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
-import { canEditWorkflow, canViewProject, type AccessUser } from "@/lib/access";
-import { assertPermission } from "@/lib/permissions";
+import { canEditWorkflow, canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { assertPermission, userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 function sanitizeFileName(name: string) {
@@ -20,6 +21,18 @@ function metaFromForm(formData: FormData) {
     titleEn: String(formData.get("titleEn") ?? "").trim() || null,
     titleZh: String(formData.get("titleZh") ?? "").trim() || null,
   };
+}
+
+function mustHttpUrl(formData: FormData, key = "externalUrl") {
+  const raw = String(formData.get(key) ?? "").trim();
+  if (!raw) throw new Error("Missing URL");
+  if (!/^https?:\/\//i.test(raw)) throw new Error("URL must start with http:// or https://");
+  try {
+    new URL(raw);
+  } catch {
+    throw new Error("Invalid URL");
+  }
+  return raw;
 }
 
 async function storeFile(
@@ -81,6 +94,7 @@ export async function uploadWorkflowAttachmentAction(formData: FormData) {
 
   await prisma.attachment.create({
     data: {
+      resourceKind: AttachmentResourceKind.FILE,
       workflowNodeId: nodeId,
       previousVersionId,
       fileName,
@@ -95,6 +109,7 @@ export async function uploadWorkflowAttachmentAction(formData: FormData) {
 
   revalidatePath(`/projects/${node.projectId}/workflow`);
   revalidatePath(`/projects/${node.projectId}`);
+  revalidatePath(`/projects/${node.projectId}/nodes/${nodeId}`);
 }
 
 export async function uploadProjectAttachmentAction(formData: FormData) {
@@ -133,6 +148,7 @@ export async function uploadProjectAttachmentAction(formData: FormData) {
 
   await prisma.attachment.create({
     data: {
+      resourceKind: AttachmentResourceKind.FILE,
       projectId,
       previousVersionId,
       fileName,
@@ -180,6 +196,7 @@ export async function uploadKnowledgeAttachmentAction(formData: FormData) {
 
   await prisma.attachment.create({
     data: {
+      resourceKind: AttachmentResourceKind.FILE,
       knowledgeAssetId,
       previousVersionId,
       fileName,
@@ -195,4 +212,165 @@ export async function uploadKnowledgeAttachmentAction(formData: FormData) {
   revalidatePath("/knowledge");
   revalidatePath("/knowledge/browse");
   if (asset.projectId) revalidatePath(`/projects/${asset.projectId}`);
+}
+
+/** Phase 1: external links (Drive, docs, etc.) instead of file uploads. */
+export async function addExternalResourceLinkAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  const url = mustHttpUrl(formData, "externalUrl");
+  const labelRaw = String(formData.get("label") ?? "").trim();
+  let fileName = labelRaw;
+  if (!fileName) {
+    try {
+      fileName = new URL(url).hostname.replace(/^www\./, "") || "Resource link";
+    } catch {
+      fileName = "Resource link";
+    }
+  }
+  const meta = metaFromForm(formData);
+  const prevRaw = String(formData.get("previousVersionId") ?? "").trim();
+
+  const workflowNodeId = String(formData.get("workflowNodeId") ?? "").trim() || null;
+  const projectId = String(formData.get("projectId") ?? "").trim() || null;
+  const knowledgeAssetId = String(formData.get("knowledgeAssetId") ?? "").trim() || null;
+  const memberOutputId = String(formData.get("memberOutputId") ?? "").trim() || null;
+  const scopes = [workflowNodeId, projectId, knowledgeAssetId, memberOutputId].filter(Boolean);
+  if (scopes.length !== 1) throw new Error("Specify exactly one attachment target.");
+
+  let previousVersionId: string | null = null;
+
+  if (workflowNodeId) {
+    await assertPermission(user, "project.workflow.update");
+    const node = await prisma.workflowNode.findFirst({
+      where: { id: workflowNodeId, deletedAt: null },
+      include: { project: { include: { company: true } } },
+    });
+    if (!node || !canEditWorkflow(user, node.project)) throw new Error("Forbidden");
+    if (prevRaw) {
+      const prev = await prisma.attachment.findFirst({
+        where: { id: prevRaw, deletedAt: null, workflowNodeId },
+      });
+      if (!prev) throw new Error("Invalid version");
+      previousVersionId = prev.id;
+    }
+    await prisma.attachment.create({
+      data: {
+        resourceKind: AttachmentResourceKind.EXTERNAL_URL,
+        externalUrl: url,
+        workflowNodeId,
+        previousVersionId,
+        fileName,
+        mimeType: "text/uri-list",
+        sizeBytes: 0,
+        storageKey: null,
+        blobUrl: null,
+        uploadedById: user.id,
+        ...meta,
+      },
+    });
+    revalidatePath(`/projects/${node.projectId}/workflow`);
+    revalidatePath(`/projects/${node.projectId}`);
+    revalidatePath(`/projects/${node.projectId}/nodes/${workflowNodeId}`);
+    return;
+  }
+
+  if (projectId) {
+    await assertPermission(user, "project.read");
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
+      include: { company: true },
+    });
+    if (!project || !canViewProject(user, project)) throw new Error("Forbidden");
+    const isMember = user.projectMemberships.some((m) => m.projectId === projectId);
+    if (!isMember && !canEditWorkflow(user, project)) throw new Error("Forbidden");
+    if (prevRaw) {
+      const prev = await prisma.attachment.findFirst({
+        where: { id: prevRaw, deletedAt: null, projectId },
+      });
+      if (!prev) throw new Error("Invalid version");
+      previousVersionId = prev.id;
+    }
+    await prisma.attachment.create({
+      data: {
+        resourceKind: AttachmentResourceKind.EXTERNAL_URL,
+        externalUrl: url,
+        projectId,
+        previousVersionId,
+        fileName,
+        mimeType: "text/uri-list",
+        sizeBytes: 0,
+        storageKey: null,
+        blobUrl: null,
+        uploadedById: user.id,
+        ...meta,
+      },
+    });
+    revalidatePath(`/projects/${projectId}`);
+    return;
+  }
+
+  if (knowledgeAssetId) {
+    await assertPermission(user, "knowledge.create");
+    const asset = await prisma.knowledgeAsset.findFirst({ where: { id: knowledgeAssetId, deletedAt: null } });
+    if (!asset) throw new Error("Not found");
+    if (!user.isSuperAdmin && asset.authorId !== user.id) throw new Error("Forbidden");
+    if (prevRaw) {
+      const prev = await prisma.attachment.findFirst({
+        where: { id: prevRaw, deletedAt: null, knowledgeAssetId },
+      });
+      if (!prev) throw new Error("Invalid version");
+      previousVersionId = prev.id;
+    }
+    await prisma.attachment.create({
+      data: {
+        resourceKind: AttachmentResourceKind.EXTERNAL_URL,
+        externalUrl: url,
+        knowledgeAssetId,
+        previousVersionId,
+        fileName,
+        mimeType: "text/uri-list",
+        sizeBytes: 0,
+        storageKey: null,
+        blobUrl: null,
+        uploadedById: user.id,
+        ...meta,
+      },
+    });
+    revalidatePath("/knowledge");
+    revalidatePath("/knowledge/browse");
+    if (asset.projectId) revalidatePath(`/projects/${asset.projectId}`);
+    return;
+  }
+
+  if (memberOutputId) {
+    const mo = await prisma.memberOutput.findFirst({ where: { id: memberOutputId, deletedAt: null } });
+    if (!mo) throw new Error("Not found");
+    if (user.id !== mo.userId && !isSuperAdmin(user) && !(await userHasPermission(user, "staff.update"))) {
+      throw new Error("Forbidden");
+    }
+    if (prevRaw) {
+      const prev = await prisma.attachment.findFirst({
+        where: { id: prevRaw, deletedAt: null, memberOutputId },
+      });
+      if (!prev) throw new Error("Invalid version");
+      previousVersionId = prev.id;
+    }
+    await prisma.attachment.create({
+      data: {
+        resourceKind: AttachmentResourceKind.EXTERNAL_URL,
+        externalUrl: url,
+        memberOutputId,
+        contributorUserId: mo.userId,
+        previousVersionId,
+        fileName,
+        mimeType: "text/uri-list",
+        sizeBytes: 0,
+        storageKey: null,
+        blobUrl: null,
+        uploadedById: user.id,
+        ...meta,
+      },
+    });
+    revalidatePath(`/staff/${mo.userId}`);
+  }
 }

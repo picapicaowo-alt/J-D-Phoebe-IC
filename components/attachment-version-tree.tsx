@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { AttachmentResourceKind } from "@prisma/client";
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,8 @@ export type AttachmentVersionRow = {
   createdAt: Date;
   /** Optional one-line note shown after the file name (e.g. attachment description). */
   description?: string | null;
+  resourceKind?: AttachmentResourceKind;
+  externalUrl?: string | null;
 };
 
 function allChains(rows: AttachmentVersionRow[]): AttachmentVersionRow[][] {
@@ -56,26 +59,34 @@ export function AttachmentVersionTree({
         >
           <div className="font-medium text-[hsl(var(--muted))]">{t(locale, "attVersionChain")}</div>
           <ul className="space-y-1">
-            {chain.map((row, i) => (
-              <li key={row.id} className="flex flex-wrap items-center gap-2" style={{ paddingLeft: i * 12 }}>
-                <span className="text-[hsl(var(--muted))]">{i === 0 ? t(locale, "attHead") : "└"}</span>
-                <Link className="text-[hsl(var(--accent))] underline" href={`/api/attachments/${row.id}`}>
-                  {row.fileName}
-                </Link>
-                {row.description ? (
-                  <span className="text-[hsl(var(--muted))]"> — {row.description}</span>
-                ) : null}
-                <span className="text-[hsl(var(--muted))]">{row.createdAt.toISOString().slice(0, 10)}</span>
-                {showTrash ? (
-                  <form action={softDeleteAttachmentAction} className="inline">
-                    <input type="hidden" name="id" value={row.id} />
-                    <Button type="submit" variant="secondary" className="h-6 px-1.5 text-[10px]">
-                      {t(locale, "attMoveTrash")}
-                    </Button>
-                  </form>
-                ) : null}
-              </li>
-            ))}
+            {chain.map((row, i) => {
+              const isUrl = row.resourceKind === "EXTERNAL_URL" && row.externalUrl;
+              const href = isUrl ? row.externalUrl! : `/api/attachments/${row.id}`;
+              return (
+                <li key={row.id} className="flex flex-wrap items-center gap-2" style={{ paddingLeft: i * 12 }}>
+                  <span className="text-[hsl(var(--muted))]">{i === 0 ? t(locale, "attHead") : "└"}</span>
+                  <Link
+                    className="text-[hsl(var(--accent))] underline"
+                    href={href}
+                    {...(isUrl ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                  >
+                    {row.fileName}
+                  </Link>
+                  {row.description ? (
+                    <span className="text-[hsl(var(--muted))]"> — {row.description}</span>
+                  ) : null}
+                  <span className="text-[hsl(var(--muted))]">{row.createdAt.toISOString().slice(0, 10)}</span>
+                  {showTrash ? (
+                    <form action={softDeleteAttachmentAction} className="inline">
+                      <input type="hidden" name="id" value={row.id} />
+                      <Button type="submit" variant="secondary" className="h-6 px-1.5 text-[10px]">
+                        {t(locale, "attMoveTrash")}
+                      </Button>
+                    </form>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ))}

@@ -8,7 +8,7 @@ export function Button({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" }) {
   const styles =
     variant === "primary"
-      ? "bg-[hsl(var(--accent))] text-white hover:opacity-90"
+      ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-contrast))] hover:opacity-90"
       : variant === "secondary"
         ? "bg-[hsl(var(--card))] border border-[hsl(var(--border))] hover:bg-black/5 dark:hover:bg-white/5"
         : "hover:bg-black/5 dark:hover:bg-white/5";

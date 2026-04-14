@@ -32,8 +32,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return new NextResponse("Forbidden", { status: 403 });
   }
 
+  if (att.resourceKind === "EXTERNAL_URL" && att.externalUrl) {
+    return NextResponse.redirect(att.externalUrl);
+  }
+
   if (att.blobUrl) {
     return NextResponse.redirect(att.blobUrl);
+  }
+
+  if (!att.storageKey) {
+    return new NextResponse("No file for this resource", { status: 404 });
   }
 
   const abs = path.join(process.cwd(), att.storageKey);

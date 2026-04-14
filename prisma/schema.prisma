@@ -63,6 +63,12 @@ enum WorkflowEdgeKind {
   LOOPBACK
 }
 
+/// Phase 1 uses EXTERNAL_URL; FILE preserves legacy uploads and future binary assets.
+enum AttachmentResourceKind {
+  FILE
+  EXTERNAL_URL
+}
+
 enum AuditEntityType {
   ORG_GROUP
   COMPANY
@@ -204,6 +210,8 @@ model Company {
   name             String
   companyType      String?
   introduction     String?
+  /// Public URL or app-relative path to uploaded logo (internal identity).
+  logoUrl          String?
   status           CompanyStatus  @default(ACTIVE)
   archivedAt       DateTime?
   deletedAt        DateTime?
@@ -227,6 +235,10 @@ model User {
   timezone      String    @default("UTC")
   active        Boolean   @default(true)
   isSuperAdmin  Boolean   @default(false)
+  /// Public URL or app-relative path to uploaded avatar.
+  avatarUrl     String?
+  /// First-login companion picker completed; null means redirect to onboarding.
+  companionIntroCompletedAt DateTime?
   deletedAt     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -465,10 +477,14 @@ model Attachment {
   contributorUserId  String?
   memberOutputId     String?
   previousVersionId String?
+  resourceKind       AttachmentResourceKind @default(FILE)
+  /// When resourceKind is EXTERNAL_URL, this is the canonical href (Drive, docs, etc.).
+  externalUrl        String?
   fileName           String
   mimeType           String?
   sizeBytes          Int       @default(0)
-  storageKey         String
+  /// Required for FILE; null for EXTERNAL_URL until uploads return in a later phase.
+  storageKey         String?
   blobUrl            String?
   description        String?
   labels             String?
@@ -592,9 +608,12 @@ model CompanionProfile {
   id        String           @id @default(cuid())
   userId    String           @unique
   species   CompanionSpecies @default(BUNNY)
+  /// Canonical manifest id (bird, bear, …); mirrors species for future growth systems.
+  companionManifestId String?
   name      String?
   mood      String           @default("CURIOUS")
   level     Int              @default(1)
+  selectedAt DateTime        @default(now())
   updatedAt DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

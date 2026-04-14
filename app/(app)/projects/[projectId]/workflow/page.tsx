@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Edge, Node } from "@xyflow/react";
-import { uploadWorkflowAttachmentAction } from "@/app/actions/attachments";
+import { addExternalResourceLinkAction } from "@/app/actions/attachments";
 import { getLocale } from "@/lib/locale";
 import { t, tWorkflowNodeType, tWorkflowNodeStatus } from "@/lib/messages";
 import { requireUser } from "@/lib/auth";
@@ -31,6 +31,7 @@ export default async function ProjectWorkflowPage({ params }: { params: Promise<
         include: {
           assignees: { include: { user: true } },
           attachments: { where: { deletedAt: null } },
+          parent: { select: { id: true, title: true } },
         },
         orderBy: { sortOrder: "asc" },
       },
@@ -48,7 +49,7 @@ export default async function ProjectWorkflowPage({ params }: { params: Promise<
     position: { x: n.posX, y: n.posY },
     data: {
       label: `${n.title}`,
-      subtitle: `${tWorkflowNodeType(locale, n.nodeType)} · ${tWorkflowNodeStatus(locale, n.status)}`,
+      subtitle: `${n.parent ? `${n.parent.title} › ` : ""}${tWorkflowNodeType(locale, n.nodeType)} · ${tWorkflowNodeStatus(locale, n.status)}`,
       assignees: n.assignees
         .map((a) => a.user)
         .filter((u) => !u.deletedAt)
@@ -97,7 +98,11 @@ export default async function ProjectWorkflowPage({ params }: { params: Promise<
         <ul className="space-y-4 text-sm">
           {project.nodes.map((n) => (
             <li key={n.id} className="rounded-lg border border-[hsl(var(--border))] p-3">
-              <div className="font-medium">{n.title}</div>
+              <div className="font-medium">
+                <Link className="hover:underline" href={`/projects/${project.id}/nodes/${n.id}`}>
+                  {n.title}
+                </Link>
+              </div>
               <div className="mt-2 text-xs text-[hsl(var(--muted))]">
                 {n.attachments.length ? (
                   <AttachmentVersionTree
@@ -106,7 +111,12 @@ export default async function ProjectWorkflowPage({ params }: { params: Promise<
                       previousVersionId: a.previousVersionId,
                       fileName: a.fileName,
                       createdAt: a.createdAt,
-                      description: `${a.sizeBytes} ${t(locale, "wfBytes")}`,
+                      resourceKind: a.resourceKind,
+                      externalUrl: a.externalUrl,
+                      description:
+                        a.resourceKind === "EXTERNAL_URL"
+                          ? a.description
+                          : `${a.sizeBytes} ${t(locale, "wfBytes")}`,
                     }))}
                     locale={locale}
                     showTrash={canEditGraph}
@@ -117,30 +127,21 @@ export default async function ProjectWorkflowPage({ params }: { params: Promise<
               </div>
               {canEditGraph ? (
                 <form
-                  action={uploadWorkflowAttachmentAction}
-                  encType="multipart/form-data"
+                  action={addExternalResourceLinkAction}
                   className="mt-3 grid gap-2 border-t border-[hsl(var(--border))] pt-3 md:grid-cols-2"
                 >
                   <input type="hidden" name="workflowNodeId" value={n.id} />
                   <div className="space-y-1 md:col-span-2">
-                    <label className="text-xs font-medium">{t(locale, "btnUpload")}</label>
-                    <Input type="file" name="file" required className="max-w-xs text-xs" />
+                    <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
+                    <Input name="externalUrl" type="url" required placeholder="https://..." className="max-w-md text-xs" />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">{t(locale, "commonTitleEn")}</label>
-                    <Input name="titleEn" className="text-xs" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">{t(locale, "commonTitleZh")}</label>
-                    <Input name="titleZh" className="text-xs" />
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
+                    <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
                     <Input name="description" className="text-xs" />
-                  </div>
-                  <div className="space-y-1 md:col-span-2">
-                    <label className="text-xs font-medium">{t(locale, "commonLabels")}</label>
-                    <Input name="labels" className="text-xs" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
@@ -159,7 +160,7 @@ export default async function ProjectWorkflowPage({ params }: { params: Promise<
                   </div>
                   <div className="md:col-span-2">
                     <Button type="submit" variant="secondary" className="h-8 text-xs">
-                      {t(locale, "btnUpload")}
+                      {t(locale, "resAddLink")}
                     </Button>
                   </div>
                 </form>

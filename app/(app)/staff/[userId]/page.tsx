@@ -10,11 +10,9 @@ import {
   removeProjectMembershipAction,
   updateStaffAction,
 } from "@/app/actions/staff";
-import {
-  createMemberOutputWithAttachmentAction,
-  updateMemberOutputMetaAction,
-  uploadMemberOutputVersionAction,
-} from "@/app/actions/member-output";
+import { removeUserAvatarAction, uploadUserAvatarAction } from "@/app/actions/profile-media";
+import { addExternalResourceLinkAction } from "@/app/actions/attachments";
+import { createMemberOutputWithAttachmentAction, updateMemberOutputMetaAction } from "@/app/actions/member-output";
 import { requireUser } from "@/lib/auth";
 import { canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
@@ -30,6 +28,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AbilityRadar } from "@/components/ability-radar";
+import { UserFace } from "@/components/user-face";
 import { FeedbackSecondarySelect } from "@/components/feedback-secondary-select";
 import { AttachmentVersionTree } from "@/components/attachment-version-tree";
 
@@ -146,11 +145,33 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
         / {t(locale, "staffProfile")}
       </div>
 
-      <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <UserFace name={target.name} avatarUrl={target.avatarUrl} size={56} />
+        <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
+      </div>
 
       {canEditProfile ? (
         <Card className="space-y-4 p-4">
           <CardTitle>{t(locale, "staffProfile")}</CardTitle>
+          <div className="space-y-2 border-b border-[hsl(var(--border))] pb-4">
+            <p className="text-xs font-medium">{t(locale, "profileAvatarLabel")}</p>
+            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileAvatarHelp")}</p>
+            <form action={uploadUserAvatarAction} encType="multipart/form-data" className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="userId" value={target.id} />
+              <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" className="max-w-xs text-xs" />
+              <Button type="submit" variant="secondary" className="h-9 text-xs">
+                {t(locale, "btnSave")}
+              </Button>
+            </form>
+            {target.avatarUrl ? (
+              <form action={removeUserAvatarAction}>
+                <input type="hidden" name="userId" value={target.id} />
+                <Button type="submit" variant="secondary" className="h-8 text-xs">
+                  {t(locale, "profileAvatarRemove")}
+                </Button>
+              </form>
+            ) : null}
+          </div>
           <form action={updateStaffAction} className="space-y-3">
             <input type="hidden" name="userId" value={target.id} />
             <div className="space-y-1">
@@ -293,6 +314,8 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                         previousVersionId: f.previousVersionId,
                         fileName: f.fileName,
                         createdAt: f.createdAt,
+                        resourceKind: f.resourceKind,
+                        externalUrl: f.externalUrl,
                       }))}
                       locale={locale}
                       showTrash={canEditProfile}
@@ -303,31 +326,19 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                 )}
                 {canEditProfile ? (
                   <div className="mt-3 space-y-3 border-t border-[hsl(var(--border))] pt-3">
-                    <form
-                      action={uploadMemberOutputVersionAction}
-                      encType="multipart/form-data"
-                      className="grid gap-2 md:grid-cols-2"
-                    >
+                    <form action={addExternalResourceLinkAction} className="grid gap-2 md:grid-cols-2">
                       <input type="hidden" name="memberOutputId" value={mo.id} />
                       <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs font-medium">{t(locale, "staffMoUploadVersion")}</label>
-                        <Input type="file" name="file" required className="text-xs" />
+                        <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
+                        <Input name="externalUrl" type="url" required placeholder="https://..." className="text-xs" />
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium">{t(locale, "commonTitleEn")}</label>
-                        <Input name="titleEn" className="text-xs" />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium">{t(locale, "commonTitleZh")}</label>
-                        <Input name="titleZh" className="text-xs" />
+                      <div className="space-y-1 md:col-span-2">
+                        <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
+                        <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
                       </div>
                       <div className="space-y-1 md:col-span-2">
                         <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
                         <Input name="description" className="text-xs" />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs font-medium">{t(locale, "commonLabels")}</label>
-                        <Input name="labels" className="text-xs" />
                       </div>
                       <div className="space-y-1 md:col-span-2">
                         <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
@@ -346,7 +357,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                       </div>
                       <div className="md:col-span-2">
                         <Button type="submit" variant="secondary" className="h-8 text-xs">
-                          {t(locale, "btnUpload")}
+                          {t(locale, "resAddLink")}
                         </Button>
                       </div>
                     </form>
@@ -403,11 +414,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
           <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
         )}
         {canEditProfile ? (
-          <form
-            action={createMemberOutputWithAttachmentAction}
-            encType="multipart/form-data"
-            className="grid gap-2 border-t border-[hsl(var(--border))] pt-3 md:grid-cols-2"
-          >
+          <form action={createMemberOutputWithAttachmentAction} className="grid gap-2 border-t border-[hsl(var(--border))] pt-3 md:grid-cols-2">
             <input type="hidden" name="userId" value={target.id} />
             <div className="space-y-1 md:col-span-2">
               <label className="text-xs font-medium">{t(locale, "staffMoNewTitle")}</label>
@@ -446,10 +453,12 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
               </Select>
             </div>
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">
-                {t(locale, "btnUpload")} ({t(locale, "commonOptional")})
-              </label>
-              <Input type="file" name="file" className="text-xs" />
+              <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
+              <Input name="externalUrl" type="url" placeholder="https://drive.google.com/..." className="text-xs" />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
+              <Input name="linkLabel" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
             </div>
             <div className="md:col-span-2">
               <Button type="submit" variant="secondary" className="h-8 text-xs">

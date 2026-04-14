@@ -22,28 +22,11 @@ export default async function KnowledgeHubPage() {
   const user = (await requireUser()) as AccessUser;
   if (!(await userHasPermission(user, "knowledge.read"))) redirect("/home");
   const locale = await getLocale();
+  const canCreate = await userHasPermission(user, "knowledge.create");
 
-  const [recent, reused, mine, projects, companies] = await Promise.all([
-    prisma.knowledgeAsset.findMany({
-      where: { deletedAt: null },
-      include: { author: true, project: true },
-      orderBy: { createdAt: "desc" },
-      take: 6,
-    }),
-    prisma.knowledgeAsset.findMany({
-      where: { deletedAt: null },
-      include: { author: true, project: true },
-      orderBy: { reuseCount: "desc" },
-      take: 6,
-    }),
-    prisma.knowledgeAsset.findMany({
-      where: { deletedAt: null, authorId: user.id },
-      include: { author: true, project: true },
-      orderBy: { updatedAt: "desc" },
-      take: 6,
-    }),
-    prisma.project.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" }, take: 60 }),
-    prisma.company.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" }, take: 40 }),
+  const [projectCount, companyCount] = await Promise.all([
+    prisma.project.count({ where: { deletedAt: null } }),
+    prisma.company.count({ where: { deletedAt: null } }),
   ]);
 
   return (
@@ -53,19 +36,45 @@ export default async function KnowledgeHubPage() {
         <p className="mt-1 max-w-2xl text-sm text-[hsl(var(--muted))]">{t(locale, "knowledgeHubSubtitle")}</p>
       </div>
 
-      <Card className="space-y-3 p-4">
-        <CardTitle>{t(locale, "knowledgeSearch")}</CardTitle>
-        <form action="/knowledge/browse" method="get" className="flex flex-wrap gap-2">
-          <Input name="q" placeholder={t(locale, "kbPlaceholderKeyword")} className="max-w-md flex-1" />
-          <Button type="submit" variant="secondary">{t(locale, "knowledgeSearch")}</Button>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="space-y-3 p-4 lg:col-span-1">
+          <CardTitle>{t(locale, "knowledgeSearch")}</CardTitle>
+          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbSearchLandingHint")}</p>
+          <form action="/knowledge/browse" method="get" className="flex flex-col gap-2 sm:flex-row">
+            <Input name="q" placeholder={t(locale, "kbPlaceholderKeyword")} className="min-w-0 flex-1" />
+            <Button type="submit" variant="secondary">
+              {t(locale, "knowledgeSearch")}
+            </Button>
+          </form>
+        </Card>
+
+        <Card id="knowledge-add-section" className="scroll-mt-24 space-y-3 p-4 lg:col-span-1">
+          <CardTitle>{t(locale, "knowledgeAddNew")}</CardTitle>
+          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbAddNewLandingHint")}</p>
+          {canCreate ? (
+            <Link href="/knowledge/browse#knowledge-create">
+              <Button type="button" className="w-full sm:w-auto">
+                {t(locale, "knowledgeAddNew")}
+              </Button>
+            </Link>
+          ) : (
+            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbNoCreatePermission")}</p>
+          )}
+        </Card>
+
+        <Card className="space-y-2 p-4 lg:col-span-1">
+          <CardTitle>{t(locale, "knowledgeBrowse")}</CardTitle>
+          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbBrowseLandingHint")}</p>
           <Link href="/knowledge/browse">
-            <Button type="button" variant="secondary">{t(locale, "knowledgeSeeAll")}</Button>
+            <Button type="button" variant="secondary" className="w-full sm:w-auto">
+              {t(locale, "knowledgeSeeAll")}
+            </Button>
           </Link>
-        </form>
-      </Card>
+        </Card>
+      </div>
 
       <div>
-        <h2 className="text-sm font-semibold tracking-wide text-[hsl(var(--muted))]">{t(locale, "knowledgeBrowse")}</h2>
+        <h2 className="text-sm font-semibold tracking-wide text-[hsl(var(--muted))]">{t(locale, "kbBrowseByCategoryTitle")}</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {ORDER.map((layer) => (
             <Link key={layer} href={`/knowledge/browse?layer=${layer}`}>
@@ -78,57 +87,8 @@ export default async function KnowledgeHubPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold tracking-wide text-[hsl(var(--muted))]">{t(locale, "knowledgeAddNew")}</h2>
-        <Link href="/knowledge/browse">
-          <Button type="button" variant="secondary">{t(locale, "knowledgeAddNew")} (form)</Button>
-        </Link>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="space-y-2 p-4">
-          <CardTitle className="text-base">{t(locale, "knowledgeRecent")}</CardTitle>
-          <ul className="space-y-2 text-sm">
-            {recent.map((a) => (
-              <li key={a.id} className="rounded-md border border-[hsl(var(--border))] px-2 py-1">
-                <Link className="font-medium hover:underline" href={`/knowledge/browse?q=${encodeURIComponent(a.title)}`}>
-                  {a.title}
-                </Link>
-                <div className="text-xs text-[hsl(var(--muted))]">{a.author.name}</div>
-              </li>
-            ))}
-          </ul>
-        </Card>
-        <Card className="space-y-2 p-4">
-          <CardTitle className="text-base">{t(locale, "knowledgeReused")}</CardTitle>
-          <ul className="space-y-2 text-sm">
-            {reused.map((a) => (
-              <li key={a.id} className="rounded-md border border-[hsl(var(--border))] px-2 py-1">
-                <span className="font-medium">{a.title}</span>
-                <div className="text-xs text-[hsl(var(--muted))]">Reused {a.reuseCount}×</div>
-              </li>
-            ))}
-          </ul>
-        </Card>
-        <Card className="space-y-2 p-4">
-          <CardTitle className="text-base">{t(locale, "knowledgeMine")}</CardTitle>
-          <ul className="space-y-2 text-sm">
-            {mine.length ? (
-              mine.map((a) => (
-                <li key={a.id} className="rounded-md border border-[hsl(var(--border))] px-2 py-1">
-                  <span className="font-medium">{a.title}</span>
-                  <div className="text-xs text-[hsl(var(--muted))]">{tKnowledgeLayer(locale, a.layer)}</div>
-                </li>
-              ))
-            ) : (
-              <li className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbNoContributions")}</li>
-            )}
-          </ul>
-        </Card>
-      </div>
-
       <p className="text-xs text-[hsl(var(--muted))]">
-        {projects.length} {t(locale, "kbProjectsUnit")} · {companies.length} {t(locale, "kbCompaniesUnit")}{" "}
+        {projectCount} {t(locale, "kbProjectsUnit")} · {companyCount} {t(locale, "kbCompaniesUnit")}{" "}
         {t(locale, "kbIndexedForFilters")}
       </p>
     </div>

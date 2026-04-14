@@ -88,6 +88,9 @@ export async function createFeedbackEventAction(formData: FormData) {
   });
 
   revalidatePath(`/staff/${toUserId}`);
-  if (projectId) revalidatePath(`/projects/${projectId}`);
+  if (projectId) {
+    revalidatePath(`/projects/${projectId}`);
+    revalidatePath(`/projects/${projectId}/growth`);
+  }
   revalidatePath("/home");
 }

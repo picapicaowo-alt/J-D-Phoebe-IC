@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import type { CompanionSpecies } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import type { AccessUser } from "@/lib/access";
@@ -17,14 +18,32 @@ export async function updateCompanionAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
   const species = must(formData, "species") as CompanionSpecies;
   const name = String(formData.get("name") ?? "").trim() || null;
-  const allowed = new Set(getCompanionManifest().map((e) => e.species));
+  const manifest = getCompanionManifest();
+  const allowed = new Set(manifest.map((e) => e.species));
   if (!allowed.has(species)) throw new Error("Invalid companion species");
+  const manifestId = manifest.find((e) => e.species === species)?.id ?? null;
+  const now = new Date();
 
   await prisma.companionProfile.upsert({
     where: { userId: actor.id },
-    create: { userId: actor.id, species, name, mood: "CALM", level: 1 },
-    update: { species, name },
+    create: {
+      userId: actor.id,
+      species,
+      companionManifestId: manifestId,
+      name,
+      mood: "CALM",
+      level: 1,
+      selectedAt: now,
+    },
+    update: { species, companionManifestId: manifestId, name, selectedAt: now },
+  });
+  await prisma.user.update({
+    where: { id: actor.id },
+    data: { companionIntroCompletedAt: now },
   });
   revalidatePath("/home");
   revalidatePath(`/staff/${actor.id}`);
+  revalidatePath("/onboarding/companion");
+  const next = String(formData.get("next") ?? "").trim();
+  if (next === "home") redirect("/home");
 }

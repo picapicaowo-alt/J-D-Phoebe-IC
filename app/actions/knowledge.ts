@@ -20,7 +20,12 @@ export async function createKnowledgeAssetAction(formData: FormData) {
   await assertPermission(actor, "knowledge.create");
 
   const title = req(formData, "title");
-  const content = req(formData, "content");
+  const contentRaw = String(formData.get("content") ?? "").trim();
+  const sourceUrlEarly = String(formData.get("sourceUrl") ?? "").trim() || null;
+  const content =
+    contentRaw ||
+    (sourceUrlEarly ? "(External resource — see primary link below.)" : "");
+  if (!content) throw new Error("Add body text or a primary resource URL.");
   const layer = req(formData, "layer") as KnowledgeLayer;
   const projectIdRaw = String(formData.get("projectId") ?? "").trim();
   const projectId = projectIdRaw || null;
@@ -29,7 +34,7 @@ export async function createKnowledgeAssetAction(formData: FormData) {
   const titleZh = String(formData.get("titleZh") ?? "").trim() || null;
   const summary = String(formData.get("summary") ?? "").trim() || null;
   const tags = String(formData.get("tags") ?? "").trim() || null;
-  const sourceUrl = String(formData.get("sourceUrl") ?? "").trim() || null;
+  const sourceUrl = sourceUrlEarly;
   const language = String(formData.get("language") ?? "").trim() || "mixed";
 
   let companyId: string | null = companyIdRaw || null;
@@ -75,16 +80,21 @@ export async function updateKnowledgeAssetAction(formData: FormData) {
 
   const id = req(formData, "id");
   const title = req(formData, "title");
-  const content = req(formData, "content");
   const summary = String(formData.get("summary") ?? "").trim() || null;
   const tags = String(formData.get("tags") ?? "").trim() || null;
-  const sourceUrl = String(formData.get("sourceUrl") ?? "").trim() || null;
 
   const existing = await prisma.knowledgeAsset.findFirst({ where: { id, deletedAt: null } });
   if (!existing) throw new Error("Knowledge asset not found");
   if (!actor.isSuperAdmin && existing.authorId !== actor.id) {
     throw new Error("Only the author or super admin can edit this asset.");
   }
+
+  const contentRaw = String(formData.get("content") ?? "").trim();
+  const sourceUrl = String(formData.get("sourceUrl") ?? "").trim() || null;
+  const content =
+    contentRaw ||
+    (sourceUrl ? "(External resource — see primary link below.)" : existing.content);
+  if (!content) throw new Error("Add body text or a primary resource URL.");
 
   const titleEn = String(formData.get("titleEn") ?? "").trim() || null;
   const titleZh = String(formData.get("titleZh") ?? "").trim() || null;

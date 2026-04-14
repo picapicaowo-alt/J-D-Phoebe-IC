@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { softDeleteCompanyAction } from "@/app/actions/trash";
 import { archiveCompanyAction, restoreCompanyAction, updateCompanyAction } from "@/app/actions/company";
+import { removeCompanyLogoAction, uploadCompanyLogoAction } from "@/app/actions/profile-media";
 import { requireUser } from "@/lib/auth";
 import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
@@ -59,7 +60,17 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
         / {t(locale, "breadcrumbDetail")}
       </div>
 
-      <div>
+      <div className="flex flex-wrap items-center gap-3">
+        {company.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={company.logoUrl}
+            alt=""
+            width={56}
+            height={56}
+            className="h-14 w-14 shrink-0 rounded-md border border-[hsl(var(--border))] bg-white object-contain p-1 dark:bg-zinc-900"
+          />
+        ) : null}
         <h1 className="text-2xl font-semibold tracking-tight">{company.name}</h1>
         <p className="mt-1 text-sm text-[hsl(var(--muted))]">
           {t(locale, "companyParentPrefix")}: {company.orgGroup.name} · {tCompanyStatus(locale, company.status)}
@@ -69,6 +80,25 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
       {canManage ? (
         <Card className="space-y-4 p-4">
           <CardTitle>{t(locale, "companyEditCardTitle")}</CardTitle>
+          <div className="space-y-2 border-b border-[hsl(var(--border))] pb-4">
+            <p className="text-xs font-medium">{t(locale, "profileLogoLabel")}</p>
+            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileLogoHelp")}</p>
+            <form action={uploadCompanyLogoAction} encType="multipart/form-data" className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="companyId" value={company.id} />
+              <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" className="max-w-xs text-xs" />
+              <Button type="submit" variant="secondary" className="h-9 text-xs">
+                {t(locale, "btnSave")}
+              </Button>
+            </form>
+            {company.logoUrl ? (
+              <form action={removeCompanyLogoAction}>
+                <input type="hidden" name="companyId" value={company.id} />
+                <Button type="submit" variant="secondary" className="h-8 text-xs">
+                  {t(locale, "profileLogoRemove")}
+                </Button>
+              </form>
+            ) : null}
+          </div>
           <form action={updateCompanyAction} className="space-y-3">
             <input type="hidden" name="companyId" value={company.id} />
             <div className="space-y-1">

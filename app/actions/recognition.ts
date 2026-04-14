@@ -81,6 +81,7 @@ export async function createRecognitionAction(formData: FormData) {
   });
 
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/recognition`);
   revalidatePath(`/staff/${toUserId}`);
   revalidatePath("/home");
 }

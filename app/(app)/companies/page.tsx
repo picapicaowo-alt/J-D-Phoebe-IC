@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getLocale } from "@/lib/locale";
-import { t, tCompanyStatus } from "@/lib/messages";
+import { t } from "@/lib/messages";
+import { CompaniesBrowser } from "@/components/companies-browser";
 
 export default async function CompaniesPage() {
   const user = (await requireUser()) as AccessUser;
@@ -28,62 +29,60 @@ export default async function CompaniesPage() {
   const canCreate =
     (await userHasPermission(user, "company.create")) && (isSuperAdmin(user) || isGroupAdmin(user, group.id));
 
+  const rows = companies.map((c) => ({
+    id: c.id,
+    name: c.name,
+    status: c.status,
+    companyType: c.companyType,
+    introduction: c.introduction,
+    logoUrl: c.logoUrl,
+    projects: c._count.projects,
+    members: c._count.memberships,
+  }));
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t(locale, "companiesTitle")}</h1>
-          <p className="mt-2 max-w-2xl text-sm text-[hsl(var(--muted))]">{t(locale, "companiesPageLead")}</p>
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{t(locale, "companiesTitle")}</h1>
+          <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">{t(locale, "companiesPageLead")}</p>
         </div>
         {canCreate ? (
           <Link href="/companies/new">
-            <Button type="button">{t(locale, "companiesNew")}</Button>
+            <Button type="button" className="rounded-xl px-4 shadow-sm">
+              + {t(locale, "companiesNew")}
+            </Button>
           </Link>
         ) : null}
       </div>
 
       {canCreate ? (
-        <Card className="space-y-3 p-4">
+        <Card className="space-y-3 border-zinc-200/90 p-5">
           <CardTitle>{t(locale, "companiesQuickCreate")}</CardTitle>
           <form action={createCompanyAction} className="grid gap-3 md:grid-cols-2">
             <input type="hidden" name="orgGroupId" value={group.id} />
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "commonName")}</label>
-              <Input name="name" required placeholder={t(locale, "companiesPlaceholderEntityName")} />
+              <label className="text-xs font-medium text-zinc-500">{t(locale, "commonName")}</label>
+              <Input name="name" required placeholder={t(locale, "companiesPlaceholderEntityName")} className="rounded-xl border-zinc-200" />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "companiesTypeCategory")}</label>
-              <Input name="companyType" placeholder={t(locale, "companiesTypePlaceholder")} />
+              <label className="text-xs font-medium text-zinc-500">{t(locale, "companiesTypeCategory")}</label>
+              <Input name="companyType" placeholder={t(locale, "companiesTypePlaceholder")} className="rounded-xl border-zinc-200" />
             </div>
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "commonIntroduction")}</label>
-              <Input name="introduction" placeholder={t(locale, "companiesIntroShort")} />
+              <label className="text-xs font-medium text-zinc-500">{t(locale, "commonIntroduction")}</label>
+              <Input name="introduction" placeholder={t(locale, "companiesIntroShort")} className="rounded-xl border-zinc-200" />
             </div>
             <div className="md:col-span-2">
-              <Button type="submit">{t(locale, "companiesCreateCompanyBtn")}</Button>
+              <Button type="submit" className="rounded-xl">
+                {t(locale, "companiesCreateCompanyBtn")}
+              </Button>
             </div>
           </form>
         </Card>
       ) : null}
 
-      <div className="grid gap-3">
-        {companies.map((c) => (
-          <Card key={c.id} className="flex flex-wrap items-center justify-between gap-4 p-4">
-            <div>
-              <Link className="text-base font-semibold hover:underline" href={`/companies/${c.id}`}>
-                {c.name}
-              </Link>
-              <div className="mt-1 text-xs text-[hsl(var(--muted))]">
-                {tCompanyStatus(locale, c.status)} · {c._count.projects} {t(locale, "companiesCountProjects")} ·{" "}
-                {c._count.memberships} {t(locale, "companiesCountStaffLinks")}
-              </div>
-            </div>
-            <Link className="text-sm font-medium text-[hsl(var(--accent))] hover:underline" href={`/companies/${c.id}`}>
-              {t(locale, "companiesOpen")}
-            </Link>
-          </Card>
-        ))}
-      </div>
+      <CompaniesBrowser companies={rows} locale={locale} />
     </div>
   );
 }

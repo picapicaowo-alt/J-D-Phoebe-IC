@@ -3,22 +3,25 @@
 @tailwind utilities;
 
 :root {
-  --background: 210 20% 98%;
+  /* Bento-style light shell: soft gray canvas, white cards, black primary actions */
+  --background: 220 14% 96%;
   --foreground: 222 47% 11%;
   --card: 0 0% 100%;
-  --border: 214 32% 91%;
-  --muted: 215 16% 47%;
-  --accent: 221 83% 53%;
+  --border: 220 13% 91%;
+  --muted: 220 9% 42%;
+  --accent: 0 0% 9%;
+  --accent-contrast: 0 0% 100%;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: 222 47% 11%;
+    --background: 222 47% 8%;
     --foreground: 210 40% 98%;
-    --card: 222 47% 14%;
-    --border: 217 19% 27%;
-    --muted: 215 20% 75%;
-    --accent: 217 91% 60%;
+    --card: 222 47% 12%;
+    --border: 217 19% 22%;
+    --muted: 215 16% 68%;
+    --accent: 0 0% 96%;
+    --accent-contrast: 0 0% 9%;
   }
 }
 

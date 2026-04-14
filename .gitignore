@@ -37,6 +37,9 @@ yarn-error.log*
 /uploads/**
 !uploads/.gitkeep
 
+# public image uploads (avatars / logos when Blob token is absent)
+public/uploads/**
+
 # vercel
 .vercel
 

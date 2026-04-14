@@ -21,7 +21,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const body = (
-    <body className={`${geistSans.variable} ${geistMono.variable} min-h-dvh antialiased`}>
+    <body
+      className={`${geistSans.variable} ${geistMono.variable} min-h-dvh font-sans antialiased [font-feature-settings:'cv02','cv03','cv04','cv11']`}
+    >
       {isClerkEnabled() ? <ClerkShell>{children}</ClerkShell> : children}
     </body>
   );
