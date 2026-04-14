@@ -75,10 +75,12 @@ enum AuditEntityType {
   ATTACHMENT
   PERMISSION
   RECOGNITION
+  FEEDBACK
   PERFORMANCE
   COMPANION
   KNOWLEDGE
   PROJECT_RELATION
+  SCORE_LEDGER
 }
 
 enum RecognitionMode {
@@ -94,18 +96,49 @@ enum RecognitionTagCategory {
   CREATIVITY
   CULTURE
   STABILITY
-  LEADERSHIP
+  GUIDANCE
 }
 
 enum CompanionSpecies {
-  RABBIT
-  HAMSTER
-  CAT
-  DOG
   BIRD
-  PENGUIN
   BEAR
-  OTTER
+  PENGUIN
+  DOG
+  CAT
+  BEAVER
+  BUNNY
+  HAMSTER
+}
+
+enum FeedbackCategory {
+  COMMUNICATION
+  DELIVERY_QUALITY
+  FOLLOW_THROUGH
+  DOCUMENTATION
+  COLLABORATION_RESPONSIVENESS
+}
+
+enum AbilityDimension {
+  EXECUTION
+  COLLABORATION
+  JUDGMENT
+  CREATIVITY
+  KNOWLEDGE
+  RELIABILITY
+  GUIDANCE
+}
+
+enum ScorePolarity {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+}
+
+enum LeaderboardCategory {
+  EXECUTION
+  COLLABORATION
+  KNOWLEDGE
+  RECOGNITION
 }
 
 enum KnowledgeLayer {
@@ -179,6 +212,7 @@ model Company {
   orgGroup    OrgGroup           @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
   memberships CompanyMembership[]
   projects    Project[]
+  knowledgeAssets KnowledgeAsset[]
 }
 
 model User {
@@ -206,8 +240,13 @@ model User {
   companionProfile   CompanionProfile?
   recognitionsGiven    RecognitionEvent[]    @relation("RecognitionFrom")
   recognitionsReceived RecognitionEvent[]    @relation("RecognitionTo")
+  feedbackGiven        FeedbackEvent[]       @relation("FeedbackFrom")
+  feedbackReceived     FeedbackEvent[]       @relation("FeedbackTo")
+  scoreLedgerEntries   ScoreLedgerEntry[]
   performanceSnapshots PerformanceSnapshot[]
   knowledgeAssets      KnowledgeAsset[]      @relation("KnowledgeAuthor")
+  knowledgeReuses      KnowledgeReuseEvent[] @relation("KnowledgeReuseActor")
+  attachmentsAsContributor Attachment[]      @relation("AttachmentContributor")
 }
 
 model Session {
@@ -304,9 +343,11 @@ model Project {
   nodes       WorkflowNode[]
   edges       WorkflowEdge[]
   recognitions RecognitionEvent[]
+  feedbacks    FeedbackEvent[]
   knowledgeAssets KnowledgeAsset[]
   outgoingRelations ProjectRelation[] @relation("ProjectRelationFrom")
   incomingRelations ProjectRelation[] @relation("ProjectRelationTo")
+  attachments       Attachment[]      @relation("ProjectAttachment")
 
   @@index([companyId])
 }
@@ -370,6 +411,7 @@ model WorkflowNode {
   edgesIn     WorkflowEdge[] @relation("EdgeTo")
   attachments Attachment[]
   recognitions RecognitionEvent[]
+  feedbacks   FeedbackEvent[]
 
   @@index([projectId])
   @@index([layerId])
@@ -411,48 +453,107 @@ model WorkflowEdge {
 }
 
 model Attachment {
-  id           String    @id @default(cuid())
-  workflowNodeId String
-  fileName     String
-  mimeType     String?
-  sizeBytes    Int       @default(0)
-  storageKey   String
-  blobUrl      String?
-  uploadedById String
-  deletedAt    DateTime?
-  createdAt    DateTime  @default(now())
+  id                 String    @id @default(cuid())
+  workflowNodeId     String?
+  knowledgeAssetId   String?
+  projectId          String?
+  contributorUserId  String?
+  fileName           String
+  mimeType           String?
+  sizeBytes          Int       @default(0)
+  storageKey         String
+  blobUrl            String?
+  description        String?
+  labels             String?
+  uploadedById       String
+  deletedAt          DateTime?
+  createdAt          DateTime  @default(now())
 
-  node       WorkflowNode @relation(fields: [workflowNodeId], references: [id], onDelete: Cascade)
-  uploadedBy User         @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+  node          WorkflowNode? @relation(fields: [workflowNodeId], references: [id], onDelete: Cascade)
+  knowledgeAsset KnowledgeAsset? @relation("KnowledgeAttachment", fields: [knowledgeAssetId], references: [id], onDelete: Cascade)
+  project       Project?      @relation("ProjectAttachment", fields: [projectId], references: [id], onDelete: Cascade)
+  contributor   User?         @relation("AttachmentContributor", fields: [contributorUserId], references: [id], onDelete: SetNull)
+  uploadedBy    User          @relation("AttachmentUploader", fields: [uploadedById], references: [id])
 
   @@index([workflowNodeId])
+  @@index([knowledgeAssetId])
+  @@index([projectId])
+  @@index([contributorUserId])
 }
 
 model RecognitionEvent {
-  id            String                 @id @default(cuid())
-  fromUserId    String?
-  toUserId      String
-  projectId     String?
-  workflowNodeId String?
-  mode          RecognitionMode        @default(PUBLIC)
-  tagCategory   RecognitionTagCategory
-  tagLabel      String
-  message       String?
-  createdAt     DateTime               @default(now())
+  id                 String                 @id @default(cuid())
+  fromUserId         String?
+  toUserId           String
+  projectId          String?
+  workflowNodeId     String?
+  knowledgeAssetId   String?
+  mode               RecognitionMode        @default(PUBLIC)
+  tagCategory        RecognitionTagCategory
+  secondaryLabelKey  String               @default("")
+  tagLabel           String?
+  message            String?
+  createdAt          DateTime               @default(now())
 
-  fromUser User?         @relation("RecognitionFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
-  toUser   User          @relation("RecognitionTo", fields: [toUserId], references: [id], onDelete: Cascade)
-  project  Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  node     WorkflowNode? @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
+  fromUser User?          @relation("RecognitionFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUser   User           @relation("RecognitionTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  project  Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  node     WorkflowNode?  @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
+  knowledgeAsset KnowledgeAsset? @relation(fields: [knowledgeAssetId], references: [id], onDelete: SetNull)
 
   @@index([toUserId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([knowledgeAssetId, createdAt])
+}
+
+model FeedbackEvent {
+  id                 String           @id @default(cuid())
+  fromUserId         String?
+  toUserId           String
+  projectId          String?
+  workflowNodeId     String?
+  knowledgeAssetId   String?
+  category           FeedbackCategory
+  secondaryLabelKey  String
+  message            String?
+  createdAt          DateTime         @default(now())
+
+  fromUser User?          @relation("FeedbackFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUser   User           @relation("FeedbackTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  project  Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  node     WorkflowNode?  @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
+  knowledgeAsset KnowledgeAsset? @relation(fields: [knowledgeAssetId], references: [id], onDelete: SetNull)
+
+  @@index([toUserId, createdAt])
+  @@index([projectId, createdAt])
+}
+
+model ScoreLedgerEntry {
+  id                   String               @id @default(cuid())
+  userId               String
+  leaderboardCategory  LeaderboardCategory
+  abilityDimension     AbilityDimension?
+  polarity             ScorePolarity        @default(POSITIVE)
+  delta                Int
+  reasonKey            String
+  sourceType           String
+  sourceId             String?
+  companyId            String?
+  projectId            String?
+  createdAt            DateTime             @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([leaderboardCategory, createdAt])
+  @@index([companyId, createdAt])
   @@index([projectId, createdAt])
 }
 
 model CompanionProfile {
   id        String           @id @default(cuid())
   userId    String           @unique
-  species   CompanionSpecies @default(RABBIT)
+  species   CompanionSpecies @default(BUNNY)
   name      String?
   mood      String           @default("CURIOUS")
   level     Int              @default(1)
@@ -481,24 +582,46 @@ model PerformanceSnapshot {
 model KnowledgeAsset {
   id          String         @id @default(cuid())
   projectId   String?
+  companyId   String?
   authorId    String
   title       String
+  titleEn     String?
+  titleZh     String?
   summary     String?
   content     String
   layer       KnowledgeLayer
   tags        String?
   sourceUrl   String?
+  language    String?        @default("mixed")
   reuseCount  Int            @default(0)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   deletedAt   DateTime?
 
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   author  User     @relation("KnowledgeAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  recognitions RecognitionEvent[]
+  feedbacks    FeedbackEvent[]
+  reuses       KnowledgeReuseEvent[]
+  attachments  Attachment[] @relation("KnowledgeAttachment")
 
   @@index([layer, createdAt])
   @@index([projectId, createdAt])
   @@index([authorId, createdAt])
+  @@index([companyId, createdAt])
+}
+
+model KnowledgeReuseEvent {
+  id               String   @id @default(cuid())
+  knowledgeAssetId String
+  userId           String?
+  createdAt        DateTime @default(now())
+
+  asset KnowledgeAsset @relation(fields: [knowledgeAssetId], references: [id], onDelete: Cascade)
+  user  User?          @relation("KnowledgeReuseActor", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([knowledgeAssetId, createdAt])
 }
 
 model AuditLogEntry {

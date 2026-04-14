@@ -1,9 +1,21 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { createFeedbackEventAction } from "@/app/actions/feedback";
+import { updateCompanionAction } from "@/app/actions/companion";
 import { softDeleteUserAction } from "@/app/actions/trash";
-import { assignCompanyAction, assignProjectAction, updateStaffAction } from "@/app/actions/staff";
+import {
+  assignCompanyAction,
+  assignProjectAction,
+  removeCompanyMembershipAction,
+  removeProjectMembershipAction,
+  updateStaffAction,
+} from "@/app/actions/staff";
 import { requireUser } from "@/lib/auth";
-import { isSuperAdmin, type AccessUser } from "@/lib/access";
+import { canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { getLocale } from "@/lib/locale";
+import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
+import { getCompanionManifest } from "@/lib/companion-manifest";
+import { sumAbilityByUser } from "@/lib/scoring";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
@@ -11,7 +23,8 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AbilityRadar } from "@/components/ability-radar";
-import { labelCompanionSpecies, labelRecognitionCategory } from "@/lib/labels";
+import { FeedbackSecondarySelect } from "@/components/feedback-secondary-select";
+import { labelRecognitionCategory } from "@/lib/labels";
 
 export default async function StaffDetailPage({ params }: { params: Promise<{ userId: string }> }) {
   const actor = (await requireUser()) as AccessUser;
@@ -29,9 +42,16 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
         orderBy: { createdAt: "desc" },
         take: 8,
       },
+      feedbackReceived: {
+        include: { fromUser: true, project: true },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+      },
     },
   });
   if (!target) notFound();
+
+  const locale = await getLocale();
 
   const isAnyCompanyAdmin = actor.companyMemberships.some((m) => m.roleDefinition.key === "COMPANY_ADMIN");
   const isAnyGroupAdmin = actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN");
@@ -69,15 +89,38 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
     !(target.isSuperAdmin && !isSuperAdmin(actor));
 
   const latestScore = target.performanceSnapshots[0] ?? null;
-  const radarPoints = [
-    { label: "Execution", value: latestScore?.executionScore ?? 0 },
-    { label: "Collab", value: latestScore?.collaborationScore ?? 0 },
-    { label: "Thinking", value: Math.round(((latestScore?.executionScore ?? 0) + (latestScore?.knowledgeScore ?? 0)) / 2) },
-    { label: "Creativity", value: Math.round(((latestScore?.knowledgeScore ?? 0) + (latestScore?.recognitionScore ?? 0)) / 2) },
-    { label: "Knowledge", value: latestScore?.knowledgeScore ?? 0 },
-    { label: "Stability", value: Math.round(((latestScore?.executionScore ?? 0) + (latestScore?.collaborationScore ?? 0)) / 2) },
-    { label: "Influence", value: latestScore?.recognitionScore ?? 0 },
+  const until = new Date();
+  const since = new Date(until);
+  since.setUTCDate(since.getUTCDate() - 90);
+  const ability = await sumAbilityByUser(prisma, target.id, since, until);
+  const dimList = [
+    { label: "Execution", value: ability.EXECUTION },
+    { label: "Collaboration", value: ability.COLLABORATION },
+    { label: "Judgment", value: ability.JUDGMENT },
+    { label: "Creativity", value: ability.CREATIVITY },
+    { label: "Knowledge", value: ability.KNOWLEDGE },
+    { label: "Reliability", value: ability.RELIABILITY },
+    { label: "Guidance", value: ability.GUIDANCE },
   ];
+  const radarPoints = dimList.map((d) => ({ label: d.label, value: d.value }));
+  const sorted = [...dimList].sort((a, b) => b.value - a.value);
+  const strengths = sorted.slice(0, 3);
+  const growth = [...sorted].reverse().slice(0, 3);
+
+  const canFeedbackHere =
+    (await userHasPermission(actor, "feedback.submit")) &&
+    (isSuperAdmin(actor) || isAnyGroupAdmin || isAnyCompanyAdmin || isAnyPm);
+  const feedbackProjects = await prisma.project.findMany({
+    where: { deletedAt: null, memberships: { some: { userId: target.id } } },
+    include: { company: true },
+  });
+  const feedbackProjectChoices = feedbackProjects.filter((p) => canViewProject(actor, p));
+
+  const ledgerEvidence = await prisma.scoreLedgerEntry.findMany({
+    where: { userId: target.id },
+    orderBy: { createdAt: "desc" },
+    take: 12,
+  });
 
   return (
     <div className="space-y-8">
@@ -118,27 +161,83 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
 
       <section className="grid gap-4 lg:grid-cols-2">
         <Card className="space-y-3 p-4">
-          <CardTitle>Ability Radar</CardTitle>
+          <CardTitle>Ability radar</CardTitle>
           <AbilityRadar points={radarPoints} />
+          <div className="grid gap-2 text-xs text-[hsl(var(--muted))] md:grid-cols-2">
+            <div>
+              <p className="font-medium text-[hsl(var(--foreground))]">Strengths</p>
+              <ul className="mt-1 list-disc pl-4">
+                {strengths.map((s) => (
+                  <li key={s.label}>{s.label}: {s.value}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium text-[hsl(var(--foreground))]">Growth notes</p>
+              <ul className="mt-1 list-disc pl-4">
+                {growth.map((s) => (
+                  <li key={s.label}>{s.label}: {s.value}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
           {latestScore ? (
-            <p className="text-xs text-[hsl(var(--muted))]">Trend delta this cycle: {latestScore.trendDelta >= 0 ? "+" : ""}{latestScore.trendDelta}</p>
-          ) : (
-            <p className="text-xs text-[hsl(var(--muted))]">No performance snapshot yet.</p>
-          )}
+            <p className="text-xs text-[hsl(var(--muted))]">Snapshot trend delta: {latestScore.trendDelta >= 0 ? "+" : ""}{latestScore.trendDelta}</p>
+          ) : null}
+          <div className="text-xs text-[hsl(var(--muted))]">
+            <p className="font-medium text-[hsl(var(--foreground))]">Needs attention (evidence trail)</p>
+            <ul className="mt-1 space-y-1">
+              {ledgerEvidence.map((e) => (
+                <li key={e.id}>
+                  {e.createdAt.toISOString().slice(0, 10)} · {e.leaderboardCategory} · {e.polarity} · {e.delta}{" "}
+                  <span className="text-[hsl(var(--muted))]">({e.reasonKey})</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </Card>
 
         <Card className="space-y-3 p-4">
           <CardTitle>Companion</CardTitle>
           {target.companionProfile ? (
-            <div className="space-y-1 text-sm">
-              <div className="font-medium">{target.companionProfile.name ?? labelCompanionSpecies(target.companionProfile.species)}</div>
-              <div className="text-xs text-[hsl(var(--muted))]">Species: {labelCompanionSpecies(target.companionProfile.species)}</div>
-              <div className="text-xs text-[hsl(var(--muted))]">Mood: {target.companionProfile.mood}</div>
-              <div className="text-xs text-[hsl(var(--muted))]">Level: {target.companionProfile.level}</div>
+            <div className="flex flex-wrap items-start gap-3 text-sm">
+              {(() => {
+                const asset = getCompanionManifest().find((e) => e.species === target.companionProfile!.species);
+                return asset ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={asset.file} alt="" width={72} height={72} className="h-[72px] w-[72px] rounded-3xl object-contain" />
+                ) : null;
+              })()}
+              <div className="space-y-1">
+                <div className="font-medium">{target.companionProfile.name ?? "Companion"}</div>
+                <div className="text-xs text-[hsl(var(--muted))]">Mood: {target.companionProfile.mood}</div>
+                <div className="text-xs text-[hsl(var(--muted))]">Level: {target.companionProfile.level}</div>
+              </div>
             </div>
           ) : (
             <p className="text-sm text-[hsl(var(--muted))]">No companion selected yet.</p>
           )}
+          {actor.id === target.id ? (
+            <form action={updateCompanionAction} className="mt-2 flex flex-wrap items-end gap-2 border-t pt-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Species</label>
+                <Select name="species" defaultValue={target.companionProfile?.species ?? "BUNNY"}>
+                  {getCompanionManifest().map((e) => (
+                    <option key={e.id} value={e.species}>
+                      {locale === "zh" ? e.name_zh : e.name_en}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Display name</label>
+                <Input name="name" placeholder="Optional" defaultValue={target.companionProfile?.name ?? ""} />
+              </div>
+              <Button type="submit" variant="secondary" className="h-9 text-xs">
+                Save companion
+              </Button>
+            </form>
+          ) : null}
         </Card>
       </section>
 
@@ -148,7 +247,11 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
           <ul className="space-y-2 text-sm">
             {target.recognitionsReceived.map((r) => (
               <li key={r.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                <div className="font-medium">{r.tagLabel}</div>
+                <div className="font-medium">
+                  {r.secondaryLabelKey
+                    ? displayRecognitionSecondary(r.tagCategory, r.secondaryLabelKey, locale)
+                    : (r.tagLabel ?? "")}
+                </div>
                 <div className="text-xs text-[hsl(var(--muted))]">
                   {labelRecognitionCategory(r.tagCategory)} · {r.project?.name ?? "General"} · by {r.fromUser?.name ?? "A teammate"}
                 </div>
@@ -160,6 +263,50 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
           <p className="text-sm text-[hsl(var(--muted))]">No recognition yet.</p>
         )}
       </Card>
+
+      {canFeedbackHere && actor.id !== target.id && feedbackProjectChoices.length ? (
+        <Card className="space-y-3 p-4">
+          <CardTitle>Growth observations (about this member)</CardTitle>
+          <p className="text-xs text-[hsl(var(--muted))]">Structured, separate from recognition. Choose a shared project for context.</p>
+          <form action={createFeedbackEventAction} className="grid gap-2 md:grid-cols-2">
+            <input type="hidden" name="toUserId" value={target.id} />
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium">Project context</label>
+              <Select name="projectId" required>
+                {feedbackProjectChoices.map((p) => (
+                  <option key={p.id} value={p.id}>{p.company.name} · {p.name}</option>
+                ))}
+              </Select>
+            </div>
+            <div className="md:col-span-2">
+              <FeedbackSecondarySelect locale={locale} />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium">Growth note (optional)</label>
+              <Input name="message" />
+            </div>
+            <div className="md:col-span-2">
+              <Button type="submit" variant="secondary">Save observation</Button>
+            </div>
+          </form>
+        </Card>
+      ) : null}
+
+      {(actor.id === target.id || (await userHasPermission(actor, "feedback.read"))) && target.feedbackReceived.length ? (
+        <Card className="space-y-3 p-4">
+          <CardTitle>Growth observations on file</CardTitle>
+          <ul className="space-y-2 text-sm">
+            {target.feedbackReceived.map((f) => (
+              <li key={f.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
+                <div className="text-xs text-[hsl(var(--muted))]">
+                  {f.project?.name ?? "Project"} · {f.createdAt.toISOString().slice(0, 10)}
+                </div>
+                {f.message ? <p className="mt-1">{f.message}</p> : null}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
 
       {canAssignCompanyUI ? (
         <Card className="space-y-3 p-4">
@@ -227,10 +374,21 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
       <section className="grid gap-4 md:grid-cols-2">
         <Card className="p-4">
           <CardTitle>Company memberships</CardTitle>
-          <ul className="mt-2 space-y-1 text-sm">
+          <ul className="mt-2 space-y-2 text-sm">
             {target.companyMemberships.map((m) => (
-              <li key={m.id}>
-                {m.company.name} — {m.roleDefinition.displayName}
+              <li key={m.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {m.company.name} — {m.roleDefinition.displayName}
+                </span>
+                {canAssignCompanyUI ? (
+                  <form action={removeCompanyMembershipAction}>
+                    <input type="hidden" name="userId" value={target.id} />
+                    <input type="hidden" name="companyId" value={m.companyId} />
+                    <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                      Remove
+                    </Button>
+                  </form>
+                ) : null}
               </li>
             ))}
             {!target.companyMemberships.length ? <li className="text-[hsl(var(--muted))]">None</li> : null}
@@ -238,13 +396,24 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
         </Card>
         <Card className="p-4">
           <CardTitle>Project memberships</CardTitle>
-          <ul className="mt-2 space-y-1 text-sm">
+          <ul className="mt-2 space-y-2 text-sm">
             {target.projectMemberships.map((m) => (
-              <li key={m.id}>
-                <Link className="hover:underline" href={`/projects/${m.projectId}`}>
-                  {m.project.company.name} · {m.project.name}
-                </Link>{" "}
-                — {m.roleDefinition.displayName}
+              <li key={m.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  <Link className="hover:underline" href={`/projects/${m.projectId}`}>
+                    {m.project.company.name} · {m.project.name}
+                  </Link>{" "}
+                  — {m.roleDefinition.displayName}
+                </span>
+                {canAssignProjectUI ? (
+                  <form action={removeProjectMembershipAction}>
+                    <input type="hidden" name="userId" value={target.id} />
+                    <input type="hidden" name="projectId" value={m.projectId} />
+                    <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                      Remove
+                    </Button>
+                  </form>
+                ) : null}
               </li>
             ))}
             {!target.projectMemberships.length ? <li className="text-[hsl(var(--muted))]">None</li> : null}

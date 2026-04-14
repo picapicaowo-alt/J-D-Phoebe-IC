@@ -44,8 +44,12 @@ const PROJECT_MANAGER_PERMS = [
   "project.restore",
   "project.workflow.read",
   "project.workflow.update",
+  "project.map.update",
+  "project.member.manage",
   "recognition.read",
   "recognition.create",
+  "feedback.submit",
+  "feedback.read",
   "leaderboard.read",
   "knowledge.read",
   "knowledge.create",
@@ -82,6 +86,9 @@ const PROJECT_CONTRIBUTOR_PERMS = [
 
 async function main() {
   await prisma.auditLogEntry.deleteMany();
+  await prisma.scoreLedgerEntry.deleteMany();
+  await prisma.feedbackEvent.deleteMany();
+  await prisma.knowledgeReuseEvent.deleteMany();
   await prisma.projectRelation.deleteMany();
   await prisma.knowledgeAsset.deleteMany();
   await prisma.recognitionEvent.deleteMany();
@@ -440,8 +447,8 @@ async function main() {
     data: [
       { userId: superAdmin.id, species: CompanionSpecies.BEAR, name: "Atlas", mood: "STEADY", level: 4 },
       { userId: groupAdmin.id, species: CompanionSpecies.CAT, name: "Nova", mood: "CALM", level: 3 },
-      { userId: companyAdmin.id, species: CompanionSpecies.OTTER, name: "Ripple", mood: "FOCUSED", level: 2 },
-      { userId: pm.id, species: CompanionSpecies.RABBIT, name: "Sprint", mood: "MOTIVATED", level: 2 },
+      { userId: companyAdmin.id, species: CompanionSpecies.BEAVER, name: "Ripple", mood: "FOCUSED", level: 2 },
+      { userId: pm.id, species: CompanionSpecies.BUNNY, name: "Sprint", mood: "MOTIVATED", level: 2 },
       { userId: staff.id, species: CompanionSpecies.HAMSTER, name: "Pebble", mood: "CURIOUS", level: 2 },
     ],
   });
@@ -524,6 +531,7 @@ async function main() {
     data: [
       {
         projectId: partnershipProject.id,
+        companyId: legalCo.id,
         authorId: pm.id,
         title: "Partnership due diligence template",
         summary: "Reusable checklist for legal + risk review.",
@@ -533,6 +541,7 @@ async function main() {
       },
       {
         projectId: partnershipProject.id,
+        companyId: legalCo.id,
         authorId: staff.id,
         title: "Counsel communication style guide",
         summary: "Internal translation and phrasing preferences.",
@@ -542,6 +551,7 @@ async function main() {
       },
       {
         projectId: partnershipProject.id,
+        companyId: legalCo.id,
         authorId: companyAdmin.id,
         title: "Partner onboarding clause snippets",
         summary: "Reusable contract snippets for onboarding packs.",
@@ -551,6 +561,7 @@ async function main() {
       },
       {
         authorId: groupAdmin.id,
+        companyId: legalCo.id,
         title: "Reference: NGO partnership legal framework",
         summary: "External references and legal resource links.",
         content: "Curated references for NGO partnership legal structures.",
@@ -560,39 +571,58 @@ async function main() {
       },
     ],
   });
-  await prisma.recognitionEvent.createMany({
-    data: [
-      {
+  const recRows = await prisma.$transaction([
+    prisma.recognitionEvent.create({
+      data: {
         fromUserId: pm.id,
         toUserId: staff.id,
         projectId: partnershipProject.id,
         workflowNodeId: nDd.id,
         mode: RecognitionMode.PUBLIC,
         tagCategory: RecognitionTagCategory.RESULT,
-        tagLabel: "High completion quality",
+        secondaryLabelKey: "quality_outcome",
+        tagLabel: "Quality outcome",
         message: "Due diligence draft was crisp and ahead of schedule.",
       },
-      {
+    }),
+    prisma.recognitionEvent.create({
+      data: {
         fromUserId: companyAdmin.id,
         toUserId: pm.id,
         projectId: partnershipProject.id,
         workflowNodeId: nApproval.id,
         mode: RecognitionMode.SEMI_ANONYMOUS,
         tagCategory: RecognitionTagCategory.THINKING,
-        tagLabel: "Clear judgment",
+        secondaryLabelKey: "good_judgment",
+        tagLabel: "Good judgment",
         message: "Escalation notes made legal review much faster.",
       },
-      {
+    }),
+    prisma.recognitionEvent.create({
+      data: {
         fromUserId: groupAdmin.id,
         toUserId: companyAdmin.id,
         projectId: partnershipProject.id,
         mode: RecognitionMode.PUBLIC,
         tagCategory: RecognitionTagCategory.STABILITY,
-        tagLabel: "Reliable under pressure",
+        secondaryLabelKey: "steady_under_pressure",
+        tagLabel: "Steady under pressure",
         message: "Unblocked partner counsel follow-up quickly.",
       },
-    ],
-  });
+    }),
+  ]);
+
+  const { appendRecognitionScores } = await import("../lib/scoring");
+  for (const r of recRows) {
+    const proj = r.projectId ? await prisma.project.findFirst({ where: { id: r.projectId } }) : null;
+    await appendRecognitionScores(prisma, {
+      toUserId: r.toUserId,
+      tagCategory: r.tagCategory,
+      recognitionId: r.id,
+      companyId: proj?.companyId ?? legalCo.id,
+      projectId: r.projectId,
+    });
+  }
 
   console.log("Seed OK. Demo password for all seeded users:", passwordPlain);
 }

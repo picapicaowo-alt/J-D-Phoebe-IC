@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
-import { assertPermission, invalidatePermissionCache } from "@/lib/permissions";
+import { assertPermission, invalidatePermissionCache, userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 function requireString(formData: FormData, key: string) {
@@ -128,4 +128,90 @@ export async function assignProjectAction(formData: FormData) {
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath(`/projects/${projectId}`);
+}
+
+export async function removeCompanyMembershipAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  await assertPermission(actor, "staff.assign_company");
+  const userId = requireString(formData, "userId");
+  const companyId = requireString(formData, "companyId");
+  const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
+  if (!company) throw new Error("Company not found");
+  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, company.orgGroupId) && !isCompanyAdmin(actor, companyId)) {
+    throw new Error("Forbidden");
+  }
+  await prisma.companyMembership.deleteMany({ where: { userId, companyId } });
+  invalidatePermissionCache(userId);
+  revalidatePath(`/staff/${userId}`);
+  revalidatePath(`/companies/${companyId}`);
+}
+
+export async function removeProjectMembershipAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  const canManageMembers = await userHasPermission(actor, "project.member.manage");
+  const canStaffAssign = await userHasPermission(actor, "staff.assign_project");
+  if (!canManageMembers && !canStaffAssign) throw new Error("Forbidden");
+  const userId = requireString(formData, "userId");
+  const projectId = requireString(formData, "projectId");
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    include: { company: true },
+  });
+  if (!project) throw new Error("Project not found");
+  const isPmOnProject = actor.projectMemberships.some(
+    (m) => m.projectId === project.id && m.roleDefinition.key === "PROJECT_MANAGER",
+  );
+  if (
+    !isSuperAdmin(actor) &&
+    !isGroupAdmin(actor, project.company.orgGroupId) &&
+    !isCompanyAdmin(actor, project.companyId) &&
+    !isPmOnProject
+  ) {
+    throw new Error("Forbidden");
+  }
+  await prisma.projectMembership.deleteMany({ where: { userId, projectId } });
+  invalidatePermissionCache(userId);
+  revalidatePath(`/staff/${userId}`);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function assignMultipleToProjectAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  await assertPermission(actor, "project.member.manage");
+  const projectId = requireString(formData, "projectId");
+  const roleDefinitionId = requireString(formData, "roleDefinitionId");
+  const memberIds = formData.getAll("memberIds").map((v) => String(v).trim()).filter(Boolean);
+  if (!memberIds.length) throw new Error("Select at least one member");
+
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    include: { company: true },
+  });
+  if (!project) throw new Error("Project not found");
+  const isPmOnProject = actor.projectMemberships.some(
+    (m) => m.projectId === project.id && m.roleDefinition.key === "PROJECT_MANAGER",
+  );
+  if (
+    !isSuperAdmin(actor) &&
+    !isGroupAdmin(actor, project.company.orgGroupId) &&
+    !isCompanyAdmin(actor, project.companyId) &&
+    !isPmOnProject
+  ) {
+    throw new Error("Forbidden");
+  }
+
+  const valid = await prisma.user.findMany({
+    where: { id: { in: memberIds }, deletedAt: null, active: true },
+    select: { id: true },
+  });
+  for (const { id } of valid) {
+    await prisma.projectMembership.upsert({
+      where: { userId_projectId: { userId: id, projectId } },
+      create: { userId: id, projectId, roleDefinitionId },
+      update: { roleDefinitionId },
+    });
+    invalidatePermissionCache(id);
+  }
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/staff");
 }

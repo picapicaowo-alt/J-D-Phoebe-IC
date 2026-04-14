@@ -1,8 +1,24 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ProjectRelationType, RecognitionMode, RecognitionTagCategory, Priority, ProjectStatus } from "@prisma/client";
-import { assignProjectAction } from "@/app/actions/staff";
+import {
+  Priority,
+  ProjectRelationType,
+  ProjectStatus,
+  RecognitionMode,
+  WorkflowEdgeKind,
+  WorkflowNodeStatus,
+  WorkflowNodeType,
+} from "@prisma/client";
+import { assignMultipleToProjectAction, removeProjectMembershipAction } from "@/app/actions/staff";
+import { createFeedbackEventAction } from "@/app/actions/feedback";
 import { createRecognitionAction } from "@/app/actions/recognition";
+import {
+  createProjectMapEdgeAction,
+  createProjectMapNodeAction,
+  removeProjectMapEdgeAction,
+  softDeleteProjectMapNodeAction,
+  updateProjectMapNodeAction,
+} from "@/app/actions/project-map";
 import { softDeleteProjectAction } from "@/app/actions/trash";
 import {
   addProjectRelationAction,
@@ -13,7 +29,9 @@ import {
   updateProjectAction,
 } from "@/app/actions/project";
 import { requireUser } from "@/lib/auth";
-import { canManageProject, canViewProject, type AccessUser } from "@/lib/access";
+import { canEditProjectMap, canManageProject, canViewProject, type AccessUser } from "@/lib/access";
+import { getLocale } from "@/lib/locale";
+import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
@@ -22,6 +40,8 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { labelNodeType, labelPriority, labelProjectStatus, labelRecognitionCategory } from "@/lib/labels";
 import { countdownPhrase, isOverdue } from "@/lib/deadlines";
+import { RecognitionSecondarySelect } from "@/components/recognition-secondary-select";
+import { FeedbackSecondarySelect } from "@/components/feedback-secondary-select";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const STATUSES: ProjectStatus[] = [
@@ -32,16 +52,6 @@ const STATUSES: ProjectStatus[] = [
   "COMPLETED",
   "ARCHIVED",
   "CANCELLED",
-];
-
-const RECOGNITION_CATEGORIES: RecognitionTagCategory[] = [
-  "RESULT",
-  "COLLABORATION",
-  "THINKING",
-  "CREATIVITY",
-  "CULTURE",
-  "STABILITY",
-  "LEADERSHIP",
 ];
 
 const RELATION_TYPES: ProjectRelationType[] = [
@@ -116,6 +126,22 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
     take: 120,
   });
+
+  const locale = await getLocale();
+  const canEditMap = (await userHasPermission(user, "project.map.update")) && canEditProjectMap(user, project);
+  const canMemberManage = (await userHasPermission(user, "project.member.manage")) && canManage;
+  const canFeedback = (await userHasPermission(user, "feedback.submit")) && canManage;
+
+  const NODE_STATUSES: WorkflowNodeStatus[] = [
+    "NOT_STARTED",
+    "IN_PROGRESS",
+    "WAITING",
+    "BLOCKED",
+    "APPROVED",
+    "DONE",
+    "SKIPPED",
+  ];
+  const NODE_TYPES: WorkflowNodeType[] = ["MILESTONE", "TASK", "APPROVAL", "WAITING", "COMPLETED"];
 
   return (
     <div className="space-y-8">
@@ -216,6 +242,136 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           {project.nodes.length} nodes · {project.edges.length} dependencies
         </div>
       </Card>
+
+      {canEditMap ? (
+        <Card className="space-y-4 p-4">
+          <CardTitle>Edit project map</CardTitle>
+          <p className="text-xs text-[hsl(var(--muted))]">
+            Lightweight edits stay on this page. Open Advanced Workflow for full graph layout and attachment tools.
+          </p>
+          <form action={createProjectMapNodeAction} className="grid gap-2 border-b pb-3 md:grid-cols-3">
+            <input type="hidden" name="projectId" value={project.id} />
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium">New node title</label>
+              <Input name="title" required placeholder="Node title" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Type</label>
+              <Select name="nodeType" defaultValue="TASK">
+                {NODE_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {labelNodeType(t)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1 md:col-span-3">
+              <label className="text-xs font-medium">Layer</label>
+              <Select name="layerId">
+                {project.layers.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="md:col-span-3">
+              <Button type="submit" variant="secondary">
+                Add node
+              </Button>
+            </div>
+          </form>
+          <form action={createProjectMapEdgeAction} className="grid gap-2 border-b pb-3 md:grid-cols-3">
+            <input type="hidden" name="projectId" value={project.id} />
+            <input type="hidden" name="kind" value={WorkflowEdgeKind.DEPENDENCY} />
+            <div className="space-y-1">
+              <label className="text-xs font-medium">From node</label>
+              <Select name="fromNodeId" required>
+                <option value="">Select</option>
+                {project.nodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.title}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">To node</label>
+              <Select name="toNodeId" required>
+                <option value="">Select</option>
+                {project.nodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.title}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex items-end">
+              <Button type="submit" variant="secondary">
+                Add dependency
+              </Button>
+            </div>
+          </form>
+          <div className="space-y-2 text-sm">
+            <p className="text-xs font-medium text-[hsl(var(--muted))]">Nodes</p>
+            <ul className="space-y-2">
+              {project.nodes.map((n) => (
+                <li key={n.id} className="rounded-md border border-[hsl(var(--border))] p-2">
+                  <form action={updateProjectMapNodeAction} className="flex flex-wrap items-end gap-2">
+                    <input type="hidden" name="nodeId" value={n.id} />
+                    <Input name="title" defaultValue={n.title} className="min-w-[160px]" required />
+                    <Select name="status" defaultValue={n.status} className="min-w-[140px]">
+                      {NODE_STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </Select>
+                    <Select name="nodeType" defaultValue={n.nodeType} className="min-w-[120px]">
+                      {NODE_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {labelNodeType(t)}
+                        </option>
+                      ))}
+                    </Select>
+                    <Input name="sortOrder" type="number" defaultValue={String(n.sortOrder)} className="w-20" />
+                    <Button type="submit" variant="secondary" className="h-8 text-xs">
+                      Save
+                    </Button>
+                  </form>
+                  <form action={softDeleteProjectMapNodeAction} className="mt-1">
+                    <input type="hidden" name="nodeId" value={n.id} />
+                    <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                      Remove node
+                    </Button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {project.edges.length ? (
+            <ul className="space-y-1 text-xs">
+              {project.edges.map((e) => {
+                const from = project.nodes.find((x) => x.id === e.fromNodeId);
+                const to = project.nodes.find((x) => x.id === e.toNodeId);
+                return (
+                  <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-[hsl(var(--border))] px-2 py-1">
+                    <span>
+                      {from?.title ?? e.fromNodeId} → {to?.title ?? e.toNodeId} ({e.kind})
+                    </span>
+                    <form action={removeProjectMapEdgeAction}>
+                      <input type="hidden" name="edgeId" value={e.id} />
+                      <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                        Remove
+                      </Button>
+                    </form>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </Card>
+      ) : null}
 
       <Card className="space-y-3 p-4">
         <CardTitle>Project relations (project-level)</CardTitle>
@@ -387,20 +543,26 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       ) : null}
 
       <Card className="space-y-2 p-4">
-        <CardTitle>Assigned members</CardTitle>
-        {canManage ? (
-          <form action={assignProjectAction} className="mb-3 flex flex-wrap items-end gap-2 border-b pb-3">
+        <CardTitle>Project members</CardTitle>
+        {canMemberManage ? (
+          <form action={assignMultipleToProjectAction} className="mb-3 space-y-2 border-b pb-3">
             <input type="hidden" name="projectId" value={project.id} />
             <div className="space-y-1">
-              <label className="text-xs font-medium">Staff</label>
-              <Select name="userId" required className="min-w-[220px]">
-                <option value="">Select staff</option>
-                {staff.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
+              <label className="text-xs font-medium">Add one or more staff (hold Cmd/Ctrl to multi-select)</label>
+              <select
+                name="memberIds"
+                multiple
+                size={6}
+                className="min-h-[120px] w-full max-w-md rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+              >
+                {staff
+                  .filter((s) => !project.memberships.some((m) => m.userId === s.id))
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Role in project</label>
@@ -413,14 +575,26 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </Select>
             </div>
             <Button type="submit" variant="secondary">
-              Assign / update from project
+              Add selected to project
             </Button>
           </form>
         ) : null}
-        <ul className="text-sm">
+        <ul className="space-y-2 text-sm">
           {project.memberships.map((m) => (
-            <li key={m.id}>
-              {m.user.name} — {m.roleDefinition.displayName}
+            <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[hsl(var(--border))] px-2 py-1">
+              <span>
+                {m.user.name} — {m.roleDefinition.displayName}
+                {m.user.active ? "" : " · inactive"}
+              </span>
+              {canMemberManage ? (
+                <form action={removeProjectMembershipAction}>
+                  <input type="hidden" name="userId" value={m.userId} />
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                    Remove
+                  </Button>
+                </form>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -441,28 +615,37 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 ))}
               </Select>
             </div>
+            <div className="md:col-span-2">
+              <RecognitionSecondarySelect defaultCategory="COLLABORATION" locale={locale} />
+            </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Category</label>
-              <Select name="tagCategory" required defaultValue="COLLABORATION">
-                {RECOGNITION_CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>{labelRecognitionCategory(cat)}</option>
+              <label className="text-xs font-medium">Link to node (optional)</label>
+              <Select name="workflowNodeId">
+                <option value="">—</option>
+                {project.nodes.map((n) => (
+                  <option key={n.id} value={n.id}>{n.title}</option>
                 ))}
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Label</label>
-              <Input name="tagLabel" required placeholder="e.g. Rescue support" />
+              <label className="text-xs font-medium">Link to knowledge (optional)</label>
+              <Select name="knowledgeAssetId">
+                <option value="">—</option>
+                {project.knowledgeAssets.map((k) => (
+                  <option key={k.id} value={k.id}>{k.title}</option>
+                ))}
+              </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Mode</label>
+              <label className="text-xs font-medium">Identity mode</label>
               <Select name="mode" defaultValue={RecognitionMode.PUBLIC}>
-                <option value={RecognitionMode.PUBLIC}>Public</option>
+                <option value={RecognitionMode.PUBLIC}>Named (public)</option>
                 <option value={RecognitionMode.SEMI_ANONYMOUS}>Semi-anonymous</option>
                 <option value={RecognitionMode.ANONYMOUS}>Anonymous</option>
               </Select>
             </div>
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">Message (optional)</label>
+              <label className="text-xs font-medium">Comment (optional)</label>
               <Input name="message" placeholder="What was valuable in this contribution?" />
             </div>
             <div className="md:col-span-2">
@@ -475,7 +658,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <ul className="space-y-2 text-sm">
             {project.recognitions.map((r) => (
               <li key={r.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                <div className="font-medium">{r.tagLabel}</div>
+                <div className="font-medium">
+                  {r.secondaryLabelKey
+                    ? displayRecognitionSecondary(r.tagCategory, r.secondaryLabelKey, locale)
+                    : (r.tagLabel ?? r.secondaryLabelKey)}
+                </div>
                 <div className="text-xs text-[hsl(var(--muted))]">
                   {labelRecognitionCategory(r.tagCategory)} · to {r.toUser.name} · by {r.fromUser?.name ?? "Anonymous"}
                 </div>
@@ -487,6 +674,37 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <p className="text-sm text-[hsl(var(--muted))]">No recognition yet for this project.</p>
         )}
       </Card>
+
+      {canFeedback ? (
+        <Card className="space-y-3 p-4">
+          <CardTitle>Growth observations (structured)</CardTitle>
+          <p className="text-xs text-[hsl(var(--muted))]">
+            For improvement themes only. Praise stays in Recognition — this path is calm, factual, and actionable.
+          </p>
+          <form action={createFeedbackEventAction} className="grid gap-2 md:grid-cols-2">
+            <input type="hidden" name="projectId" value={project.id} />
+            <div className="space-y-1">
+              <label className="text-xs font-medium">About member</label>
+              <Select name="toUserId" required>
+                <option value="">Select member</option>
+                {project.memberships.map((m) => (
+                  <option key={m.userId} value={m.userId}>{m.user.name}</option>
+                ))}
+              </Select>
+            </div>
+            <div className="md:col-span-2">
+              <FeedbackSecondarySelect defaultCategory="COMMUNICATION" locale={locale} />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium">Growth note (optional)</label>
+              <Input name="message" placeholder="What would help them improve?" />
+            </div>
+            <div className="md:col-span-2">
+              <Button type="submit" variant="secondary">Record observation</Button>
+            </div>
+          </form>
+        </Card>
+      ) : null}
 
       <Card className="space-y-3 p-4">
         <CardTitle>Knowledge assets linked to this project</CardTitle>

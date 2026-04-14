@@ -4,10 +4,14 @@ import { getCurrentUser } from "@/lib/auth";
 import { isClerkEnabled } from "@/lib/clerk-config";
 import { getPermissionKeysForUser } from "@/lib/permissions";
 import { SignOutControl } from "@/components/sign-out-control";
+import { getLocale } from "@/lib/locale";
+import { t } from "@/lib/messages";
+import { LanguageSwitcher } from "@/components/language-switcher";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
   const keys = user ? await getPermissionKeysForUser(user.id, user.isSuperAdmin) : null;
+  const locale = await getLocale();
 
   return (
     <div className="min-h-dvh">
@@ -15,64 +19,65 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
           <div className="flex flex-wrap items-center gap-4">
             <Link href="/home" className="text-sm font-semibold tracking-tight">
-              J.D. Phoebe · Internal
+              {t(locale, "brand")}
             </Link>
             {user ? (
               <nav className="flex flex-wrap items-center gap-3 text-sm text-[hsl(var(--muted))]">
                 {keys?.has("project.read") ? (
                   <Link className="hover:text-[hsl(var(--foreground))]" href="/home">
-                    Home
+                    {t(locale, "navHome")}
                   </Link>
                 ) : null}
                 {keys?.has("org.group.read") ? (
                   <Link className="hover:text-[hsl(var(--foreground))]" href="/group">
-                    Group
+                    {t(locale, "navGroup")}
                   </Link>
                 ) : null}
                 {keys?.has("company.read") ? (
                   <Link className="hover:text-[hsl(var(--foreground))]" href="/companies">
-                    Companies
+                    {t(locale, "navCompanies")}
                   </Link>
                 ) : null}
                 {keys?.has("project.read") ? (
                   <Link className="hover:text-[hsl(var(--foreground))]" href="/projects">
-                    Projects
+                    {t(locale, "navProjects")}
                   </Link>
                 ) : null}
                 {keys?.has("knowledge.read") ? (
                   <Link className="hover:text-[hsl(var(--foreground))]" href="/knowledge">
-                    Knowledge
+                    {t(locale, "navKnowledge")}
                   </Link>
                 ) : null}
                 {keys?.has("staff.read") ? (
                   <Link className="hover:text-[hsl(var(--foreground))]" href="/staff">
-                    Staff
+                    {t(locale, "navStaff")}
                   </Link>
                 ) : null}
                 {keys?.has("role.display_name.update") ? (
                   <Link className="hover:text-[hsl(var(--foreground))]" href="/settings/roles">
-                    Roles
+                    {t(locale, "navRoles")}
                   </Link>
                 ) : null}
                 {keys?.has("permission.matrix.read") ? (
                   <Link className="hover:text-[hsl(var(--foreground))]" href="/settings/permissions">
-                    Permissions
+                    {t(locale, "navPermissions")}
                   </Link>
                 ) : null}
                 {keys?.has("trash.read") ? (
                   <Link className="hover:text-[hsl(var(--foreground))]" href="/trash">
-                    Trash
+                    {t(locale, "navTrash")}
                   </Link>
                 ) : null}
                 {keys?.has("leaderboard.read") ? (
                   <Link className="hover:text-[hsl(var(--foreground))]" href="/leaderboard">
-                    Leaderboard
+                    {t(locale, "navLeaderboards")}
                   </Link>
                 ) : null}
               </nav>
             ) : null}
           </div>
-          <div className="flex items-center gap-3 text-xs text-[hsl(var(--muted))]">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-[hsl(var(--muted))]">
+            <LanguageSwitcher locale={locale} />
             {user ? (
               <>
                 <span>
@@ -83,7 +88,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               </>
             ) : (
               <Link className="font-medium text-[hsl(var(--accent))]" href={isClerkEnabled() ? "/sign-in" : "/login"}>
-                Sign in
+                {t(locale, "signIn")}
               </Link>
             )}
           </div>

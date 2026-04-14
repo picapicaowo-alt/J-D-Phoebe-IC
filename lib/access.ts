@@ -69,3 +69,11 @@ export function canEditWorkflow(
     (m) => m.projectId === project.id && m.roleDefinition.key === "PROJECT_MANAGER",
   );
 }
+
+/** Lightweight project map edits (same gate as workflow for Phase 1; also keyed by `project.map.update` in actions). */
+export function canEditProjectMap(
+  user: AccessUser,
+  project: { id: string; companyId: string; company: { orgGroupId: string } },
+) {
+  return canEditWorkflow(user, project);
+}

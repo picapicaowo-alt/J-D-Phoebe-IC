@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import type { AccessUser } from "@/lib/access";
 import { canViewProject } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
+import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -16,10 +17,30 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const att = await prisma.attachment.findFirst({
     where: { id, deletedAt: null },
-    include: { node: { include: { project: { include: { company: true } } } } },
+    include: {
+      node: { include: { project: { include: { company: true } } } },
+      project: { include: { company: true } },
+      knowledgeAsset: { include: { author: true } },
+      contributor: true,
+    },
   });
   if (!att) return new NextResponse("Not found", { status: 404 });
-  if (!canViewProject(accessUser, att.node.project)) {
+
+  let allowed = false;
+  if (att.node?.project) {
+    allowed = canViewProject(accessUser, att.node.project);
+  } else if (att.project) {
+    allowed = canViewProject(accessUser, att.project);
+  } else if (att.knowledgeAsset) {
+    allowed =
+      accessUser.id === att.knowledgeAsset.authorId ||
+      accessUser.isSuperAdmin ||
+      (await userHasPermission(accessUser, "knowledge.read"));
+  } else if (att.contributorUserId) {
+    allowed = accessUser.id === att.contributorUserId || accessUser.isSuperAdmin;
+  }
+
+  if (!allowed) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 

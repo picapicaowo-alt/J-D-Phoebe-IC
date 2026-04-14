@@ -1,0 +1,10 @@
+[
+  { "id": "bird", "name_en": "Bird", "name_zh": "鸟", "file": "/companions/bird.png", "species": "BIRD" },
+  { "id": "bear", "name_en": "Bear", "name_zh": "熊", "file": "/companions/bear.png", "species": "BEAR" },
+  { "id": "penguin", "name_en": "Penguin", "name_zh": "企鹅", "file": "/companions/penguin.png", "species": "PENGUIN" },
+  { "id": "dog", "name_en": "Dog", "name_zh": "狗", "file": "/companions/dog.png", "species": "DOG" },
+  { "id": "cat", "name_en": "Cat", "name_zh": "猫", "file": "/companions/cat.png", "species": "CAT" },
+  { "id": "beaver", "name_en": "Beaver", "name_zh": "海狸", "file": "/companions/beaver.png", "species": "BEAVER" },
+  { "id": "bunny", "name_en": "Bunny", "name_zh": "兔子", "file": "/companions/bunny.png", "species": "BUNNY" },
+  { "id": "hamster", "name_en": "Hamster", "name_zh": "仓鼠", "file": "/companions/hamster.png", "species": "HAMSTER" }
+]

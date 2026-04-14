@@ -1,6 +1,7 @@
 import type {
   CompanyStatus,
   CompanionSpecies,
+  FeedbackCategory,
   Priority,
   ProjectStatus,
   RecognitionMode,
@@ -82,21 +83,32 @@ export function labelRecognitionCategory(category: RecognitionTagCategory) {
     CREATIVITY: "Creativity",
     CULTURE: "Culture",
     STABILITY: "Stability",
-    LEADERSHIP: "Leadership",
+    GUIDANCE: "Guidance",
+  };
+  return m[category];
+}
+
+export function labelFeedbackCategory(category: FeedbackCategory) {
+  const m: Record<FeedbackCategory, string> = {
+    COMMUNICATION: "Communication",
+    DELIVERY_QUALITY: "Delivery quality",
+    FOLLOW_THROUGH: "Follow-through",
+    DOCUMENTATION: "Documentation",
+    COLLABORATION_RESPONSIVENESS: "Collaboration responsiveness",
   };
   return m[category];
 }
 
 export function labelCompanionSpecies(species: CompanionSpecies) {
   const m: Record<CompanionSpecies, string> = {
-    RABBIT: "Rabbit",
-    HAMSTER: "Hamster",
-    CAT: "Cat",
-    DOG: "Dog",
     BIRD: "Bird",
-    PENGUIN: "Penguin",
     BEAR: "Bear",
-    OTTER: "Otter",
+    PENGUIN: "Penguin",
+    DOG: "Dog",
+    CAT: "Cat",
+    BEAVER: "Beaver",
+    BUNNY: "Bunny",
+    HAMSTER: "Hamster",
   };
   return m[species];
 }
