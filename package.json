@@ -1,0 +1,44 @@
+{
+  "name": "multi-company-progress-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:push": "prisma db push",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.12.0",
+    "@prisma/client": "^6.6.0",
+    "@vercel/blob": "^0.27.0",
+    "@xyflow/react": "^12.10.2",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "iron-session": "^8.0.4",
+    "next": "15.2.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.0.2"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.2.4",
+    "postcss": "^8",
+    "prisma": "^6.6.0",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.3",
+    "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}
