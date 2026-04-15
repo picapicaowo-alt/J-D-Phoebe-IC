@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { calendarHref } from "@/lib/calendar-nav";
 import { CalendarSourceKind, LifecycleTriggerKind, LifecycleTriggerScope, OffboardingStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
@@ -279,7 +278,7 @@ export async function createCalendarEventAction(formData: FormData) {
           kind: "CALENDAR_EVENT_INVITE",
           title: "New calendar event",
           body: `${title} · ${when}`,
-          href: `/calendar?eventId=${ev.id}`,
+          href: "/calendar",
         })),
       });
     }
@@ -294,8 +293,6 @@ export async function createCalendarEventAction(formData: FormData) {
   });
   revalidatePath("/calendar");
   if (projectId) revalidatePath(`/projects/${projectId}`);
-  const d = ev.startsAt;
-  redirect(calendarHref({ y: d.getFullYear(), m: d.getMonth() + 1, view: "month" }));
 }
 
 export async function updateCalendarEventAction(formData: FormData) {
@@ -322,6 +319,8 @@ export async function updateCalendarEventAction(formData: FormData) {
     if (!p) throw new Error("Project not found");
   }
 
+  const oldProjectId = existing.projectId;
+
   await prisma.calendarEvent.update({
     where: { id },
     data: {
@@ -341,8 +340,8 @@ export async function updateCalendarEventAction(formData: FormData) {
     newValue: title,
   });
   revalidatePath("/calendar");
-  const d = startsAt;
-  redirect(calendarHref({ y: d.getFullYear(), m: d.getMonth() + 1, view: "month" }));
+  if (oldProjectId) revalidatePath(`/projects/${oldProjectId}`);
+  if (projectIdRaw && projectIdRaw !== oldProjectId) revalidatePath(`/projects/${projectIdRaw}`);
 }
 
 export async function deleteCalendarEventAction(formData: FormData) {
@@ -361,8 +360,7 @@ export async function deleteCalendarEventAction(formData: FormData) {
     newValue: existing.title,
   });
   revalidatePath("/calendar");
-  const d = existing.startsAt;
-  redirect(calendarHref({ y: d.getFullYear(), m: d.getMonth() + 1, view: "month" }));
+  if (existing.projectId) revalidatePath(`/projects/${existing.projectId}`);
 }
 
 const OFFBOARDING_KEYS = [

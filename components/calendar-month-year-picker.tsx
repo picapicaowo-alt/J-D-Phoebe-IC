@@ -7,15 +7,12 @@ import { cn } from "@/lib/utils";
 function buildMonthUrl(
   y: number,
   m: number,
-  preserve: { create?: boolean; slotDay?: number; sourceKind?: string; sourceId?: string; eventId?: string; defaultProjectId?: string },
+  preserve: { sourceKind?: string; sourceId?: string; defaultProjectId?: string },
 ) {
   const p = new URLSearchParams();
   p.set("y", String(y));
   p.set("m", String(m));
   p.set("view", "month");
-  if (preserve.create) p.set("create", "1");
-  if (preserve.slotDay != null && preserve.slotDay >= 1 && preserve.slotDay <= 31) p.set("slotDay", String(preserve.slotDay));
-  if (preserve.eventId) p.set("eventId", preserve.eventId);
   if (preserve.sourceId) {
     p.set("sourceKind", preserve.sourceKind || "MANUAL");
     p.set("sourceId", preserve.sourceId);
@@ -36,7 +33,7 @@ export function CalendarMonthYearPicker({
   month: number;
   monthTitle: string;
   locale: "en" | "zh";
-  preserve: { create?: boolean; slotDay?: number; sourceKind?: string; sourceId?: string; eventId?: string; defaultProjectId?: string };
+  preserve: { sourceKind?: string; sourceId?: string; defaultProjectId?: string };
   /** When set (e.g. wrapped in `startTransition`), keeps the calendar responsive during App Router navigations. */
   pushRoute?: (href: string) => void;
 }) {

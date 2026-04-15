@@ -28,6 +28,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { calendarHref } from "@/lib/calendar-nav";
 import { countdownPhrase, isOverdue, toDatetimeLocalValue } from "@/lib/deadlines";
 import { AttachmentVersionTree } from "@/components/attachment-version-tree";
 import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
@@ -375,7 +376,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle>{t(locale, "projRelatedEventsTitle")}</CardTitle>
             <Link
-              href={`/calendar?create=1&y=${new Date().getFullYear()}&m=${new Date().getMonth() + 1}&view=month&defaultProjectId=${project.id}`}
+              href={calendarHref({
+                y: new Date().getFullYear(),
+                m: new Date().getMonth() + 1,
+                view: "month",
+                create: true,
+                defaultProjectId: project.id,
+              })}
               className={secondaryBtn}
             >
               {t(locale, "calendarNewEvent")}
@@ -389,7 +396,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <li key={ev.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0">
                   <div>
                     <Link
-                      href={`/calendar?y=${ev.startsAt.getFullYear()}&m=${ev.startsAt.getMonth() + 1}&view=month&eventId=${ev.id}`}
+                      href={calendarHref({
+                        y: ev.startsAt.getFullYear(),
+                        m: ev.startsAt.getMonth() + 1,
+                        view: "month",
+                        eventId: ev.id,
+                      })}
                       className="font-medium text-[hsl(var(--primary))] hover:underline"
                     >
                       {ev.title}

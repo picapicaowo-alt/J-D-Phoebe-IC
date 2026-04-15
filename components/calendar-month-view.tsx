@@ -1,9 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useCallback, useTransition } from "react";
+import { useCallback } from "react";
 import { CalendarMonthYearPicker } from "@/components/calendar-month-year-picker";
-import { calendarHref } from "@/lib/calendar-nav";
 
 export type CalendarMonthEvent = {
   id: string;
@@ -11,14 +9,12 @@ export type CalendarMonthEvent = {
   startsAt: Date;
   endsAt: Date;
   sourceKind: string;
+  canEdit: boolean;
 };
 
-export type CalendarMonthNavPreserve = {
-  create?: boolean;
-  slotDay?: number;
+export type CalendarMonthPickerPreserve = {
   sourceKind?: string;
   sourceId?: string;
-  eventId?: string;
   defaultProjectId?: string;
 };
 
@@ -44,11 +40,12 @@ export function CalendarMonthView({
   prevLabel,
   nextLabel,
   todayLabel,
-  eventDetailHrefTemplate,
-  preserveQuery,
-  showCreate,
-  cancelCreateHref,
-  pendingOverlayLabel,
+  pickerPreserve,
+  navigationPending,
+  onNavigate,
+  onCreateForDay,
+  onOpenEditableEvent,
+  onRequestDismissCreate,
 }: {
   year: number;
   month: number;
@@ -61,23 +58,16 @@ export function CalendarMonthView({
   prevLabel: string;
   nextLabel: string;
   todayLabel: string;
-  eventDetailHrefTemplate?: string;
-  preserveQuery?: CalendarMonthNavPreserve;
-  showCreate: boolean;
-  cancelCreateHref: string;
-  pendingOverlayLabel?: string;
+  pickerPreserve?: CalendarMonthPickerPreserve;
+  navigationPending: boolean;
+  onNavigate: (href: string) => void;
+  onCreateForDay: (day: number) => void;
+  onOpenEditableEvent: (eventId: string) => void;
+  onRequestDismissCreate?: () => void;
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const pushRoute = useCallback((href: string) => onNavigate(href), [onNavigate]);
 
-  const pushRoute = useCallback(
-    (href: string) => {
-      startTransition(() => {
-        router.push(href);
-      });
-    },
-    [router],
-  );
+  const navBusy = navigationPending;
 
   const first = new Date(year, month - 1, 1);
   const startWeekday = first.getDay();
@@ -101,22 +91,9 @@ export function CalendarMonthView({
   const week = locale === "zh" ? WEEK_ZH : WEEK_EN;
   const today = new Date();
 
-  const nav = preserveQuery ?? {};
-  const createForDayHref = (day: number) =>
-    calendarHref({
-      y: year,
-      m: month,
-      view: "month",
-      create: true,
-      slotDay: day,
-      sourceKind: nav.sourceKind,
-      sourceId: nav.sourceId,
-      defaultProjectId: nav.defaultProjectId,
-    });
-
   return (
     <div className="relative rounded-[12px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-sm">
-      {isPending ? (
+      {navBusy ? (
         <div
           className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 rounded-[12px] bg-[hsl(var(--card))]/70 backdrop-blur-[2px]"
           aria-busy="true"
@@ -125,9 +102,8 @@ export function CalendarMonthView({
           <div
             className="h-10 w-10 animate-spin rounded-full border-2 border-[hsl(var(--primary))] border-t-transparent"
             role="status"
-            aria-label={pendingOverlayLabel ?? "Loading"}
+            aria-label={locale === "zh" ? "正在更新" : "Loading"}
           />
-          {pendingOverlayLabel ? <p className="text-sm font-medium text-[hsl(var(--muted))]">{pendingOverlayLabel}</p> : null}
         </div>
       ) : null}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -136,24 +112,17 @@ export function CalendarMonthView({
           month={month}
           monthTitle={monthTitle}
           locale={locale}
-          preserve={{
-            create: preserveQuery?.create,
-            slotDay: preserveQuery?.slotDay,
-            sourceKind: preserveQuery?.sourceKind,
-            sourceId: preserveQuery?.sourceId,
-            eventId: preserveQuery?.eventId,
-            defaultProjectId: preserveQuery?.defaultProjectId,
-          }}
+          preserve={pickerPreserve ?? {}}
           pushRoute={pushRoute}
         />
         <div className="flex flex-wrap items-center gap-2 text-base">
-          <button type="button" disabled={isPending} onClick={() => pushRoute(prevHref)} aria-label={prevLabel} className={navBtnClass}>
+          <button type="button" disabled={navBusy} onClick={() => pushRoute(prevHref)} aria-label={prevLabel} className={navBtnClass}>
             ‹
           </button>
-          <button type="button" disabled={isPending} onClick={() => pushRoute(todayHref)} className={navBtnClass}>
+          <button type="button" disabled={navBusy} onClick={() => pushRoute(todayHref)} className={navBtnClass}>
             {todayLabel}
           </button>
-          <button type="button" disabled={isPending} onClick={() => pushRoute(nextHref)} aria-label={nextLabel} className={navBtnClass}>
+          <button type="button" disabled={navBusy} onClick={() => pushRoute(nextHref)} aria-label={nextLabel} className={navBtnClass}>
             ›
           </button>
         </div>
@@ -168,9 +137,9 @@ export function CalendarMonthView({
       <div
         className="mt-px grid grid-cols-7 gap-px rounded-lg bg-[hsl(var(--border))]"
         onContextMenuCapture={(e) => {
-          if (!showCreate) return;
+          if (!onRequestDismissCreate) return;
           e.preventDefault();
-          pushRoute(cancelCreateHref);
+          onRequestDismissCreate();
         }}
       >
         {cells.map((day, idx) => {
@@ -186,8 +155,8 @@ export function CalendarMonthView({
                 <>
                   <button
                     type="button"
-                    disabled={isPending}
-                    onClick={() => pushRoute(createForDayHref(day))}
+                    disabled={navBusy}
+                    onClick={() => onCreateForDay(day)}
                     className="absolute inset-0 z-0 rounded-sm hover:bg-black/[0.03] disabled:cursor-wait dark:hover:bg-white/[0.04]"
                     aria-label={locale === "zh" ? `在 ${month} 月 ${day} 日添加日程` : `Add event on ${month}/${day}`}
                   />
@@ -202,13 +171,21 @@ export function CalendarMonthView({
                   </div>
                   <ul className="relative z-[2] space-y-1 pointer-events-none">
                     {(byDay.get(day) ?? []).slice(0, 5).map((ev) => {
-                      const href = eventDetailHrefTemplate?.replace("EVENT_ID_PLACEHOLDER", ev.id);
                       const cls =
                         "block w-full truncate rounded-md bg-[hsl(var(--primary))]/12 px-1.5 py-1 text-left text-sm font-medium leading-snug text-[hsl(var(--foreground))] hover:bg-[hsl(var(--primary))]/20 disabled:opacity-60";
                       return (
                         <li key={ev.id} className="pointer-events-auto">
-                          {href ? (
-                            <button type="button" disabled={isPending} onClick={() => pushRoute(href)} className={cls} title={ev.title}>
+                          {ev.canEdit ? (
+                            <button
+                              type="button"
+                              disabled={navBusy}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenEditableEvent(ev.id);
+                              }}
+                              className={cls}
+                              title={ev.title}
+                            >
                               {ev.title}
                             </button>
                           ) : (
@@ -230,11 +207,6 @@ export function CalendarMonthView({
           );
         })}
       </div>
-      {showCreate ? (
-        <p className="mt-3 text-base text-[hsl(var(--muted))]">
-          {locale === "zh" ? "右键网格可取消新建" : "Right-click the grid to cancel new event"}
-        </p>
-      ) : null}
     </div>
   );
 }
