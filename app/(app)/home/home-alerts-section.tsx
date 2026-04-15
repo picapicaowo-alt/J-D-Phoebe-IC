@@ -5,7 +5,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 
-export async function HomeAlertsSection({ user }: { user: AccessUser }) {
+export async function AlertsSection({ user }: { user: AccessUser }) {
   const locale = await getLocale();
   const [unreadAlertCount, recentUnreadAlerts] = await Promise.all([
     prisma.inAppNotification.count({ where: { userId: user.id, readAt: null } }),
