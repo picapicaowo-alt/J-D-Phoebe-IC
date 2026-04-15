@@ -8,16 +8,61 @@ import { prisma } from "@/lib/prisma";
 import type { AppSessionData } from "@/lib/session";
 import { sessionOptions } from "@/lib/session";
 
-const userInclude = {
-  groupMemberships: { include: { roleDefinition: true, orgGroup: true } },
-  companyMemberships: { include: { roleDefinition: true, company: true } },
-  projectMemberships: { include: { roleDefinition: true, project: { include: { company: true } } } },
+const userSelect = {
+  id: true,
+  email: true,
+  passwordHash: true,
+  clerkId: true,
+  name: true,
+  title: true,
+  contactEmails: true,
+  phone: true,
+  timezone: true,
+  active: true,
+  mustChangePassword: true,
+  isSuperAdmin: true,
+  avatarUrl: true,
+  companionIntroCompletedAt: true,
+  firstSignInAt: true,
+  positiveAttentionUntil: true,
+  deletedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  groupMemberships: {
+    select: {
+      orgGroupId: true,
+      roleDefinitionId: true,
+      roleDefinition: { select: { key: true } },
+    },
+  },
+  companyMemberships: {
+    select: {
+      companyId: true,
+      roleDefinitionId: true,
+      roleDefinition: { select: { key: true } },
+      company: { select: { orgGroupId: true } },
+    },
+  },
+  projectMemberships: {
+    select: {
+      projectId: true,
+      roleDefinitionId: true,
+      roleDefinition: { select: { key: true } },
+      project: {
+        select: {
+          id: true,
+          companyId: true,
+          company: { select: { orgGroupId: true } },
+        },
+      },
+    },
+  },
 } as const;
 
 async function loadUserById(id: string) {
   return prisma.user.findFirst({
     where: { id, deletedAt: null },
-    include: userInclude,
+    select: userSelect,
   });
 }
 
@@ -33,7 +78,7 @@ async function getCurrentUserImpl() {
 
     let user = await prisma.user.findFirst({
       where: { clerkId: userId, deletedAt: null },
-      include: userInclude,
+      select: userSelect,
     });
     if (!user) {
       const cu = await currentUser();
@@ -41,7 +86,7 @@ async function getCurrentUserImpl() {
       if (email) {
         const byEmail = await prisma.user.findFirst({
           where: { email, deletedAt: null },
-          include: userInclude,
+          select: userSelect,
         });
         if (byEmail) {
           await prisma.user.update({ where: { id: byEmail.id }, data: { clerkId: userId } });

@@ -501,8 +501,11 @@ model Project {
   calendarEvents    CalendarEvent[]
 
   @@index([companyId])
+  @@index([companyId, deletedAt])
   @@index([departmentId])
   @@index([projectGroupId])
+  @@index([projectGroupId, groupSortOrder])
+  @@index([deletedAt, status, deadline])
 }
 
 model ProjectRelation {
@@ -598,6 +601,8 @@ model WorkflowNode {
   feedbacks   FeedbackEvent[]
 
   @@index([projectId])
+  @@index([projectId, deletedAt, parentNodeId])
+  @@index([projectId, deletedAt, status])
   @@index([layerId])
   @@index([parentNodeId])
 }
@@ -674,6 +679,7 @@ model Attachment {
   @@index([workflowNodeId])
   @@index([knowledgeAssetId])
   @@index([projectId])
+  @@index([projectId, deletedAt, createdAt])
   @@index([contributorUserId])
   @@index([memberOutputId])
   @@index([previousVersionId])
@@ -834,6 +840,7 @@ model KnowledgeAsset {
 
   @@index([layer, createdAt])
   @@index([projectId, createdAt])
+  @@index([projectId, deletedAt, updatedAt])
   @@index([authorId, createdAt])
   @@index([companyId, createdAt])
 }
@@ -1037,6 +1044,7 @@ model CalendarEvent {
 
   @@index([organizerUserId, startsAt])
   @@index([projectId])
+  @@index([projectId, startsAt])
 }
 
 model CalendarAttendee {
@@ -1050,4 +1058,3 @@ model CalendarAttendee {
   @@unique([eventId, userId])
   @@index([userId])
 }
-

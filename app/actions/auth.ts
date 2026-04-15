@@ -11,7 +11,16 @@ export async function loginAction(formData: FormData) {
     .toLowerCase();
   const password = String(formData.get("password") ?? "");
 
-  const user = await prisma.user.findFirst({ where: { email, deletedAt: null } });
+  const user = await prisma.user.findFirst({
+    where: { email, deletedAt: null },
+    select: {
+      id: true,
+      active: true,
+      passwordHash: true,
+      companionIntroCompletedAt: true,
+      mustChangePassword: true,
+    },
+  });
   if (!user || !user.active) {
     redirect("/login?error=invalid");
   }
@@ -29,14 +38,10 @@ export async function loginAction(formData: FormData) {
   session.userId = user.id;
   session.isLoggedIn = true;
   await session.save();
-  const fresh = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: { companionIntroCompletedAt: true, mustChangePassword: true },
-  });
-  if (fresh?.mustChangePassword) {
+  if (user.mustChangePassword) {
     redirect("/settings/change-password");
   }
-  redirect(fresh?.companionIntroCompletedAt ? "/home" : "/onboarding/companion");
+  redirect(user.companionIntroCompletedAt ? "/home" : "/onboarding/companion");
 }
 
 export async function logoutAction() {

@@ -12,13 +12,15 @@ const isPublicRoute = createRouteMatcher([
 
 const clerkOn = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY);
 
-export default clerkOn
-  ? clerkMiddleware(async (auth, request) => {
-      if (!isPublicRoute(request)) {
-        await auth.protect();
-      }
-    })
-  : function middleware() {
+const clerkProxy = clerkMiddleware(async (auth, request) => {
+  if (!isPublicRoute(request)) {
+    await auth.protect();
+  }
+});
+
+export const proxy = clerkOn
+  ? clerkProxy
+  : function proxy() {
       return NextResponse.next();
     };
 

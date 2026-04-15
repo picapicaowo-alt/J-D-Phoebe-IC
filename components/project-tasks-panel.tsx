@@ -580,7 +580,7 @@ export function ProjectTasksPanel({
                       const subDialogId = `task-meta-${sub.id}`;
                       return (
                         <div key={sub.id}>
-                          <div className="flex flex-wrap items-center gap-3 rounded-[10px] bg-slate-50 px-3 py-3 dark:bg-zinc-900/60 md:flex-nowrap">
+                          <div className="flex flex-wrap items-center gap-3 rounded-[10px] bg-slate-50 px-3 py-3 dark:bg-zinc-900/60 sm:ml-16 lg:ml-24 md:flex-nowrap">
                             {canEdit ? (
                               <form
                                 onSubmit={(e) => {
@@ -720,7 +720,7 @@ export function ProjectTasksPanel({
                           });
                           form.reset();
                         }}
-                        className="flex flex-wrap items-center gap-2 pt-1"
+                        className="flex flex-wrap items-center gap-2 pt-1 sm:ml-16 lg:ml-24"
                       >
                         <input type="hidden" name="projectId" value={projectId} />
                         <input type="hidden" name="parentNodeId" value={task.id} />

@@ -3,7 +3,14 @@ import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { Priority, ProjectStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
-import { canManageCompanyProjects, canManageProject, canViewProject, isCompanyAdmin, isGroupAdmin, type AccessUser } from "@/lib/access";
+import {
+  canManageCompanyProjects,
+  canManageProject,
+  canViewProject,
+  companyVisibilityWhere,
+  projectVisibilityWhere,
+  type AccessUser,
+} from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui/card";
@@ -19,6 +26,7 @@ import {
   updateProjectGroupAction,
 } from "@/app/actions/project-group";
 import { ProjectsGroupedBoard, type GroupedProjectCard, type ProjectGroupRow } from "@/components/projects-grouped-board";
+import { RoutePrefetcher } from "@/components/route-prefetcher";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const STATUSES: ProjectStatus[] = [
@@ -71,45 +79,36 @@ export async function ProjectsPageBody({
   const priorityRaw = typeof sp.priority === "string" ? sp.priority.trim() : "";
   const due = typeof sp.due === "string" ? sp.due.trim() : "";
 
-  const companyRows = await prisma.company.findMany({
-    where: { deletedAt: null },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, orgGroupId: true },
-  });
-  const companyOptions = companyRows.filter(
-    (c) =>
-      user.isSuperAdmin ||
-      isGroupAdmin(user, c.orgGroupId) ||
-      isCompanyAdmin(user, c.id) ||
-      user.projectMemberships.some((m) => m.project.companyId === c.id),
-  );
+  const [companyOptions, canCreate] = await Promise.all([
+    prisma.company.findMany({
+      where: { deletedAt: null, ...companyVisibilityWhere(user) },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, orgGroupId: true },
+    }),
+    userHasPermission(user, "project.create"),
+  ]);
   const companyId =
     companyIdRaw && companyOptions.some((c) => c.id === companyIdRaw) ? companyIdRaw : "";
 
-  let departmentId = "";
-  if (companyId && departmentIdRaw) {
-    const depOk = await prisma.department.findFirst({
-      where: { id: departmentIdRaw, companyId },
-    });
-    if (depOk) departmentId = departmentIdRaw;
-  }
+  const [departmentOptions, projectGroups] = companyId
+    ? await Promise.all([
+        prisma.department.findMany({
+          where: { companyId },
+          orderBy: { sortOrder: "asc" },
+          select: { id: true, name: true },
+        }),
+        prisma.projectGroup.findMany({
+          where: { companyId },
+          orderBy: { sortOrder: "asc" },
+          select: { id: true, name: true, sortOrder: true },
+        }),
+      ])
+    : [[], [] as ProjectGroupRow[]];
 
-  const departmentOptions = companyId
-    ? await prisma.department.findMany({
-        where: { companyId },
-        orderBy: { sortOrder: "asc" },
-      })
-    : [];
+  const departmentId =
+    departmentIdRaw && departmentOptions.some((d) => d.id === departmentIdRaw) ? departmentIdRaw : "";
 
-  const projectGroups: ProjectGroupRow[] = companyId
-    ? await prisma.projectGroup.findMany({
-        where: { companyId },
-        orderBy: { sortOrder: "asc" },
-        select: { id: true, name: true, sortOrder: true },
-      })
-    : [];
-
-  const parts: Prisma.ProjectWhereInput[] = [{ deletedAt: null }];
+  const parts: Prisma.ProjectWhereInput[] = [{ deletedAt: null }, projectVisibilityWhere(user)];
   if (q) {
     parts.push({
       OR: [
@@ -135,9 +134,19 @@ export async function ProjectsPageBody({
     where,
     orderBy: [{ projectGroupId: "asc" }, { groupSortOrder: "asc" }, { updatedAt: "desc" }],
     take: 200,
-    include: {
-      company: { include: { orgGroup: true } },
-      owner: true,
+    select: {
+      id: true,
+      name: true,
+      companyId: true,
+      ownerId: true,
+      status: true,
+      priority: true,
+      deadline: true,
+      projectGroupId: true,
+      groupSortOrder: true,
+      deletedAt: true,
+      company: { select: { id: true, name: true, orgGroupId: true } },
+      owner: { select: { id: true, name: true } },
       department: { select: { id: true, name: true } },
       projectGroup: { select: { id: true, name: true } },
       _count: { select: { outgoingRelations: true, incomingRelations: true, knowledgeAssets: true } },
@@ -145,7 +154,6 @@ export async function ProjectsPageBody({
   });
 
   const visible = projects.filter((p) => canViewProject(user, { ...p, company: p.company }));
-  const canCreate = await userHasPermission(user, "project.create");
 
   const selectedCo = companyId ? (companyOptions.find((c) => c.id === companyId) ?? null) : null;
   const canManageCompanyStructure =
@@ -175,13 +183,15 @@ export async function ProjectsPageBody({
     projectGroupId: p.projectGroupId,
     groupSortOrder: p.groupSortOrder,
   }));
+  const projectDetailHrefs = visible.map((p) => `/projects/${p.id}`);
 
   return (
     <div className="space-y-6">
+      <RoutePrefetcher hrefs={projectDetailHrefs} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t(locale, "projectsTitle")}</h1>
-          <p className="mt-2 max-w-2xl text-sm text-[hsl(var(--muted))]">{t(locale, "projectsPageLead")}</p>
+          <p className="mt-2 max-w-3xl text-base leading-7 text-[hsl(var(--muted))]">{t(locale, "projectsPageLead")}</p>
         </div>
         {canCreate ? (
           <Link href="/projects/new" className="text-sm font-medium text-[hsl(var(--accent))] hover:underline">
@@ -329,7 +339,7 @@ export async function ProjectsPageBody({
                   <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
                     {p.name}
                   </Link>
-                  <div className="text-xs text-[hsl(var(--muted))]">
+                  <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
                     {p.company.name} · {t(locale, "projectsOwnerPrefix")} {p.owner.name}
                     {p.department ? (
                       <>
@@ -338,7 +348,7 @@ export async function ProjectsPageBody({
                       </>
                     ) : null}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-sm leading-6 text-[hsl(var(--foreground))]">
                     <span>{tProjectStatus(locale, p.status)}</span>
                     <span>·</span>
                     <span>{tPriority(locale, p.priority)}</span>

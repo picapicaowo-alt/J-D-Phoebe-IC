@@ -1,4 +1,5 @@
 import type { AuditEntityType } from "@prisma/client";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function writeAudit(params: {
@@ -11,5 +12,19 @@ export async function writeAudit(params: {
   newValue?: string | null;
   meta?: string | null;
 }) {
-  await prisma.auditLogEntry.create({ data: params });
+  const insert = async () => {
+    await prisma.auditLogEntry.create({ data: params });
+  };
+
+  try {
+    after(async () => {
+      try {
+        await insert();
+      } catch (err) {
+        console.error("[writeAudit]", params.entityType, params.entityId, err);
+      }
+    });
+  } catch {
+    await insert();
+  }
 }

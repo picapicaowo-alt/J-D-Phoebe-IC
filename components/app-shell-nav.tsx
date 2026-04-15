@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export type ShellNavLink = { href: string; label: string; description?: string };
 export type ShellNavDropdown = { id: string; label: string; items: ShellNavLink[] };
+
+const shouldPrefetchRoutes = process.env.NODE_ENV === "production";
+const linkPrefetch = shouldPrefetchRoutes ? undefined : false;
 
 function isActive(pathname: string, href: string) {
   if (href === "/home") return pathname === "/home" || pathname === "/";
@@ -18,11 +21,24 @@ function dropdownActive(pathname: string, items: ShellNavLink[]) {
   return items.some((i) => isActive(pathname, i.href));
 }
 
-function NavLink({ href, label, pathname }: { href: string; label: string; pathname: string }) {
+function NavLink({
+  href,
+  label,
+  pathname,
+  warmRoute,
+}: {
+  href: string;
+  label: string;
+  pathname: string;
+  warmRoute: (href: string) => void;
+}) {
   const active = isActive(pathname, href);
   return (
     <Link
       href={href}
+      prefetch={linkPrefetch}
+      onFocus={() => warmRoute(href)}
+      onPointerEnter={() => warmRoute(href)}
       className={cn(
         "shrink-0 rounded-full px-3 py-1.5 text-base font-medium transition-colors",
         active
@@ -40,11 +56,13 @@ function NavDropdown({
   pathname,
   openId,
   setOpenId,
+  warmRoute,
 }: {
   dd: ShellNavDropdown;
   pathname: string;
   openId: string | null;
   setOpenId: Dispatch<SetStateAction<string | null>>;
+  warmRoute: (href: string) => void;
 }) {
   const open = openId === dd.id;
   const active = dropdownActive(pathname, dd.items);
@@ -137,7 +155,10 @@ function NavDropdown({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={linkPrefetch}
                 role="menuitem"
+                onFocus={() => warmRoute(item.href)}
+                onPointerEnter={() => warmRoute(item.href)}
                 onClick={() => {
                   cancelClose();
                   setOpenId(null);
@@ -168,7 +189,44 @@ export function AppShellNav({
   dropdowns: ShellNavDropdown[];
 }) {
   const pathname = usePathname() || "";
+  const router = useRouter();
   const [openId, setOpenId] = useState<string | null>(null);
+  const warmRoute = useCallback(
+    (href: string) => {
+      if (!shouldPrefetchRoutes) return;
+      router.prefetch(href);
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    if (!shouldPrefetchRoutes) return;
+    const hrefs = [...new Set([...primaryLinks.map((i) => i.href), ...dropdowns.flatMap((d) => d.items.map((i) => i.href))])];
+    if (!hrefs.length) return;
+
+    let cancelled = false;
+    const warmAll = () => {
+      hrefs.forEach((href, index) => {
+        window.setTimeout(() => {
+          if (!cancelled) router.prefetch(href);
+        }, index * 60);
+      });
+    };
+
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(warmAll, { timeout: 1200 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(idleId);
+      };
+    }
+
+    const timer = globalThis.setTimeout(warmAll, 250);
+    return () => {
+      cancelled = true;
+      globalThis.clearTimeout(timer);
+    };
+  }, [dropdowns, primaryLinks, router]);
 
   return (
     <nav
@@ -176,10 +234,10 @@ export function AppShellNav({
       aria-label="Main"
     >
       {primaryLinks.map((item) => (
-        <NavLink key={item.href} href={item.href} label={item.label} pathname={pathname} />
+        <NavLink key={item.href} href={item.href} label={item.label} pathname={pathname} warmRoute={warmRoute} />
       ))}
       {dropdowns.map((dd) => (
-        <NavDropdown key={dd.id} dd={dd} pathname={pathname} openId={openId} setOpenId={setOpenId} />
+        <NavDropdown key={dd.id} dd={dd} pathname={pathname} openId={openId} setOpenId={setOpenId} warmRoute={warmRoute} />
       ))}
     </nav>
   );

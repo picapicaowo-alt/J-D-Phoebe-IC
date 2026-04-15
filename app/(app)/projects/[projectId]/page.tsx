@@ -19,7 +19,7 @@ import { createKnowledgeAssetAction, softDeleteKnowledgeAssetAction, updateKnowl
 import { addExternalResourceLinkAction, updateProjectExternalLinkAction } from "@/app/actions/attachments";
 import { softDeleteAttachmentAction } from "@/app/actions/attachment-trash";
 import { getAppSession, requireUser } from "@/lib/auth";
-import { canEditWorkflow, canManageProject, canViewProject, type AccessUser } from "@/lib/access";
+import { canEditWorkflow, canManageProject, canViewProject, projectVisibilityWhere, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
 import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tProjectStatus } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
@@ -123,35 +123,117 @@ function priorityTone(p: Priority): string {
   return "bg-zinc-200 text-zinc-800 ring-1 ring-zinc-300 dark:bg-zinc-700 dark:text-zinc-100";
 }
 
+const knowledgeAssetSelect = {
+  id: true,
+  projectId: true,
+  companyId: true,
+  authorId: true,
+  title: true,
+  titleEn: true,
+  titleZh: true,
+  summary: true,
+  content: true,
+  layer: true,
+  tags: true,
+  sourceUrl: true,
+  author: { select: { id: true, name: true } },
+} as const;
+
+const projectAttachmentSelect = {
+  id: true,
+  previousVersionId: true,
+  resourceKind: true,
+  externalUrl: true,
+  fileName: true,
+  description: true,
+  createdAt: true,
+} as const;
+
 export default async function ProjectDetailPage({ params }: { params: Promise<{ projectId: string }> }) {
-  const user = (await requireUser()) as AccessUser;
-  const { projectId } = await params;
+  const [user, { projectId }] = await Promise.all([requireUser() as Promise<AccessUser>, params]);
+  const localePromise = getLocale();
+  const sessionPromise = getAppSession();
+  const permissionPromise = Promise.all([
+    userHasPermission(user, "project.soft_delete"),
+    userHasPermission(user, "project.member.manage"),
+    userHasPermission(user, "project.workflow.update"),
+    userHasPermission(user, "knowledge.create"),
+    userHasPermission(user, "knowledge.read"),
+    userHasPermission(user, "project.read"),
+  ]);
 
   const project = await prisma.project.findFirst({
     where: { id: projectId, deletedAt: null },
-    include: {
-      company: true,
-      owner: true,
-      memberships: { include: { user: true, roleDefinition: true } },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      companyId: true,
+      ownerId: true,
+      status: true,
+      priority: true,
+      deadline: true,
+      progressPercent: true,
+      departmentId: true,
+      projectGroupId: true,
+      deletedAt: true,
+      company: { select: { id: true, name: true, logoUrl: true, orgGroupId: true } },
+      owner: { select: { id: true, name: true, avatarUrl: true } },
+      memberships: {
+        select: {
+          id: true,
+          userId: true,
+          user: { select: { id: true, name: true, avatarUrl: true, active: true } },
+          roleDefinition: { select: { displayName: true } },
+        },
+      },
       outgoingRelations: {
-        include: {
-          toProject: { include: { company: true } },
-          sharedKnowledge: { include: { knowledgeAsset: { select: { id: true } } } },
-          sharedAttachments: { include: { attachment: { select: { id: true } } } },
+        select: {
+          id: true,
+          relationType: true,
+          note: true,
+          toProject: {
+            select: {
+              id: true,
+              name: true,
+              companyId: true,
+              company: { select: { id: true, name: true, orgGroupId: true } },
+            },
+          },
+          sharedKnowledge: { select: { knowledgeAsset: { select: { id: true } } } },
+          sharedAttachments: { select: { attachment: { select: { id: true } } } },
         },
       },
       incomingRelations: {
-        include: {
-          fromProject: { include: { company: true } },
-          sharedKnowledge: { include: { knowledgeAsset: { select: { id: true } } } },
-          sharedAttachments: { include: { attachment: { select: { id: true } } } },
+        select: {
+          id: true,
+          relationType: true,
+          note: true,
+          fromProject: {
+            select: {
+              id: true,
+              name: true,
+              companyId: true,
+              company: { select: { id: true, name: true, orgGroupId: true } },
+            },
+          },
+          sharedKnowledge: { select: { knowledgeAsset: { select: { id: true } } } },
+          sharedAttachments: { select: { attachment: { select: { id: true } } } },
         },
       },
       nodes: {
         where: { deletedAt: null },
         orderBy: { sortOrder: "asc" },
-        include: {
-          assignees: { include: { user: { select: { id: true, name: true } } } },
+        select: {
+          id: true,
+          title: true,
+          parentNodeId: true,
+          progressPercent: true,
+          status: true,
+          sortOrder: true,
+          dueAt: true,
+          description: true,
+          assignees: { select: { user: { select: { id: true, name: true } } } },
         },
       },
     },
@@ -159,95 +241,130 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   if (!project) notFound();
   if (!canViewProject(user, project)) notFound();
 
-  const projectFiles = await prisma.attachment.findMany({
-    where: {
-      projectId: project.id,
-      deletedAt: null,
-      workflowNodeId: null,
-      knowledgeAssetId: null,
-      memberOutputId: null,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const canManage = canManageProject(user, project);
+  const mustIncludeUserIds = [...new Set([project.ownerId, ...project.memberships.map((m) => m.userId)])];
 
-  const [ownKnowledge, sharedKnowledgeInbound, sharedAttachmentInbound, projectDepts, projectGroupList, projectCalendarEvents] =
-    await Promise.all([
+  const [
+    projectFiles,
+    ownKnowledge,
+    sharedKnowledgeInbound,
+    sharedAttachmentInbound,
+    projectDepts,
+    projectGroupList,
+    projectCalendarEvents,
+    staff,
+    projectRoles,
+    relationTargetProjects,
+    [canSoftDeletePermission, canMemberManagePermission, canEditTasksPermission, canEditKnowledge, canReadKnowledge, canReadCalendar],
+    locale,
+    session,
+  ] = await Promise.all([
+    prisma.attachment.findMany({
+      where: {
+        projectId: project.id,
+        deletedAt: null,
+        workflowNodeId: null,
+        knowledgeAssetId: null,
+        memberOutputId: null,
+      },
+      orderBy: { createdAt: "desc" },
+      select: projectAttachmentSelect,
+    }),
     prisma.knowledgeAsset.findMany({
       where: { projectId: project.id, deletedAt: null },
-      include: { author: true },
+      select: knowledgeAssetSelect,
       orderBy: { updatedAt: "desc" },
       take: 100,
     }),
     prisma.projectRelationSharedKnowledge.findMany({
       where: { relation: { toProjectId: project.id } },
-      include: {
-        relation: { include: { fromProject: { include: { company: true } } } },
-        knowledgeAsset: { include: { author: true } },
+      select: {
+        id: true,
+        relation: {
+          select: {
+            fromProject: {
+              select: {
+                id: true,
+                name: true,
+                company: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+        knowledgeAsset: { select: knowledgeAssetSelect },
       },
     }),
     prisma.projectRelationSharedAttachment.findMany({
       where: { relation: { toProjectId: project.id } },
-      include: {
-        relation: { include: { fromProject: { include: { company: true } } } },
-        attachment: true,
+      select: {
+        id: true,
+        relation: {
+          select: {
+            fromProject: {
+              select: {
+                id: true,
+                name: true,
+                company: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+        attachment: { select: projectAttachmentSelect },
       },
     }),
     prisma.department.findMany({
       where: { companyId: project.companyId },
       orderBy: { sortOrder: "asc" },
+      select: { id: true, name: true },
     }),
     prisma.projectGroup.findMany({
       where: { companyId: project.companyId },
       orderBy: { sortOrder: "asc" },
+      select: { id: true, name: true },
     }),
     prisma.calendarEvent.findMany({
       where: { projectId: project.id },
-      include: { organizer: true },
+      select: { id: true, title: true, startsAt: true, organizer: { select: { id: true, name: true } } },
       orderBy: { startsAt: "desc" },
       take: 30,
     }),
+    prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        OR: [{ id: { in: mustIncludeUserIds } }, { active: true }],
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.roleDefinition.findMany({
+      where: { appliesScope: "PROJECT" },
+      orderBy: { displayName: "asc" },
+      select: { id: true, displayName: true },
+    }),
+    prisma.project.findMany({
+      where: { deletedAt: null, id: { not: project.id }, ...projectVisibilityWhere(user) },
+      select: { id: true, name: true, company: { select: { id: true, name: true } } },
+      orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
+      take: 120,
+    }),
+    permissionPromise,
+    localePromise,
+    sessionPromise,
   ]);
 
-  const canManage = canManageProject(user, project);
   const canSoftDeleteProject =
-    (await userHasPermission(user, "project.soft_delete")) &&
+    canSoftDeletePermission &&
     (user.isSuperAdmin ||
       user.groupMemberships.some((m) => m.orgGroupId === project.company.orgGroupId && m.roleDefinition.key === "GROUP_ADMIN") ||
       user.companyMemberships.some((m) => m.companyId === project.companyId && m.roleDefinition.key === "COMPANY_ADMIN"));
-  const mustIncludeUserIds = [
-    ...new Set([project.ownerId, ...project.memberships.map((m) => m.userId)]),
-  ];
-  const staff = await prisma.user.findMany({
-    where: {
-      deletedAt: null,
-      OR: [{ id: { in: mustIncludeUserIds } }, { active: true }],
-    },
-    orderBy: { name: "asc" },
-  });
-  const projectRoles = await prisma.roleDefinition.findMany({
-    where: { appliesScope: "PROJECT" },
-    orderBy: { displayName: "asc" },
-  });
-  const relationTargetProjects = await prisma.project.findMany({
-    where: { deletedAt: null, id: { not: project.id } },
-    include: { company: true },
-    orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
-    take: 120,
-  });
-
-  const locale = await getLocale();
-  const session = await getAppSession();
   const undoAvailable = session.taskUndo?.projectId === project.id;
-  const canMemberManage = (await userHasPermission(user, "project.member.manage")) && canManage;
+  const canMemberManage = canMemberManagePermission && canManage;
   const canEditTasks =
-    (await userHasPermission(user, "project.workflow.update")) &&
+    canEditTasksPermission &&
     canViewProject(user, project) &&
     (canManageProject(user, project) ||
       canEditWorkflow(user, project) ||
       user.projectMemberships.some((m) => m.projectId === project.id));
-  const canEditKnowledge = await userHasPermission(user, "knowledge.create");
-  const canReadKnowledge = await userHasPermission(user, "knowledge.read");
-  const canReadCalendar = await userHasPermission(user, "project.read");
 
   const progressPct = clampProjectProgressPercent(project.progressPercent);
   const relationCount = project.outgoingRelations.length + project.incomingRelations.length;

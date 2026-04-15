@@ -1,10 +1,16 @@
-import type { User } from "@prisma/client";
+import type { Prisma, User } from "@prisma/client";
 
 export type AccessUser = User & {
-  groupMemberships: { orgGroupId: string; roleDefinition: { key: string } }[];
-  companyMemberships: { companyId: string; roleDefinition: { key: string }; company: { orgGroupId: string } }[];
+  groupMemberships: { orgGroupId: string; roleDefinitionId?: string; roleDefinition: { key: string } }[];
+  companyMemberships: {
+    companyId: string;
+    roleDefinitionId?: string;
+    roleDefinition: { key: string };
+    company: { orgGroupId: string };
+  }[];
   projectMemberships: {
     projectId: string;
+    roleDefinitionId?: string;
     roleDefinition: { key: string };
     project: { id: string; companyId: string; company: { orgGroupId: string } };
   }[];
@@ -76,4 +82,42 @@ export function canEditProjectMap(
   project: { id: string; companyId: string; company: { orgGroupId: string } },
 ) {
   return canEditWorkflow(user, project);
+}
+
+export function projectVisibilityWhere(user: AccessUser): Prisma.ProjectWhereInput {
+  if (user.isSuperAdmin) return {};
+
+  const groupOrgIds = user.groupMemberships
+    .filter((m) => m.roleDefinition.key === "GROUP_ADMIN")
+    .map((m) => m.orgGroupId);
+  const companyAdminIds = user.companyMemberships
+    .filter((m) => m.roleDefinition.key === "COMPANY_ADMIN")
+    .map((m) => m.companyId);
+  const projectIds = user.projectMemberships.map((m) => m.projectId);
+
+  const OR: Prisma.ProjectWhereInput[] = [];
+  if (groupOrgIds.length) OR.push({ company: { orgGroupId: { in: [...new Set(groupOrgIds)] } } });
+  if (companyAdminIds.length) OR.push({ companyId: { in: [...new Set(companyAdminIds)] } });
+  if (projectIds.length) OR.push({ id: { in: [...new Set(projectIds)] } });
+
+  return OR.length ? { OR } : { id: { in: [] } };
+}
+
+export function companyVisibilityWhere(user: AccessUser): Prisma.CompanyWhereInput {
+  if (user.isSuperAdmin) return {};
+
+  const groupOrgIds = user.groupMemberships
+    .filter((m) => m.roleDefinition.key === "GROUP_ADMIN")
+    .map((m) => m.orgGroupId);
+  const companyAdminIds = user.companyMemberships
+    .filter((m) => m.roleDefinition.key === "COMPANY_ADMIN")
+    .map((m) => m.companyId);
+  const projectCompanyIds = user.projectMemberships.map((m) => m.project.companyId);
+
+  const OR: Prisma.CompanyWhereInput[] = [];
+  if (groupOrgIds.length) OR.push({ orgGroupId: { in: [...new Set(groupOrgIds)] } });
+  const companyIds = [...new Set([...companyAdminIds, ...projectCompanyIds])];
+  if (companyIds.length) OR.push({ id: { in: companyIds } });
+
+  return OR.length ? { OR } : { id: { in: [] } };
 }

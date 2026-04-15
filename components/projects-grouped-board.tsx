@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useOptimistic, useState, useTransition } from "react";
 import { setProjectGroupMembershipAction } from "@/app/actions/project-group";
 export type ProjectGroupRow = { id: string; name: string; sortOrder: number };
 
@@ -32,6 +32,21 @@ type Copy = {
   metaKnowledge: string;
 };
 
+type ProjectMove = { projectId: string; projectGroupId: string | null };
+
+function applyProjectMove(prev: GroupedProjectCard[], action: ProjectMove): GroupedProjectCard[] {
+  const nextSortOrder =
+    prev
+      .filter((p) => p.id !== action.projectId && p.projectGroupId === action.projectGroupId)
+      .reduce((max, p) => Math.max(max, p.groupSortOrder), -1) + 1;
+
+  return prev.map((p) =>
+    p.id === action.projectId
+      ? { ...p, projectGroupId: action.projectGroupId, groupSortOrder: nextSortOrder }
+      : p,
+  );
+}
+
 export function ProjectsGroupedBoard({
   groups,
   projects,
@@ -44,8 +59,9 @@ export function ProjectsGroupedBoard({
   copy: Copy;
 }) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const movable = useMemo(() => new Set(movableProjectIds), [movableProjectIds]);
+  const [optimisticProjects, moveOptimistic] = useOptimistic(projects, applyProjectMove);
 
   const sortedGroups = useMemo(
     () => [...groups].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
@@ -60,7 +76,7 @@ export function ProjectsGroupedBoard({
 
   const byGroup = useMemo(() => {
     const map = new Map<string | null, GroupedProjectCard[]>();
-    for (const p of projects) {
+    for (const p of optimisticProjects) {
       const k = p.projectGroupId;
       if (!map.has(k)) map.set(k, []);
       map.get(k)!.push(p);
@@ -69,7 +85,7 @@ export function ProjectsGroupedBoard({
       list.sort((a, b) => a.groupSortOrder - b.groupSortOrder || a.name.localeCompare(b.name));
     }
     return map;
-  }, [projects]);
+  }, [optimisticProjects]);
 
   const moveProject = useCallback(
     (projectId: string, projectGroupId: string | null) => {
@@ -77,11 +93,12 @@ export function ProjectsGroupedBoard({
       fd.set("projectId", projectId);
       fd.set("projectGroupId", projectGroupId ?? "");
       startTransition(async () => {
+        moveOptimistic({ projectId, projectGroupId });
         await setProjectGroupMembershipAction(fd);
         router.refresh();
       });
     },
-    [router],
+    [moveOptimistic, router],
   );
 
   const onDragStart = (e: React.DragEvent, projectId: string) => {
@@ -111,16 +128,16 @@ export function ProjectsGroupedBoard({
         onDragStart={(ev) => onDragStart(ev, p.id)}
         className={`flex flex-wrap items-center justify-between gap-4 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-sm ${
           draggable ? "cursor-grab active:cursor-grabbing" : ""
-        } ${isPending ? "opacity-60" : ""}`}
+        }`}
       >
         <div className="min-w-0 flex-1">
           <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
             {p.name}
           </Link>
-          <div className="text-xs text-[hsl(var(--muted))]">
+          <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
             {p.companyName} · {copy.ownerPrefix} {p.ownerName}
           </div>
-          <div className="mt-1 flex flex-wrap gap-2 text-xs">
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-sm leading-6 text-[hsl(var(--foreground))]">
             <span>{p.statusLabel}</span>
             <span>·</span>
             <span>{p.priorityLabel}</span>

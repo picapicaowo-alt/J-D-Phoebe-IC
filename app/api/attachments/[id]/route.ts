@@ -44,7 +44,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return new NextResponse("No file for this resource", { status: 404 });
   }
 
-  const abs = path.join(process.cwd(), att.storageKey);
+  const storageParts = path.normalize(att.storageKey).split(/[\\/]+/).filter(Boolean);
+  if (storageParts[0] !== "uploads" || storageParts.some((part) => part === "..")) {
+    return new NextResponse("Unsupported file path", { status: 404 });
+  }
+
+  const abs = path.join(process.cwd(), "uploads", ...storageParts.slice(1));
   try {
     const buf = await readFile(abs);
     return new NextResponse(buf, {

@@ -131,6 +131,7 @@ export function CalendarDashboardClient({
 
   const [createStart, setCreateStart] = useState("");
   const [createEnd, setCreateEnd] = useState("");
+  const [createFormKey, setCreateFormKey] = useState(0);
 
   const openedBootstrap = useRef(false);
 
@@ -173,6 +174,7 @@ export function CalendarDashboardClient({
       openedBootstrap.current = true;
       setCreateStart(toDatetimeLocal(new Date(bootstrapCreate.startIso)));
       setCreateEnd(toDatetimeLocal(new Date(bootstrapCreate.endIso)));
+      setCreateFormKey((key) => key + 1);
       queueMicrotask(() => {
         (document.getElementById(CREATE_DIALOG_ID) as HTMLDialogElement | null)?.showModal();
       });
@@ -183,6 +185,7 @@ export function CalendarDashboardClient({
     const { start, end } = slotDefaultsForDay(year, month, day);
     setCreateStart(toDatetimeLocal(start));
     setCreateEnd(toDatetimeLocal(end));
+    setCreateFormKey((key) => key + 1);
     queueMicrotask(() => {
       (document.getElementById(CREATE_DIALOG_ID) as HTMLDialogElement | null)?.showModal();
     });
@@ -378,6 +381,7 @@ export function CalendarDashboardClient({
           />
         </div>
         <form
+          key={createFormKey}
           className="max-h-[calc(90vh-88px)] space-y-3 overflow-y-auto p-4"
           onSubmit={handleCreateSubmit}
         >

@@ -1,13 +1,25 @@
 import { cache } from "react";
 import type { Priority, ProjectStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { canViewProject, type AccessUser } from "@/lib/access";
+import { canViewProject, projectVisibilityWhere, type AccessUser } from "@/lib/access";
 
 /** Single projects fetch per request; shared by priorities, execution counts, and snapshot drilldowns. */
 export const getHomeDashboardVisibleProjects = cache(async function getHomeDashboardVisibleProjects(user: AccessUser) {
   const projects = await prisma.project.findMany({
-    where: { deletedAt: null, status: { not: "COMPLETED" } },
-    include: { company: { include: { orgGroup: true } }, owner: true },
+    where: { deletedAt: null, status: { not: "COMPLETED" }, ...projectVisibilityWhere(user) },
+    select: {
+      id: true,
+      name: true,
+      companyId: true,
+      ownerId: true,
+      status: true,
+      priority: true,
+      deadline: true,
+      progressPercent: true,
+      deletedAt: true,
+      company: { select: { id: true, name: true, orgGroupId: true } },
+      owner: { select: { id: true, name: true } },
+    },
     orderBy: [{ deadline: "asc" }, { priority: "desc" }, { updatedAt: "desc" }],
     take: 60,
   });
