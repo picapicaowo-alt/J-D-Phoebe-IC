@@ -106,6 +106,7 @@ export async function createProjectAction(formData: FormData) {
 
   await writeAudit({ actorId: user.id, entityType: "PROJECT", entityId: p.id, action: "CREATE", newValue: name });
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   revalidatePath(`/companies/${companyId}`);
   redirect(`/projects/${p.id}`);
 }
@@ -177,6 +178,7 @@ export async function updateProjectAction(formData: FormData) {
   });
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   revalidatePath(`/companies/${project.companyId}`);
 }
 
@@ -197,6 +199,7 @@ export async function archiveProjectAction(formData: FormData) {
   });
   await writeAudit({ actorId: user.id, entityType: "PROJECT", entityId: projectId, action: "ARCHIVE" });
   revalidatePath("/projects");
+  revalidatePath("/calendar");
 }
 
 export async function restoreProjectAction(formData: FormData) {
@@ -216,6 +219,7 @@ export async function restoreProjectAction(formData: FormData) {
   });
   await writeAudit({ actorId: user.id, entityType: "PROJECT", entityId: projectId, action: "RESTORE" });
   revalidatePath("/projects");
+  revalidatePath("/calendar");
 }
 
 export async function addProjectRelationAction(formData: FormData) {

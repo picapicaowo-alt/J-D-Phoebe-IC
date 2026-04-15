@@ -18,8 +18,6 @@ import {
   toggleOffboardingChecklistAction,
 } from "@/app/actions/lifecycle";
 import { removeUserAvatarAction, uploadUserAvatarAction } from "@/app/actions/profile-media";
-import { addExternalResourceLinkAction } from "@/app/actions/attachments";
-import { createMemberOutputWithAttachmentAction, updateMemberOutputMetaAction } from "@/app/actions/member-output";
 import { requireUser } from "@/lib/auth";
 import { canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
@@ -38,7 +36,6 @@ import { Select } from "@/components/ui/select";
 import { AbilityRadar } from "@/components/ability-radar";
 import { UserFace } from "@/components/user-face";
 import { FeedbackSecondarySelect } from "@/components/feedback-secondary-select";
-import { AttachmentVersionTree } from "@/components/attachment-version-tree";
 
 export default async function StaffDetailPage({ params }: { params: Promise<{ userId: string }> }) {
   const actor = (await requireUser()) as AccessUser;
@@ -128,15 +125,6 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
     (isSuperAdmin(actor) || isAnyGroupAdmin) &&
     actor.id !== target.id &&
     !(target.isSuperAdmin && !isSuperAdmin(actor));
-
-  const memberOutputs = await prisma.memberOutput.findMany({
-    where: { userId: target.id, deletedAt: null },
-    include: {
-      attachments: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
-      project: true,
-    },
-    orderBy: { updatedAt: "desc" },
-  });
 
   const latestScore = target.performanceSnapshots[0] ?? null;
   const until = new Date();
@@ -353,185 +341,6 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
           ) : null}
         </Card>
       </section>
-
-      <Card className="space-y-4 p-4">
-        <CardTitle>{t(locale, "staffMemberOutput")}</CardTitle>
-        <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "staffMemberOutputCaption")}</p>
-        {memberOutputs.length ? (
-          <ul className="space-y-4 text-sm">
-            {memberOutputs.map((mo) => (
-              <li key={mo.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                <div className="font-medium">{mo.title}</div>
-                <div className="text-xs text-[hsl(var(--muted))]">
-                  {[mo.titleEn, mo.titleZh].filter(Boolean).join(" · ")}
-                  {mo.project ? ` · ${mo.project.name}` : ""}
-                </div>
-                {mo.description ? <p className="mt-1 text-xs">{mo.description}</p> : null}
-                {mo.labels ? (
-                  <p className="mt-1 text-xs text-[hsl(var(--muted))]">{mo.labels}</p>
-                ) : null}
-                {mo.attachments.length ? (
-                  <div className="mt-2 text-xs">
-                    <AttachmentVersionTree
-                      attachments={mo.attachments.map((f) => ({
-                        id: f.id,
-                        previousVersionId: f.previousVersionId,
-                        fileName: f.fileName,
-                        createdAt: f.createdAt,
-                        resourceKind: f.resourceKind,
-                        externalUrl: f.externalUrl,
-                      }))}
-                      locale={locale}
-                      showTrash={canEditProfile}
-                    />
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
-                )}
-                {canEditProfile ? (
-                  <div className="mt-3 space-y-3 border-t border-[hsl(var(--border))] pt-3">
-                    <form action={addExternalResourceLinkAction} className="grid gap-2 md:grid-cols-2">
-                      <input type="hidden" name="memberOutputId" value={mo.id} />
-                      <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
-                        <Input name="externalUrl" type="url" required placeholder="https://..." className="text-xs" />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
-                        <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
-                        <Input name="description" className="text-xs" />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
-                        <select
-                          name="previousVersionId"
-                          className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
-                          defaultValue=""
-                        >
-                          <option value="">{t(locale, "wfNewVersionNone")}</option>
-                          {mo.attachments.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.fileName}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="md:col-span-2">
-                        <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
-                          {t(locale, "resAddLink")}
-                        </FormSubmitButton>
-                      </div>
-                    </form>
-                    <form action={updateMemberOutputMetaAction} className="grid gap-2 md:grid-cols-2">
-                      <input type="hidden" name="id" value={mo.id} />
-                      <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs font-medium">{t(locale, "staffMoMeta")}</label>
-                        <Input name="title" defaultValue={mo.title} required className="text-xs" />
-                      </div>
-                      <div className="space-y-1">
-                        <Input name="titleEn" placeholder={t(locale, "commonTitleEn")} defaultValue={mo.titleEn ?? ""} className="text-xs" />
-                      </div>
-                      <div className="space-y-1">
-                        <Input name="titleZh" placeholder={t(locale, "commonTitleZh")} defaultValue={mo.titleZh ?? ""} className="text-xs" />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <Input name="description" placeholder={t(locale, "commonDescription")} defaultValue={mo.description ?? ""} className="text-xs" />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <Input name="labels" placeholder={t(locale, "commonLabels")} defaultValue={mo.labels ?? ""} className="text-xs" />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <Select name="projectId" defaultValue={mo.projectId ?? ""}>
-                          <option value="">{t(locale, "kbGeneralProject")}</option>
-                          {projects.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.company.name} · {p.name}
-                            </option>
-                          ))}
-                        </Select>
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <Select name="companyId" defaultValue={mo.companyId ?? ""}>
-                          <option value="">{t(locale, "kbInferCompany")}</option>
-                          {companies.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </Select>
-                      </div>
-                      <div className="md:col-span-2">
-                        <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
-                          {t(locale, "btnSave")}
-                        </FormSubmitButton>
-                      </div>
-                    </form>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
-        )}
-        {canEditProfile ? (
-          <form action={createMemberOutputWithAttachmentAction} className="grid gap-2 border-t border-[hsl(var(--border))] pt-3 md:grid-cols-2">
-            <input type="hidden" name="userId" value={target.id} />
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "staffMoNewTitle")}</label>
-              <Input name="title" required className="text-xs" />
-            </div>
-            <div className="space-y-1">
-              <Input name="titleEn" placeholder={t(locale, "commonTitleEn")} className="text-xs" />
-            </div>
-            <div className="space-y-1">
-              <Input name="titleZh" placeholder={t(locale, "commonTitleZh")} className="text-xs" />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <Input name="description" placeholder={t(locale, "commonDescription")} className="text-xs" />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <Input name="labels" placeholder={t(locale, "commonLabels")} className="text-xs" />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <Select name="projectId" defaultValue="">
-                <option value="">{t(locale, "kbGeneralProject")}</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.company.name} · {p.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <Select name="companyId" defaultValue="">
-                <option value="">{t(locale, "kbInferCompany")}</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
-              <Input name="externalUrl" type="url" placeholder="https://drive.google.com/..." className="text-xs" />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
-              <Input name="linkLabel" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
-            </div>
-            <div className="md:col-span-2">
-              <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
-                {t(locale, "staffMoCreate")}
-              </FormSubmitButton>
-            </div>
-          </form>
-        ) : null}
-      </Card>
 
       <Card className="space-y-3 p-4">
         <CardTitle>{t(locale, "staffRecReceived")}</CardTitle>

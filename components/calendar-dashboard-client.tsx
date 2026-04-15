@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
-import { createCalendarEventAction, deleteCalendarEventAction, updateCalendarEventAction } from "@/app/actions/lifecycle";
+import {
+  createCalendarEventAction,
+  createCalendarLabelAction,
+  deleteCalendarEventAction,
+  updateCalendarEventAction,
+  updateCalendarLabelAction,
+} from "@/app/actions/lifecycle";
 import { CalendarEventAttendeesFields } from "@/components/calendar-event-attendees";
 import { CalendarMonthYearPicker } from "@/components/calendar-month-year-picker";
 import { CalendarMonthView, type CalendarMonthEvent } from "@/components/calendar-month-view";
@@ -31,6 +37,9 @@ export type CalendarEditEventPayload = {
   description: string | null;
   meetUrl: string | null;
   projectId: string | null;
+  labelId: string | null;
+  attendeeIds: string[];
+  externalAttendeeEmails: string[];
 };
 
 export type CalendarBootstrapCreate = { startIso: string; endIso: string };
@@ -46,18 +55,23 @@ export type CalendarListEventPayload = {
   title: string;
   startsAtIso: string;
   endsAtIso: string;
-  organizerName: string;
-  organizerUserId: string;
+  organizerName: string | null;
+  organizerUserId: string | null;
   sourceKind: string;
   meetUrl: string | null;
   project: { id: string; name: string } | null;
   externalCount: number;
+  label: { name: string; color: string } | null;
+  href: string | null;
+  isGenerated: boolean;
   edit: CalendarEditEventPayload | null;
 };
 
 export type CalendarProjectOption = { id: string; label: string };
 
 export type CalendarInviteeOption = { id: string; name: string; email: string };
+
+export type CalendarLabelOption = { id: string; key: string | null; name: string; color: string; isDefault: boolean };
 
 /** Serializable month cell event row (ISO date strings). */
 export type CalendarMonthEventRowPayload = {
@@ -70,6 +84,11 @@ export type CalendarMonthEventRowPayload = {
   description: string | null;
   meetUrl: string | null;
   projectId: string | null;
+  labelId: string | null;
+  label: { name: string; color: string } | null;
+  href: string | null;
+  attendeeIds: string[];
+  externalAttendeeEmails: string[];
 };
 
 export function CalendarDashboardClient({
@@ -96,6 +115,7 @@ export function CalendarDashboardClient({
   cleanHrefForModal,
   projects,
   inviteCandidates,
+  labels,
   listEvents,
 }: {
   locale: "en" | "zh";
@@ -113,7 +133,7 @@ export function CalendarDashboardClient({
   nextHref: string;
   todayHref: string;
   yearForYearView: number;
-  yearEventsPayload: { id: string; title: string; startsAt: string }[];
+  yearEventsPayload: { id: string; title: string; startsAt: string; label: { name: string; color: string } | null }[];
   yearPickerTitle: string;
   bootstrapCreate: CalendarBootstrapCreate | null;
   bootstrapEdit: CalendarEditEventPayload | null;
@@ -121,6 +141,7 @@ export function CalendarDashboardClient({
   cleanHrefForModal: string;
   projects: CalendarProjectOption[];
   inviteCandidates: CalendarInviteeOption[];
+  labels: CalendarLabelOption[];
   listEvents: CalendarListEventPayload[];
 }) {
   const router = useRouter();
@@ -134,6 +155,9 @@ export function CalendarDashboardClient({
   const [createFormKey, setCreateFormKey] = useState(0);
 
   const openedBootstrap = useRef(false);
+  const defaultMeetingLabelId = labels.find((label) => label.key === "meeting")?.id ?? labels[0]?.id ?? "";
+  const defaultProjectLabelId = labels.find((label) => label.key === "project")?.id ?? defaultMeetingLabelId;
+  const defaultCreateLabelId = defaultProjectId ? defaultProjectLabelId : defaultMeetingLabelId;
 
   const monthEvents: CalendarMonthEvent[] = monthEventsPayload.map((e) => ({
     ...e,
@@ -203,6 +227,9 @@ export function CalendarDashboardClient({
           description: fromMonth.description,
           meetUrl: fromMonth.meetUrl,
           projectId: fromMonth.projectId,
+          labelId: fromMonth.labelId,
+          attendeeIds: fromMonth.attendeeIds,
+          externalAttendeeEmails: fromMonth.externalAttendeeEmails,
         }
       : fromList;
     if (!snap) return;
@@ -262,6 +289,35 @@ export function CalendarDashboardClient({
     setEditSnapshot(null);
     startMutationTransition(() => {
       void deleteCalendarEventAction(fd)
+        .then(() => router.refresh())
+        .catch((err) => {
+          console.error(err);
+          window.alert(err instanceof Error ? err.message : "Error");
+        });
+    });
+  };
+
+  const handleCreateLabel = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    if (!String(fd.get("name") ?? "").trim()) return;
+    e.currentTarget.reset();
+    startMutationTransition(() => {
+      void createCalendarLabelAction(fd)
+        .then(() => router.refresh())
+        .catch((err) => {
+          console.error(err);
+          window.alert(err instanceof Error ? err.message : "Error");
+        });
+    });
+  };
+
+  const handleUpdateLabel = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    if (!String(fd.get("name") ?? "").trim()) return;
+    startMutationTransition(() => {
+      void updateCalendarLabelAction(fd)
         .then(() => router.refresh())
         .catch((err) => {
           console.error(err);
@@ -370,9 +426,9 @@ export function CalendarDashboardClient({
 
       <dialog
         id={CREATE_DIALOG_ID}
-        className="app-modal-dialog z-50 max-h-[min(90vh,640px)] w-[min(100vw-2rem,440px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+        className="app-modal-dialog z-50 max-h-[calc(100dvh-1rem)] w-[min(100vw-2rem,480px)] overflow-y-auto overscroll-contain rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
       >
-        <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-4 py-3">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">{t(locale, "calendarNewEvent")}</h3>
           <CloseDialogButton
             dialogId={CREATE_DIALOG_ID}
@@ -382,7 +438,7 @@ export function CalendarDashboardClient({
         </div>
         <form
           key={createFormKey}
-          className="max-h-[calc(90vh-88px)] space-y-3 overflow-y-auto p-4"
+          className="space-y-3 p-4"
           onSubmit={handleCreateSubmit}
         >
           <input type="hidden" name="sourceKind" value={sourceKind} />
@@ -394,6 +450,16 @@ export function CalendarDashboardClient({
           <div className="space-y-1">
             <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "calendarNotes")}</label>
             <Input name="description" className="h-9 text-sm" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "calendarLabel")}</label>
+            <Select name="labelId" className="h-9 text-sm" defaultValue={defaultCreateLabelId}>
+              {labels.map((label) => (
+                <option key={label.id} value={label.id}>
+                  {label.name}
+                </option>
+              ))}
+            </Select>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
@@ -420,6 +486,15 @@ export function CalendarDashboardClient({
               ))}
             </Select>
           </div>
+          <label className="flex items-start gap-2 rounded-lg border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--foreground))]">
+            <input name="includeProjectMembers" type="checkbox" defaultChecked className="mt-1" />
+            <span>
+              <span className="block font-medium">{t(locale, "calendarInviteProjectMembers")}</span>
+              <span className="block text-xs leading-relaxed text-[hsl(var(--muted))]">
+                {t(locale, "calendarInviteProjectMembersHint")}
+              </span>
+            </span>
+          </label>
           <CalendarEventAttendeesFields
             staffOptions={inviteCandidates.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
             organizerUserId={userId}
@@ -427,11 +502,14 @@ export function CalendarDashboardClient({
               staffTitle: t(locale, "calendarAttendees"),
               staffSearch: t(locale, "calendarAttendeesStaffSearch"),
               staffHint: t(locale, "calendarAttendeesStaffHint"),
+              staffNoMatch: t(locale, "calendarAttendeesStaffNoMatch"),
+              staffNoMore: t(locale, "calendarAttendeesStaffNoMore"),
+              remove: t(locale, "btnRemove"),
               externalTitle: t(locale, "calendarAttendeesExternal"),
               externalHint: t(locale, "calendarAttendeesExternalHint"),
             }}
           />
-          <div className="flex justify-end gap-2 border-t border-[hsl(var(--border))] pt-3">
+          <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3">
             <button
               type="button"
               className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
@@ -453,10 +531,10 @@ export function CalendarDashboardClient({
       {editSnapshot ? (
         <dialog
           id={EDIT_DIALOG_ID}
-          className="app-modal-dialog z-50 max-h-[min(90vh,640px)] w-[min(100vw-2rem,440px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+          className="app-modal-dialog z-50 max-h-[calc(100dvh-1rem)] w-[min(100vw-2rem,480px)] overflow-y-auto overscroll-contain rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
           onClose={() => setEditSnapshot(null)}
         >
-          <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-4 py-3">
+          <div className="sticky top-0 z-10 flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3">
             <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">{t(locale, "calendarEditEvent")}</h3>
             <CloseDialogButton
               dialogId={EDIT_DIALOG_ID}
@@ -464,7 +542,7 @@ export function CalendarDashboardClient({
               label={t(locale, "calendarDialogClose")}
             />
           </div>
-          <form className="max-h-[calc(90vh-88px)] space-y-3 overflow-y-auto p-4" onSubmit={handleUpdateSubmit}>
+          <form className="space-y-3 p-4" onSubmit={handleUpdateSubmit}>
             <input type="hidden" name="eventId" value={editSnapshot.id} />
             <div className="space-y-1">
               <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "calendarTitle")}</label>
@@ -473,6 +551,16 @@ export function CalendarDashboardClient({
             <div className="space-y-1">
               <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "calendarNotes")}</label>
               <Input name="description" className="h-9 text-sm" defaultValue={editSnapshot.description ?? ""} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "calendarLabel")}</label>
+              <Select name="labelId" className="h-9 text-sm" defaultValue={editSnapshot.labelId ?? defaultMeetingLabelId}>
+                {labels.map((label) => (
+                  <option key={label.id} value={label.id}>
+                    {label.name}
+                  </option>
+                ))}
+              </Select>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
@@ -502,7 +590,7 @@ export function CalendarDashboardClient({
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "calendarProjectOptional")}</label>
-              <Select name="projectId" className="h-9 text-sm" defaultValue={editSnapshot.projectId ?? defaultProjectId}>
+              <Select name="projectId" className="h-9 text-sm" defaultValue={editSnapshot.projectId ?? ""}>
                 <option value="">—</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -511,7 +599,33 @@ export function CalendarDashboardClient({
                 ))}
               </Select>
             </div>
-            <div className="flex flex-wrap justify-between gap-2 border-t border-[hsl(var(--border))] pt-3">
+            <label className="flex items-start gap-2 rounded-lg border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--foreground))]">
+              <input name="includeProjectMembers" type="checkbox" className="mt-1" />
+              <span>
+                <span className="block font-medium">{t(locale, "calendarInviteProjectMembers")}</span>
+                <span className="block text-xs leading-relaxed text-[hsl(var(--muted))]">
+                  {t(locale, "calendarInviteProjectMembersHint")}
+                </span>
+              </span>
+            </label>
+            <CalendarEventAttendeesFields
+              key={`attendees-${editSnapshot.id}`}
+              staffOptions={inviteCandidates.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
+              organizerUserId={userId}
+              initialSelectedIds={editSnapshot.attendeeIds}
+              initialExternalEmails={editSnapshot.externalAttendeeEmails}
+              labels={{
+                staffTitle: t(locale, "calendarAttendees"),
+                staffSearch: t(locale, "calendarAttendeesStaffSearch"),
+                staffHint: t(locale, "calendarAttendeesStaffHint"),
+                staffNoMatch: t(locale, "calendarAttendeesStaffNoMatch"),
+                staffNoMore: t(locale, "calendarAttendeesStaffNoMore"),
+                remove: t(locale, "btnRemove"),
+                externalTitle: t(locale, "calendarAttendeesExternal"),
+                externalHint: t(locale, "calendarAttendeesExternalHint"),
+              }}
+            />
+            <div className="sticky bottom-0 -mx-4 flex flex-wrap justify-between gap-2 border-t border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3">
               <button
                 type="button"
                 className="rounded-lg px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/30"
@@ -545,6 +659,55 @@ export function CalendarDashboardClient({
       ) : null}
 
       <Card className="rounded-[12px] border border-[hsl(var(--border))] p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="font-display text-base font-bold">{t(locale, "calendarLabelsTitle")}</CardTitle>
+          <span className="text-sm text-[hsl(var(--muted))]">{t(locale, "calendarLabelsHint")}</span>
+        </div>
+        <div className="grid gap-2 lg:grid-cols-2">
+          {labels.map((label) => (
+            <form key={label.id} onSubmit={handleUpdateLabel} className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] p-2">
+              <input type="hidden" name="labelId" value={label.id} />
+              <input
+                type="color"
+                name="color"
+                defaultValue={label.color}
+                className="h-9 w-10 shrink-0 cursor-pointer rounded border border-[hsl(var(--border))] bg-transparent p-1"
+                aria-label={t(locale, "calendarLabelColor")}
+              />
+              <Input name="name" defaultValue={label.name} className="h-9 min-w-0 text-sm" />
+              <button
+                type="submit"
+                disabled={mutationPending}
+                className="shrink-0 rounded-md border border-[hsl(var(--border))] px-3 py-2 text-sm font-medium hover:bg-black/5 disabled:opacity-60 dark:hover:bg-white/10"
+              >
+                {t(locale, "btnSave")}
+              </button>
+            </form>
+          ))}
+        </div>
+        <form onSubmit={handleCreateLabel} className="mt-3 flex flex-wrap items-end gap-2 border-t border-[hsl(var(--border))] pt-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "calendarNewLabel")}</label>
+            <Input name="name" className="h-9 w-48 text-sm" placeholder={t(locale, "calendarNewLabelPlaceholder")} />
+          </div>
+          <input
+            type="color"
+            name="color"
+            defaultValue="#6366f1"
+            className="h-9 w-10 cursor-pointer rounded border border-[hsl(var(--border))] bg-transparent p-1"
+            aria-label={t(locale, "calendarLabelColor")}
+          />
+          <button
+            type="submit"
+            disabled={mutationPending}
+            className="rounded-md bg-[hsl(var(--foreground))] px-3 py-2 text-sm font-semibold text-[hsl(var(--background))] disabled:opacity-60"
+          >
+            {t(locale, "calendarAddLabel")}
+          </button>
+        </form>
+      </Card>
+
+      <Card className="rounded-[12px] border border-[hsl(var(--border))] p-5">
         <CardTitle className="font-display mb-3 text-base font-bold">
           {t(locale, "calendarPageTitle")} — {t(locale, "calendarUpcomingList")}
         </CardTitle>
@@ -555,9 +718,16 @@ export function CalendarDashboardClient({
             {listEvents.map((ev) => (
               <li key={ev.id} className="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0">
                 <div>
-                  <p className="font-medium text-[hsl(var(--foreground))]">{ev.title}</p>
+                  {ev.href ? (
+                    <Link href={ev.href} className="font-medium text-[hsl(var(--primary))] hover:underline">
+                      {ev.title}
+                    </Link>
+                  ) : (
+                    <p className="font-medium text-[hsl(var(--foreground))]">{ev.title}</p>
+                  )}
                   <p className="text-base text-[hsl(var(--muted))]">
-                    {ev.startsAtIso.slice(0, 16).replace("T", " ")} → {ev.endsAtIso.slice(0, 16).replace("T", " ")} · {ev.organizerName}
+                    {ev.startsAtIso.slice(0, 16).replace("T", " ")} → {ev.endsAtIso.slice(0, 16).replace("T", " ")}
+                    {ev.organizerName ? ` · ${ev.organizerName}` : ""}
                   </p>
                   {ev.project ? (
                     <p className="mt-1 text-base">
@@ -593,8 +763,14 @@ export function CalendarDashboardClient({
                     </p>
                   ) : null}
                 </div>
-                <span className="rounded-full bg-zinc-100 px-2 py-1 text-base font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                  {ev.sourceKind}
+                <span
+                  className="rounded-full px-2 py-1 text-base font-medium text-[hsl(var(--foreground))]"
+                  style={{
+                    backgroundColor: `${ev.label?.color ?? "#71717a"}1f`,
+                    border: `1px solid ${ev.label?.color ?? "#71717a"}66`,
+                  }}
+                >
+                  {ev.label?.name ?? ev.sourceKind}
                 </span>
               </li>
             ))}

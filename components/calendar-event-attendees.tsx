@@ -8,10 +8,15 @@ export type CalendarStaffOption = { id: string; name: string; email: string };
 type Props = {
   staffOptions: CalendarStaffOption[];
   organizerUserId: string;
+  initialSelectedIds?: string[];
+  initialExternalEmails?: string[];
   labels: {
     staffTitle: string;
     staffSearch: string;
     staffHint: string;
+    staffNoMatch: string;
+    staffNoMore: string;
+    remove: string;
     externalTitle: string;
     externalHint: string;
   };
@@ -24,19 +29,34 @@ function parseExternalEmails(raw: string): string[] {
   return [...new Set(parts.filter((e) => EMAIL_RE.test(e)))];
 }
 
-export function CalendarEventAttendeesFields({ staffOptions, organizerUserId, labels }: Props) {
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+export function CalendarEventAttendeesFields({
+  staffOptions,
+  organizerUserId,
+  initialSelectedIds = [],
+  initialExternalEmails = [],
+  labels,
+}: Props) {
   const pickable = useMemo(
     () => staffOptions.filter((u) => u.id !== organizerUserId).sort((a, b) => a.name.localeCompare(b.name)),
     [staffOptions, organizerUserId],
   );
 
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds);
   const [query, setQuery] = useState("");
-  const [externalDraft, setExternalDraft] = useState("");
+  const [externalDraft, setExternalDraft] = useState(initialExternalEmails.join(", "));
 
-  const q = query.trim().toLowerCase();
+  const q = query.trim().replace(/^@+/, "").toLowerCase();
   const suggestions = useMemo(() => {
-    if (!q) return pickable.filter((u) => !selectedIds.includes(u.id)).slice(0, 8);
+    if (!q) return pickable.filter((u) => !selectedIds.includes(u.id)).slice(0, 10);
     return pickable
       .filter((u) => !selectedIds.includes(u.id))
       .filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
@@ -44,6 +64,10 @@ export function CalendarEventAttendeesFields({ staffOptions, organizerUserId, la
   }, [pickable, q, selectedIds]);
 
   const externalSerialized = parseExternalEmails(externalDraft).join(",");
+  const externalEmails = parseExternalEmails(externalDraft);
+  const selectedStaff = selectedIds
+    .map((id) => staffOptions.find((x) => x.id === id))
+    .filter((u): u is CalendarStaffOption => Boolean(u));
 
   const add = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -60,7 +84,7 @@ export function CalendarEventAttendeesFields({ staffOptions, organizerUserId, la
       <div className="space-y-1">
         <label className="text-sm font-medium text-[hsl(var(--muted))]">{labels.staffTitle}</label>
         <p className="text-xs text-[hsl(var(--muted))]">{labels.staffHint}</p>
-        <div className="relative">
+        <div className="space-y-2">
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -68,41 +92,55 @@ export function CalendarEventAttendeesFields({ staffOptions, organizerUserId, la
             placeholder={labels.staffSearch}
             autoComplete="off"
           />
-          {query.trim() && suggestions.length ? (
-            <ul
-              className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1 text-sm shadow-md"
-              role="listbox"
-            >
+          <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/60">
+            {suggestions.length ? (
+              <ul className="max-h-44 overflow-y-auto p-1 text-sm" role="listbox">
               {suggestions.map((u) => (
                 <li key={u.id}>
                   <button
                     type="button"
-                    className="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
-                    onMouseDown={(e) => e.preventDefault()}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
                     onClick={() => add(u.id)}
                   >
-                    <span className="font-medium text-[hsl(var(--foreground))]">{u.name}</span>
-                    <span className="text-xs text-[hsl(var(--muted))]">{u.email}</span>
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/12 text-xs font-semibold text-[hsl(var(--primary))]">
+                      {initials(u.name) || "@"}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-[hsl(var(--foreground))]">@{u.name}</span>
+                      <span className="block truncate text-xs text-[hsl(var(--muted))]">{u.email}</span>
+                    </span>
                   </button>
                 </li>
               ))}
-            </ul>
-          ) : null}
+              </ul>
+            ) : (
+              <p className="px-3 py-3 text-xs text-[hsl(var(--muted))]">
+                {query.trim() ? labels.staffNoMatch : labels.staffNoMore}
+              </p>
+            )}
+          </div>
         </div>
-        {selectedIds.length ? (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {selectedIds.map((id) => {
-              const u = staffOptions.find((x) => x.id === id);
+        {selectedStaff.length ? (
+          <div className="mt-2 space-y-2">
+            {selectedStaff.map((u) => {
               return (
-                <span
-                  key={id}
-                  className="inline-flex items-center gap-1 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/15 px-2.5 py-1 text-xs text-[hsl(var(--foreground))]"
+                <div
+                  key={u.id}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm"
                 >
-                  <span className="max-w-[10rem] truncate">{u?.name ?? id}</span>
-                  <button type="button" className="rounded-full px-1 text-[hsl(var(--muted))] hover:text-rose-600" onClick={() => remove(id)} aria-label="Remove">
-                    ×
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-[hsl(var(--foreground))]">@{u.name}</span>
+                    <span className="block truncate text-xs text-[hsl(var(--muted))]">{u.email}</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-[hsl(var(--muted))] hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30"
+                    onClick={() => remove(u.id)}
+                    aria-label={`Remove ${u.name}`}
+                  >
+                    {labels.remove}
                   </button>
-                </span>
+                </div>
               );
             })}
           </div>
@@ -119,10 +157,17 @@ export function CalendarEventAttendeesFields({ staffOptions, organizerUserId, la
           placeholder="name@company.com, other@…"
           autoComplete="off"
         />
-        {externalSerialized ? (
-          <p className="text-xs text-[hsl(var(--muted))]">
-            {parseExternalEmails(externalDraft).join(" · ")}
-          </p>
+        {externalEmails.length ? (
+          <div className="flex flex-wrap gap-2">
+            {externalEmails.map((email) => (
+              <span
+                key={email}
+                className="rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/10 px-2.5 py-1 text-xs text-[hsl(var(--foreground))]"
+              >
+                {email}
+              </span>
+            ))}
+          </div>
         ) : null}
       </div>
     </div>

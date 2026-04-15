@@ -324,7 +324,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     }),
     prisma.calendarEvent.findMany({
       where: { projectId: project.id },
-      select: { id: true, title: true, startsAt: true, organizer: { select: { id: true, name: true } } },
+      select: {
+        id: true,
+        title: true,
+        startsAt: true,
+        label: { select: { name: true, color: true } },
+        organizer: { select: { id: true, name: true } },
+      },
       orderBy: { startsAt: "desc" },
       take: 30,
     }),
@@ -512,17 +518,26 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               {projectCalendarEvents.map((ev) => (
                 <li key={ev.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0">
                   <div>
-                    <Link
-                      href={calendarHref({
-                        y: ev.startsAt.getFullYear(),
-                        m: ev.startsAt.getMonth() + 1,
-                        view: "month",
-                        eventId: ev.id,
-                      })}
-                      className="font-medium text-[hsl(var(--primary))] hover:underline"
-                    >
-                      {ev.title}
-                    </Link>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {ev.label ? (
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: ev.label.color }}
+                          aria-label={ev.label.name}
+                        />
+                      ) : null}
+                      <Link
+                        href={calendarHref({
+                          y: ev.startsAt.getFullYear(),
+                          m: ev.startsAt.getMonth() + 1,
+                          view: "month",
+                          eventId: ev.id,
+                        })}
+                        className="font-medium text-[hsl(var(--primary))] hover:underline"
+                      >
+                        {ev.title}
+                      </Link>
+                    </div>
                     <p className="mt-1 text-base leading-relaxed text-[hsl(var(--muted))]">
                       {ev.startsAt.toISOString().slice(0, 16).replace("T", " ")} — {ev.organizer.name}
                     </p>

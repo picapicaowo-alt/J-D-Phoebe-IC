@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export type CalendarYearEvent = { id: string; title: string; startsAt: Date };
+export type CalendarYearEvent = { id: string; title: string; startsAt: Date; label?: { name: string; color: string } | null };
 
 export function CalendarYearView({
   year,
@@ -35,8 +35,13 @@ export function CalendarYearView({
             </Link>
             <ul className="mt-2 space-y-1.5 text-sm leading-snug text-[hsl(var(--foreground))]">
               {rows.slice(0, 12).map((ev) => (
-                <li key={ev.id} className="truncate" title={ev.title}>
-                  {ev.title}
+                <li key={ev.id} className="flex min-w-0 items-center gap-1.5 truncate" title={ev.title}>
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: ev.label?.color ?? "#71717a" }}
+                    aria-hidden
+                  />
+                  <span className="truncate">{ev.title}</span>
                 </li>
               ))}
             </ul>

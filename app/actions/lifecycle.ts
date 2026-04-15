@@ -4,11 +4,16 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { CalendarSourceKind, LifecycleTriggerKind, LifecycleTriggerScope, OffboardingStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
-import { isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { canViewProject, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { AuditEntityType } from "@prisma/client";
+import {
+  ensureDefaultCalendarLabels,
+  getDefaultCalendarLabelId,
+  normalizeCalendarLabelColor,
+} from "@/lib/calendar-labels";
 
 function must(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -23,6 +28,56 @@ function parseExternalEmailsFromForm(formData: FormData): string[] {
   if (!raw) return [];
   const parts = raw.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
   return [...new Set(parts.filter((e) => EMAIL_RE.test(e)))];
+}
+
+function parseAttendeeIdsFromForm(formData: FormData): string[] {
+  const attendeeRaw = String(formData.get("attendeeIds") ?? "").trim();
+  return attendeeRaw
+    ? [...new Set(attendeeRaw.split(",").map((s) => s.trim()).filter(Boolean))]
+    : [];
+}
+
+function includeProjectMembersFromForm(formData: FormData) {
+  const raw = String(formData.get("includeProjectMembers") ?? "").trim();
+  return raw === "on" || raw === "1" || raw === "true";
+}
+
+async function loadCalendarProjectForActor(actor: AccessUser, projectId: string | null) {
+  if (!projectId) return null;
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    include: {
+      company: true,
+      memberships: { select: { userId: true } },
+    },
+  });
+  if (!project || !canViewProject(actor, project)) throw new Error("Project not found");
+  return project;
+}
+
+async function resolveCalendarLabelId(formData: FormData, fallbackKey: "meeting" | "project") {
+  await ensureDefaultCalendarLabels();
+  const raw = String(formData.get("labelId") ?? "").trim();
+  if (raw) {
+    const label = await prisma.calendarLabel.findUnique({ where: { id: raw }, select: { id: true } });
+    if (label) return label.id;
+  }
+  return getDefaultCalendarLabelId(fallbackKey);
+}
+
+async function notifyCalendarInvitees(eventId: string, title: string, startsAt: Date, actorId: string, userIds: string[]) {
+  const notifyIds = [...new Set(userIds)].filter((id) => id !== actorId);
+  if (!notifyIds.length) return;
+  const when = `${startsAt.toISOString().slice(0, 16).replace("T", " ")} (UTC)`;
+  await prisma.inAppNotification.createMany({
+    data: notifyIds.map((userId) => ({
+      userId,
+      kind: "CALENDAR_EVENT_INVITE",
+      title: "New calendar event",
+      body: `${title} · ${when}`,
+      href: `/calendar?eventId=${eventId}`,
+    })),
+  });
 }
 
 export async function acknowledgeMemberOnboardingMaterialsAction(formData: FormData) {
@@ -219,6 +274,8 @@ export async function createCalendarEventAction(formData: FormData) {
 
   const meetUrl = String(formData.get("meetUrl") ?? "").trim() || null;
   const projectId = String(formData.get("projectId") ?? "").trim() || null;
+  const project = await loadCalendarProjectForActor(actor, projectId);
+  const labelId = await resolveCalendarLabelId(formData, projectId ? "project" : "meeting");
   const rawKind = String(formData.get("sourceKind") ?? "MANUAL").trim() || "MANUAL";
   const allowedKinds: CalendarSourceKind[] = [
     "MANUAL",
@@ -229,16 +286,13 @@ export async function createCalendarEventAction(formData: FormData) {
   ];
   const sourceKind = (allowedKinds.includes(rawKind as CalendarSourceKind) ? rawKind : "MANUAL") as CalendarSourceKind;
   const sourceId = String(formData.get("sourceId") ?? "").trim() || null;
-  const attendeeRaw = String(formData.get("attendeeIds") ?? "").trim();
-  const attendeeIds = attendeeRaw
-    ? [...new Set(attendeeRaw.split(",").map((s) => s.trim()).filter(Boolean))]
-    : [];
+  const selectedAttendeeIds = parseAttendeeIdsFromForm(formData);
+  const projectMemberIds =
+    project && includeProjectMembersFromForm(formData)
+      ? [project.ownerId, ...project.memberships.map((m) => m.userId)]
+      : [];
+  const attendeeIds = [...new Set([...selectedAttendeeIds, ...projectMemberIds])].filter((id) => id !== actor.id);
   const externalAttendeeEmails = parseExternalEmailsFromForm(formData);
-
-  if (projectId) {
-    const p = await prisma.project.findFirst({ where: { id: projectId, deletedAt: null } });
-    if (!p) throw new Error("Project not found");
-  }
 
   const description = String(formData.get("description") ?? "").trim() || null;
 
@@ -250,6 +304,7 @@ export async function createCalendarEventAction(formData: FormData) {
       endsAt,
       organizerUserId: actor.id,
       projectId: projectId || null,
+      labelId,
       meetUrl,
       sourceKind,
       sourceId,
@@ -260,7 +315,7 @@ export async function createCalendarEventAction(formData: FormData) {
   const attendeeUsers =
     attendeeIds.length > 0
       ? await prisma.user.findMany({
-          where: { id: { in: attendeeIds }, deletedAt: null },
+          where: { id: { in: attendeeIds }, deletedAt: null, active: true },
           select: { id: true, email: true },
         })
       : [];
@@ -269,19 +324,7 @@ export async function createCalendarEventAction(formData: FormData) {
       data: attendeeUsers.map((u) => ({ eventId: ev.id, userId: u.id })),
       skipDuplicates: true,
     });
-    const notifyIds = attendeeUsers.map((u) => u.id).filter((id) => id !== actor.id);
-    if (notifyIds.length) {
-      const when = `${startsAt.toISOString().slice(0, 16).replace("T", " ")} (UTC)`;
-      await prisma.inAppNotification.createMany({
-        data: notifyIds.map((userId) => ({
-          userId,
-          kind: "CALENDAR_EVENT_INVITE",
-          title: "New calendar event",
-          body: `${title} · ${when}`,
-          href: "/calendar",
-        })),
-      });
-    }
+    await notifyCalendarInvitees(ev.id, title, startsAt, actor.id, attendeeUsers.map((u) => u.id));
   }
 
   await writeAudit({
@@ -304,6 +347,7 @@ export async function updateCalendarEventAction(formData: FormData) {
       id,
       OR: [{ organizerUserId: actor.id }, { attendees: { some: { userId: actor.id } } }],
     },
+    include: { attendees: { select: { userId: true } } },
   });
   if (!existing || existing.organizerUserId !== actor.id) throw new Error("Forbidden");
 
@@ -314,10 +358,15 @@ export async function updateCalendarEventAction(formData: FormData) {
   const description = String(formData.get("description") ?? "").trim() || null;
   const meetUrl = String(formData.get("meetUrl") ?? "").trim() || null;
   const projectIdRaw = String(formData.get("projectId") ?? "").trim() || null;
-  if (projectIdRaw) {
-    const p = await prisma.project.findFirst({ where: { id: projectIdRaw, deletedAt: null } });
-    if (!p) throw new Error("Project not found");
-  }
+  const project = await loadCalendarProjectForActor(actor, projectIdRaw);
+  const labelId = await resolveCalendarLabelId(formData, projectIdRaw ? "project" : "meeting");
+  const selectedAttendeeIds = parseAttendeeIdsFromForm(formData);
+  const projectMemberIds =
+    project && includeProjectMembersFromForm(formData)
+      ? [project.ownerId, ...project.memberships.map((m) => m.userId)]
+      : [];
+  const attendeeIds = [...new Set([...selectedAttendeeIds, ...projectMemberIds])].filter((userId) => userId !== actor.id);
+  const externalAttendeeEmails = parseExternalEmailsFromForm(formData);
 
   const oldProjectId = existing.projectId;
 
@@ -330,8 +379,35 @@ export async function updateCalendarEventAction(formData: FormData) {
       endsAt,
       meetUrl,
       projectId: projectIdRaw,
+      labelId,
+      externalAttendeeEmails,
     },
   });
+
+  const attendeeUsers =
+    attendeeIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: attendeeIds }, deletedAt: null, active: true },
+          select: { id: true },
+        })
+      : [];
+  const validAttendeeIds = attendeeUsers.map((u) => u.id);
+  const oldAttendeeIds = new Set(existing.attendees.map((a) => a.userId));
+  await prisma.calendarAttendee.deleteMany({ where: { eventId: id } });
+  if (validAttendeeIds.length) {
+    await prisma.calendarAttendee.createMany({
+      data: validAttendeeIds.map((userId) => ({ eventId: id, userId })),
+      skipDuplicates: true,
+    });
+    await notifyCalendarInvitees(
+      id,
+      title,
+      startsAt,
+      actor.id,
+      validAttendeeIds.filter((userId) => !oldAttendeeIds.has(userId)),
+    );
+  }
+
   await writeAudit({
     actorId: actor.id,
     entityType: AuditEntityType.CALENDAR_EVENT,
@@ -361,6 +437,35 @@ export async function deleteCalendarEventAction(formData: FormData) {
   });
   revalidatePath("/calendar");
   if (existing.projectId) revalidatePath(`/projects/${existing.projectId}`);
+}
+
+export async function createCalendarLabelAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  await assertPermission(actor, "project.read");
+  const name = must(formData, "name");
+  const color = normalizeCalendarLabelColor(formData.get("color"));
+  const maxSort = await prisma.calendarLabel.aggregate({ _max: { sortOrder: true } });
+  await prisma.calendarLabel.create({
+    data: {
+      name,
+      color,
+      sortOrder: (maxSort._max.sortOrder ?? 0) + 1,
+    },
+  });
+  revalidatePath("/calendar");
+}
+
+export async function updateCalendarLabelAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  await assertPermission(actor, "project.read");
+  const id = must(formData, "labelId");
+  const name = must(formData, "name");
+  const color = normalizeCalendarLabelColor(formData.get("color"));
+  await prisma.calendarLabel.update({
+    where: { id },
+    data: { name, color },
+  });
+  revalidatePath("/calendar");
 }
 
 const OFFBOARDING_KEYS = [

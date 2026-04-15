@@ -16,6 +16,7 @@ function scheduleTaskRollupRevalidate(projectId: string) {
       await syncProjectTaskRollups(projectId);
       revalidatePath(`/projects/${projectId}`);
       revalidatePath("/projects");
+      revalidatePath("/calendar");
     } catch (err) {
       console.error("[syncProjectTaskRollups]", projectId, err);
     }
@@ -103,6 +104,7 @@ export async function addProjectTaskAction(formData: FormData) {
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
 
@@ -152,6 +154,7 @@ export async function addProjectSubtaskAction(formData: FormData) {
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
 
@@ -185,6 +188,7 @@ export async function updateWorkflowNodeMetaAction(formData: FormData) {
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
 
@@ -243,6 +247,7 @@ export async function toggleProjectTaskLeafAction(formData: FormData) {
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
 
@@ -270,6 +275,7 @@ export async function deleteProjectTaskAction(formData: FormData) {
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
 
@@ -299,6 +305,7 @@ export async function deleteAllProjectTasksAction(formData: FormData) {
   await prisma.project.update({ where: { id: projectId }, data: { progressPercent: 0 } });
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
 
@@ -333,5 +340,6 @@ export async function undoLastProjectTaskDeletionAction(formData: FormData) {
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }

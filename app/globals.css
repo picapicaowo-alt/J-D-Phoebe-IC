@@ -66,5 +66,5 @@ dialog.app-modal-dialog {
   left: 50%;
   margin: 0;
   transform: translate(-50%, -50%);
-  max-height: min(90vh, 720px);
+  max-height: min(calc(100dvh - 1rem), 720px);
 }

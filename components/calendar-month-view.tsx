@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback } from "react";
 import { CalendarMonthYearPicker } from "@/components/calendar-month-year-picker";
 
@@ -10,6 +11,8 @@ export type CalendarMonthEvent = {
   endsAt: Date;
   sourceKind: string;
   canEdit: boolean;
+  href?: string | null;
+  label?: { name: string; color: string } | null;
 };
 
 export type CalendarMonthPickerPreserve = {
@@ -171,8 +174,10 @@ export function CalendarMonthView({
                   </div>
                   <ul className="relative z-[2] space-y-1 pointer-events-none">
                     {(byDay.get(day) ?? []).slice(0, 5).map((ev) => {
+                      const color = ev.label?.color ?? "#6366f1";
                       const cls =
-                        "block w-full truncate rounded-md bg-[hsl(var(--primary))]/12 px-1.5 py-1 text-left text-sm font-medium leading-snug text-[hsl(var(--foreground))] hover:bg-[hsl(var(--primary))]/20 disabled:opacity-60";
+                        "block w-full truncate rounded-md border-l-4 px-1.5 py-1 text-left text-sm font-medium leading-snug text-[hsl(var(--foreground))] hover:brightness-95 disabled:opacity-60";
+                      const style = { borderLeftColor: color, backgroundColor: `${color}1f` };
                       return (
                         <li key={ev.id} className="pointer-events-auto">
                           {ev.canEdit ? (
@@ -184,12 +189,17 @@ export function CalendarMonthView({
                                 onOpenEditableEvent(ev.id);
                               }}
                               className={cls}
+                              style={style}
                               title={ev.title}
                             >
                               {ev.title}
                             </button>
+                          ) : ev.href ? (
+                            <Link href={ev.href} className={cls} style={style} title={ev.title}>
+                              {ev.title}
+                            </Link>
                           ) : (
-                            <span className={cls} title={ev.title}>
+                            <span className={cls} style={style} title={ev.title}>
                               {ev.title}
                             </span>
                           )}

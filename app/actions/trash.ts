@@ -139,6 +139,7 @@ export async function softDeleteProjectAction(formData: FormData) {
   });
   await writeAudit({ actorId: user.id, entityType: "PROJECT", entityId: projectId, action: "SOFT_DELETE" });
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   revalidatePath("/trash");
 }
 
@@ -162,6 +163,7 @@ export async function restoreProjectTrashAction(formData: FormData) {
   });
   await writeAudit({ actorId: user.id, entityType: "PROJECT", entityId: projectId, action: "RESTORE_TRASH" });
   revalidatePath("/projects");
+  revalidatePath("/calendar");
   revalidatePath("/trash");
 }
 
@@ -180,5 +182,6 @@ export async function purgeProjectAction(formData: FormData) {
   }
 
   await prisma.project.delete({ where: { id: projectId } });
+  revalidatePath("/calendar");
   revalidatePath("/trash");
 }

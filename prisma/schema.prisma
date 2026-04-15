@@ -205,8 +205,8 @@ enum CalendarSourceKind {
 // --- RBAC: permission matrix (roleDefinitionId + permissionKey) ---
 
 model PermissionDefinition {
-  id          String @id @default(cuid())
-  key         String @unique
+  id          String  @id @default(cuid())
+  key         String  @unique
   description String?
   category    String?
 
@@ -214,7 +214,7 @@ model PermissionDefinition {
 }
 
 model RolePermission {
-  id                     String @id @default(cuid())
+  id                     String  @id @default(cuid())
   roleDefinitionId       String
   permissionDefinitionId String
   allowed                Boolean @default(true)
@@ -228,14 +228,14 @@ model RolePermission {
 
 // Parent organization (e.g. J.D. Phoebe Group). Stable id; name is editable.
 model OrgGroup {
-  id            String         @id @default(cuid())
-  name          String
-  introduction  String?
-  status        OrgGroupStatus @default(ACTIVE)
-  archivedAt    DateTime?
-  deletedAt     DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id           String         @id @default(cuid())
+  name         String
+  introduction String?
+  status       OrgGroupStatus @default(ACTIVE)
+  archivedAt   DateTime?
+  deletedAt    DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 
   companies        Company[]
   groupMemberships GroupMembership[]
@@ -243,34 +243,34 @@ model OrgGroup {
 
 // Sub-company / entity under the group.
 model Company {
-  id               String         @id @default(cuid())
-  orgGroupId       String
-  name             String
-  companyType      String?
-  introduction     String?
+  id                       String        @id @default(cuid())
+  orgGroupId               String
+  name                     String
+  companyType              String?
+  introduction             String?
   /// Public URL or app-relative path to uploaded logo (internal identity).
-  logoUrl          String?
-  status           CompanyStatus  @default(ACTIVE)
+  logoUrl                  String?
+  status                   CompanyStatus @default(ACTIVE)
   /// HR onboarding pack (e.g. Google Drive); shown to new members assigned to this company.
-  onboardingPackageUrl       String?
+  onboardingPackageUrl     String?
   /// Optional onboarding video URL (direct .mp4 or https page); watch progress is tracked for members.
-  onboardingVideoUrl         String?
-  onboardingPackageVersion     String         @default("v1")
-  onboardingDeadlineDays       Int            @default(14)
-  archivedAt       DateTime?
-  deletedAt        DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  onboardingVideoUrl       String?
+  onboardingPackageVersion String        @default("v1")
+  onboardingDeadlineDays   Int           @default(14)
+  archivedAt               DateTime?
+  deletedAt                DateTime?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
 
-  orgGroup    OrgGroup           @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
-  memberships CompanyMembership[]
-  projects    Project[]
-  departments Department[]
-  projectGroups ProjectGroup[]
-  knowledgeAssets KnowledgeAsset[]
-  memberOutputs   MemberOutput[]
-  memberOnboardings MemberOnboarding[]
-  offboardingRuns   OffboardingRun[]
+  orgGroup              OrgGroup               @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
+  memberships           CompanyMembership[]
+  projects              Project[]
+  departments           Department[]
+  projectGroups         ProjectGroup[]
+  knowledgeAssets       KnowledgeAsset[]
+  memberOutputs         MemberOutput[]
+  memberOnboardings     MemberOnboarding[]
+  offboardingRuns       OffboardingRun[]
   lifecycleTriggerRules LifecycleTriggerRule[]
 }
 
@@ -283,7 +283,7 @@ model Department {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company            Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   companyMemberships CompanyMembership[]
   projects           Project[]
 
@@ -306,70 +306,70 @@ model ProjectGroup {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  passwordHash  String?
-  clerkId       String?   @unique
-  name          String
-  title         String?
+  id                        String    @id @default(cuid())
+  email                     String    @unique
+  passwordHash              String?
+  clerkId                   String?   @unique
+  name                      String
+  title                     String?
   /// Extra contact emails (comma / semicolon separated); login email stays in `email`.
-  contactEmails String?
-  phone         String?
-  timezone      String    @default("UTC")
-  active        Boolean   @default(true)
+  contactEmails             String?
+  phone                     String?
+  timezone                  String    @default("UTC")
+  active                    Boolean   @default(true)
   /// When true, user must change password at /settings/change-password before using the app.
-  mustChangePassword Boolean @default(false)
-  isSuperAdmin  Boolean   @default(false)
+  mustChangePassword        Boolean   @default(false)
+  isSuperAdmin              Boolean   @default(false)
   /// Public URL or app-relative path to uploaded avatar.
-  avatarUrl     String?
+  avatarUrl                 String?
   /// First-login companion picker completed; null means redirect to onboarding.
   companionIntroCompletedAt DateTime?
   /// First authenticated app session (for onboarding audit).
-  firstSignInAt DateTime?
+  firstSignInAt             DateTime?
   /// Recognition trigger: mark member for positive follow-up until this instant.
-  positiveAttentionUntil DateTime?
-  deletedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  positiveAttentionUntil    DateTime?
+  deletedAt                 DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
-  groupMemberships   GroupMembership[]
-  companyMemberships CompanyMembership[]
-  supervisorForMemberships CompanyMembership[] @relation("MembershipSupervisor")
-  projectMemberships ProjectMembership[]
-  nodeAssignments    WorkflowNodeAssignee[]
-  ownedProjects      Project[]              @relation("ProjectOwner")
-  auditEntries       AuditLogEntry[]        @relation("AuditActor")
-  sessions           Session[]
-  attachmentsUploaded Attachment[]        @relation("AttachmentUploader")
-  companionProfile   CompanionProfile?
-  recognitionsGiven    RecognitionEvent[]    @relation("RecognitionFrom")
-  recognitionsReceived RecognitionEvent[]    @relation("RecognitionTo")
-  feedbackGiven        FeedbackEvent[]       @relation("FeedbackFrom")
-  feedbackReceived     FeedbackEvent[]       @relation("FeedbackTo")
-  scoreLedgerEntries   ScoreLedgerEntry[]
-  performanceSnapshots PerformanceSnapshot[]
-  knowledgeAssets      KnowledgeAsset[]      @relation("KnowledgeAuthor")
-  knowledgeReuses      KnowledgeReuseEvent[] @relation("KnowledgeReuseActor")
-  attachmentsAsContributor Attachment[]      @relation("AttachmentContributor")
-  memberOutputs        MemberOutput[]
-  memberOnboardings    MemberOnboarding[]
-  onboardingsAsLiaison MemberOnboarding[] @relation("OnboardingLiaison")
-  inAppNotifications   InAppNotification[]
-  lifecycleReminderLogs LifecycleReminderLog[]
-  lifecycleTriggerFires LifecycleTriggerFire[]
-  organizedCalendarEvents CalendarEvent[] @relation("CalendarOrganizer")
-  calendarAttendees    CalendarAttendee[]
-  offboardingRunsSubject OffboardingRun[] @relation("OffboardingSubject")
-  offboardingRunsStarted OffboardingRun[] @relation("OffboardingStartedBy")
-  staffInvitesCreated    StaffInvite[]
+  groupMemberships         GroupMembership[]
+  companyMemberships       CompanyMembership[]
+  supervisorForMemberships CompanyMembership[]    @relation("MembershipSupervisor")
+  projectMemberships       ProjectMembership[]
+  nodeAssignments          WorkflowNodeAssignee[]
+  ownedProjects            Project[]              @relation("ProjectOwner")
+  auditEntries             AuditLogEntry[]        @relation("AuditActor")
+  sessions                 Session[]
+  attachmentsUploaded      Attachment[]           @relation("AttachmentUploader")
+  companionProfile         CompanionProfile?
+  recognitionsGiven        RecognitionEvent[]     @relation("RecognitionFrom")
+  recognitionsReceived     RecognitionEvent[]     @relation("RecognitionTo")
+  feedbackGiven            FeedbackEvent[]        @relation("FeedbackFrom")
+  feedbackReceived         FeedbackEvent[]        @relation("FeedbackTo")
+  scoreLedgerEntries       ScoreLedgerEntry[]
+  performanceSnapshots     PerformanceSnapshot[]
+  knowledgeAssets          KnowledgeAsset[]       @relation("KnowledgeAuthor")
+  knowledgeReuses          KnowledgeReuseEvent[]  @relation("KnowledgeReuseActor")
+  attachmentsAsContributor Attachment[]           @relation("AttachmentContributor")
+  memberOutputs            MemberOutput[]
+  memberOnboardings        MemberOnboarding[]
+  onboardingsAsLiaison     MemberOnboarding[]     @relation("OnboardingLiaison")
+  inAppNotifications       InAppNotification[]
+  lifecycleReminderLogs    LifecycleReminderLog[]
+  lifecycleTriggerFires    LifecycleTriggerFire[]
+  organizedCalendarEvents  CalendarEvent[]        @relation("CalendarOrganizer")
+  calendarAttendees        CalendarAttendee[]
+  offboardingRunsSubject   OffboardingRun[]       @relation("OffboardingSubject")
+  offboardingRunsStarted   OffboardingRun[]       @relation("OffboardingStartedBy")
+  staffInvitesCreated      StaffInvite[]
 }
 
 model Session {
-  id         String   @id @default(cuid())
-  userId     String
-  token      String   @unique
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -379,17 +379,17 @@ model Session {
 
 /// Pending staff account after admin requests email OTP (consumed when user is created).
 model StaffInvite {
-  id               String    @id @default(cuid())
-  email            String
-  name             String
-  title            String?
-  passwordHash     String
-  otpHash          String
-  expiresAt        DateTime
-  consumedAt       DateTime?
-  attempts         Int       @default(0)
-  createdByUserId  String
-  createdAt        DateTime  @default(now())
+  id              String    @id @default(cuid())
+  email           String
+  name            String
+  title           String?
+  passwordHash    String
+  otpHash         String
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  attempts        Int       @default(0)
+  createdByUserId String
+  createdAt       DateTime  @default(now())
 
   createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
 
@@ -429,7 +429,7 @@ model GroupMembership {
 }
 
 model CompanyMembership {
-  id               String @id @default(cuid())
+  id               String  @id @default(cuid())
   userId           String
   companyId        String
   roleDefinitionId String
@@ -482,21 +482,21 @@ model Project {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  department  Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department   Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   projectGroup ProjectGroup? @relation(fields: [projectGroupId], references: [id], onDelete: SetNull)
-  owner       User    @relation("ProjectOwner", fields: [ownerId], references: [id])
+  owner        User          @relation("ProjectOwner", fields: [ownerId], references: [id])
 
-  memberships ProjectMembership[]
-  layers      WorkflowLayer[]
-  nodes       WorkflowNode[]
-  edges       WorkflowEdge[]
-  recognitions RecognitionEvent[]
-  feedbacks    FeedbackEvent[]
-  knowledgeAssets KnowledgeAsset[]
-  outgoingRelations ProjectRelation[] @relation("ProjectRelationFrom")
-  incomingRelations ProjectRelation[] @relation("ProjectRelationTo")
-  attachments       Attachment[]      @relation("ProjectAttachment")
+  memberships       ProjectMembership[]
+  layers            WorkflowLayer[]
+  nodes             WorkflowNode[]
+  edges             WorkflowEdge[]
+  recognitions      RecognitionEvent[]
+  feedbacks         FeedbackEvent[]
+  knowledgeAssets   KnowledgeAsset[]
+  outgoingRelations ProjectRelation[]   @relation("ProjectRelationFrom")
+  incomingRelations ProjectRelation[]   @relation("ProjectRelationTo")
+  attachments       Attachment[]        @relation("ProjectAttachment")
   memberOutputs     MemberOutput[]
   calendarEvents    CalendarEvent[]
 
@@ -509,15 +509,15 @@ model Project {
 }
 
 model ProjectRelation {
-  id             String              @id @default(cuid())
-  fromProjectId  String
-  toProjectId    String
-  relationType   ProjectRelationType
-  note           String?
-  createdAt      DateTime            @default(now())
+  id            String              @id @default(cuid())
+  fromProjectId String
+  toProjectId   String
+  relationType  ProjectRelationType
+  note          String?
+  createdAt     DateTime            @default(now())
 
-  fromProject Project @relation("ProjectRelationFrom", fields: [fromProjectId], references: [id], onDelete: Cascade)
-  toProject   Project @relation("ProjectRelationTo", fields: [toProjectId], references: [id], onDelete: Cascade)
+  fromProject       Project                           @relation("ProjectRelationFrom", fields: [fromProjectId], references: [id], onDelete: Cascade)
+  toProject         Project                           @relation("ProjectRelationTo", fields: [toProjectId], references: [id], onDelete: Cascade)
   sharedKnowledge   ProjectRelationSharedKnowledge[]
   sharedAttachments ProjectRelationSharedAttachment[]
 
@@ -528,13 +528,13 @@ model ProjectRelation {
 
 /// Surface a knowledge asset from one side of a relation on the peer project page.
 model ProjectRelationSharedKnowledge {
-  id               String @id @default(cuid())
+  id               String   @id @default(cuid())
   relationId       String
   knowledgeAssetId String
   createdAt        DateTime @default(now())
 
   relation       ProjectRelation @relation(fields: [relationId], references: [id], onDelete: Cascade)
-  knowledgeAsset KnowledgeAsset @relation(fields: [knowledgeAssetId], references: [id], onDelete: Cascade)
+  knowledgeAsset KnowledgeAsset  @relation(fields: [knowledgeAssetId], references: [id], onDelete: Cascade)
 
   @@unique([relationId, knowledgeAssetId])
   @@index([knowledgeAssetId])
@@ -542,27 +542,27 @@ model ProjectRelationSharedKnowledge {
 
 /// Surface a project-level attachment link from one side of a relation on the peer project page.
 model ProjectRelationSharedAttachment {
-  id           String @id @default(cuid())
+  id           String   @id @default(cuid())
   relationId   String
   attachmentId String
   createdAt    DateTime @default(now())
 
   relation   ProjectRelation @relation(fields: [relationId], references: [id], onDelete: Cascade)
-  attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  attachment Attachment      @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
 
   @@unique([relationId, attachmentId])
   @@index([attachmentId])
 }
 
 model WorkflowLayer {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   projectId        String
   name             String
-  sortOrder        Int      @default(0)
-  collapsedDefault Boolean  @default(false)
+  sortOrder        Int       @default(0)
+  collapsedDefault Boolean   @default(false)
   deletedAt        DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   nodes   WorkflowNode[]
@@ -571,34 +571,34 @@ model WorkflowLayer {
 }
 
 model WorkflowNode {
-  id              String               @id @default(cuid())
+  id              String             @id @default(cuid())
   projectId       String
   layerId         String?
   parentNodeId    String?
   nodeType        WorkflowNodeType
   title           String
   description     String?
-  status          WorkflowNodeStatus   @default(NOT_STARTED)
-  progressPercent Int                  @default(0)
-  posX            Float                @default(0)
-  posY            Float                @default(0)
-  sortOrder       Int                  @default(0)
+  status          WorkflowNodeStatus @default(NOT_STARTED)
+  progressPercent Int                @default(0)
+  posX            Float              @default(0)
+  posY            Float              @default(0)
+  sortOrder       Int                @default(0)
   archivedAt      DateTime?
   deletedAt       DateTime?
   dueAt           DateTime?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
-  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  layer       WorkflowLayer? @relation(fields: [layerId], references: [id], onDelete: SetNull)
-  parent      WorkflowNode?  @relation("NodeTree", fields: [parentNodeId], references: [id], onDelete: SetNull)
-  children    WorkflowNode[] @relation("NodeTree")
-  assignees   WorkflowNodeAssignee[]
-  edgesOut    WorkflowEdge[] @relation("EdgeFrom")
-  edgesIn     WorkflowEdge[] @relation("EdgeTo")
-  attachments Attachment[]
+  project      Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  layer        WorkflowLayer?         @relation(fields: [layerId], references: [id], onDelete: SetNull)
+  parent       WorkflowNode?          @relation("NodeTree", fields: [parentNodeId], references: [id], onDelete: SetNull)
+  children     WorkflowNode[]         @relation("NodeTree")
+  assignees    WorkflowNodeAssignee[]
+  edgesOut     WorkflowEdge[]         @relation("EdgeFrom")
+  edgesIn      WorkflowEdge[]         @relation("EdgeTo")
+  attachments  Attachment[]
   recognitions RecognitionEvent[]
-  feedbacks   FeedbackEvent[]
+  feedbacks    FeedbackEvent[]
 
   @@index([projectId])
   @@index([projectId, deletedAt, parentNodeId])
@@ -608,10 +608,10 @@ model WorkflowNode {
 }
 
 model WorkflowNodeAssignee {
-  id              String @id @default(cuid())
-  workflowNodeId  String
-  userId          String
-  responsibility  String?
+  id             String  @id @default(cuid())
+  workflowNodeId String
+  userId         String
+  responsibility String?
 
   node WorkflowNode @relation(fields: [workflowNodeId], references: [id], onDelete: Cascade)
   user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -642,39 +642,39 @@ model WorkflowEdge {
 }
 
 model Attachment {
-  id                 String    @id @default(cuid())
-  workflowNodeId     String?
-  knowledgeAssetId   String?
-  projectId          String?
-  contributorUserId  String?
-  memberOutputId     String?
+  id                String                 @id @default(cuid())
+  workflowNodeId    String?
+  knowledgeAssetId  String?
+  projectId         String?
+  contributorUserId String?
+  memberOutputId    String?
   previousVersionId String?
-  resourceKind       AttachmentResourceKind @default(FILE)
+  resourceKind      AttachmentResourceKind @default(FILE)
   /// When resourceKind is EXTERNAL_URL, this is the canonical href (Drive, docs, etc.).
-  externalUrl        String?
-  fileName           String
-  mimeType           String?
-  sizeBytes          Int       @default(0)
+  externalUrl       String?
+  fileName          String
+  mimeType          String?
+  sizeBytes         Int                    @default(0)
   /// Required for FILE; null for EXTERNAL_URL until uploads return in a later phase.
-  storageKey         String?
-  blobUrl            String?
-  description        String?
-  labels             String?
-  titleEn            String?
-  titleZh            String?
-  uploadedById       String
-  deletedAt          DateTime?
-  createdAt          DateTime  @default(now())
+  storageKey        String?
+  blobUrl           String?
+  description       String?
+  labels            String?
+  titleEn           String?
+  titleZh           String?
+  uploadedById      String
+  deletedAt         DateTime?
+  createdAt         DateTime               @default(now())
 
-  node          WorkflowNode? @relation(fields: [workflowNodeId], references: [id], onDelete: Cascade)
-  knowledgeAsset KnowledgeAsset? @relation("KnowledgeAttachment", fields: [knowledgeAssetId], references: [id], onDelete: Cascade)
-  project       Project?      @relation("ProjectAttachment", fields: [projectId], references: [id], onDelete: Cascade)
-  contributor   User?         @relation("AttachmentContributor", fields: [contributorUserId], references: [id], onDelete: SetNull)
-  memberOutput  MemberOutput? @relation(fields: [memberOutputId], references: [id], onDelete: Cascade)
-  previousVersion Attachment?  @relation("AttachmentVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
-  nextVersions  Attachment[]   @relation("AttachmentVersionChain")
-  uploadedBy    User          @relation("AttachmentUploader", fields: [uploadedById], references: [id])
-  relationShares ProjectRelationSharedAttachment[]
+  node            WorkflowNode?                     @relation(fields: [workflowNodeId], references: [id], onDelete: Cascade)
+  knowledgeAsset  KnowledgeAsset?                   @relation("KnowledgeAttachment", fields: [knowledgeAssetId], references: [id], onDelete: Cascade)
+  project         Project?                          @relation("ProjectAttachment", fields: [projectId], references: [id], onDelete: Cascade)
+  contributor     User?                             @relation("AttachmentContributor", fields: [contributorUserId], references: [id], onDelete: SetNull)
+  memberOutput    MemberOutput?                     @relation(fields: [memberOutputId], references: [id], onDelete: Cascade)
+  previousVersion Attachment?                       @relation("AttachmentVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions    Attachment[]                      @relation("AttachmentVersionChain")
+  uploadedBy      User                              @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+  relationShares  ProjectRelationSharedAttachment[]
 
   @@index([workflowNodeId])
   @@index([knowledgeAssetId])
@@ -699,9 +699,9 @@ model MemberOutput {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  company Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  company     Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
   attachments Attachment[]
 
   @@index([userId, createdAt])
@@ -710,23 +710,23 @@ model MemberOutput {
 }
 
 model RecognitionEvent {
-  id                 String                 @id @default(cuid())
-  fromUserId         String?
-  toUserId           String
-  projectId          String?
-  workflowNodeId     String?
-  knowledgeAssetId   String?
-  mode               RecognitionMode        @default(PUBLIC)
-  tagCategory        RecognitionTagCategory
-  secondaryLabelKey  String               @default("")
-  tagLabel           String?
-  message            String?
-  createdAt          DateTime               @default(now())
+  id                String                 @id @default(cuid())
+  fromUserId        String?
+  toUserId          String
+  projectId         String?
+  workflowNodeId    String?
+  knowledgeAssetId  String?
+  mode              RecognitionMode        @default(PUBLIC)
+  tagCategory       RecognitionTagCategory
+  secondaryLabelKey String                 @default("")
+  tagLabel          String?
+  message           String?
+  createdAt         DateTime               @default(now())
 
-  fromUser User?          @relation("RecognitionFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
-  toUser   User           @relation("RecognitionTo", fields: [toUserId], references: [id], onDelete: Cascade)
-  project  Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  node     WorkflowNode?  @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
+  fromUser       User?           @relation("RecognitionFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUser         User            @relation("RecognitionTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  project        Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  node           WorkflowNode?   @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
   knowledgeAsset KnowledgeAsset? @relation(fields: [knowledgeAssetId], references: [id], onDelete: SetNull)
 
   @@index([toUserId, createdAt])
@@ -735,21 +735,21 @@ model RecognitionEvent {
 }
 
 model FeedbackEvent {
-  id                 String           @id @default(cuid())
-  fromUserId         String?
-  toUserId           String
-  projectId          String?
-  workflowNodeId     String?
-  knowledgeAssetId   String?
-  category           FeedbackCategory
-  secondaryLabelKey  String
-  message            String?
-  createdAt          DateTime         @default(now())
+  id                String           @id @default(cuid())
+  fromUserId        String?
+  toUserId          String
+  projectId         String?
+  workflowNodeId    String?
+  knowledgeAssetId  String?
+  category          FeedbackCategory
+  secondaryLabelKey String
+  message           String?
+  createdAt         DateTime         @default(now())
 
-  fromUser User?          @relation("FeedbackFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
-  toUser   User           @relation("FeedbackTo", fields: [toUserId], references: [id], onDelete: Cascade)
-  project  Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  node     WorkflowNode?  @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
+  fromUser       User?           @relation("FeedbackFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUser         User            @relation("FeedbackTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  project        Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  node           WorkflowNode?   @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
   knowledgeAsset KnowledgeAsset? @relation(fields: [knowledgeAssetId], references: [id], onDelete: SetNull)
 
   @@index([toUserId, createdAt])
@@ -757,18 +757,18 @@ model FeedbackEvent {
 }
 
 model ScoreLedgerEntry {
-  id                   String               @id @default(cuid())
-  userId               String
-  leaderboardCategory  LeaderboardCategory
-  abilityDimension     AbilityDimension?
-  polarity             ScorePolarity        @default(POSITIVE)
-  delta                Int
-  reasonKey            String
-  sourceType           String
-  sourceId             String?
-  companyId            String?
-  projectId            String?
-  createdAt            DateTime             @default(now())
+  id                  String              @id @default(cuid())
+  userId              String
+  leaderboardCategory LeaderboardCategory
+  abilityDimension    AbilityDimension?
+  polarity            ScorePolarity       @default(POSITIVE)
+  delta               Int
+  reasonKey           String
+  sourceType          String
+  sourceId            String?
+  companyId           String?
+  projectId           String?
+  createdAt           DateTime            @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -779,30 +779,30 @@ model ScoreLedgerEntry {
 }
 
 model CompanionProfile {
-  id        String           @id @default(cuid())
-  userId    String           @unique
-  species   CompanionSpecies @default(BUNNY)
+  id                  String           @id @default(cuid())
+  userId              String           @unique
+  species             CompanionSpecies @default(BUNNY)
   /// Canonical manifest id (bird, bear, …); mirrors species for future growth systems.
   companionManifestId String?
-  name      String?
-  mood      String           @default("CURIOUS")
-  level     Int              @default(1)
-  selectedAt DateTime        @default(now())
-  updatedAt DateTime         @updatedAt
+  name                String?
+  mood                String           @default("CURIOUS")
+  level               Int              @default(1)
+  selectedAt          DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PerformanceSnapshot {
-  id                   String   @id @default(cuid())
-  userId               String
-  weekStart            DateTime
-  executionScore       Int      @default(0)
-  collaborationScore   Int      @default(0)
-  knowledgeScore       Int      @default(0)
-  recognitionScore     Int      @default(0)
-  trendDelta           Int      @default(0)
-  createdAt            DateTime @default(now())
+  id                 String   @id @default(cuid())
+  userId             String
+  weekStart          DateTime
+  executionScore     Int      @default(0)
+  collaborationScore Int      @default(0)
+  knowledgeScore     Int      @default(0)
+  recognitionScore   Int      @default(0)
+  trendDelta         Int      @default(0)
+  createdAt          DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -811,31 +811,31 @@ model PerformanceSnapshot {
 }
 
 model KnowledgeAsset {
-  id          String         @id @default(cuid())
-  projectId   String?
-  companyId   String?
-  authorId    String
-  title       String
-  titleEn     String?
-  titleZh     String?
-  summary     String?
-  content     String
-  layer       KnowledgeLayer
-  tags        String?
-  sourceUrl   String?
-  language    String?        @default("mixed")
-  reuseCount  Int            @default(0)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  deletedAt   DateTime?
+  id         String         @id @default(cuid())
+  projectId  String?
+  companyId  String?
+  authorId   String
+  title      String
+  titleEn    String?
+  titleZh    String?
+  summary    String?
+  content    String
+  layer      KnowledgeLayer
+  tags       String?
+  sourceUrl  String?
+  language   String?        @default("mixed")
+  reuseCount Int            @default(0)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  deletedAt  DateTime?
 
-  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  author  User     @relation("KnowledgeAuthor", fields: [authorId], references: [id], onDelete: Cascade)
-  recognitions RecognitionEvent[]
-  feedbacks    FeedbackEvent[]
-  reuses       KnowledgeReuseEvent[]
-  attachments  Attachment[] @relation("KnowledgeAttachment")
+  project        Project?                         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  company        Company?                         @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  author         User                             @relation("KnowledgeAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  recognitions   RecognitionEvent[]
+  feedbacks      FeedbackEvent[]
+  reuses         KnowledgeReuseEvent[]
+  attachments    Attachment[]                     @relation("KnowledgeAttachment")
   relationShares ProjectRelationSharedKnowledge[]
 
   @@index([layer, createdAt])
@@ -876,30 +876,30 @@ model AuditLogEntry {
 
 /// Per-user per-company onboarding run (package + checklist + audit).
 model MemberOnboarding {
-  id              String    @id @default(cuid())
-  userId          String
-  companyId       String
-  packageUrl      String
-  packageVersion  String
-  deadlineAt      DateTime
-  completedAt     DateTime?
-  liaisonUserId   String?
-  liaisonName     String?
-  liaisonEmail    String?
+  id                          String    @id @default(cuid())
+  userId                      String
+  companyId                   String
+  packageUrl                  String
+  packageVersion              String
+  deadlineAt                  DateTime
+  completedAt                 DateTime?
+  liaisonUserId               String?
+  liaisonName                 String?
+  liaisonEmail                String?
   overdueSelfNotifiedAt       DateTime?
   overdueSupervisorNotifiedAt DateTime?
   /// User confirmed they opened the onboarding pack / primary materials (gates checklist).
-  materialsOpenedAt DateTime?
+  materialsOpenedAt           DateTime?
   /// Seconds of onboarding video consumed (HTML5) or dwell time for embed flows (capped server-side).
-  videoProgressSeconds Int      @default(0)
+  videoProgressSeconds        Int       @default(0)
   /// Set when watch threshold met (e.g. ≥85% of duration or embed dwell target).
-  videoCompletedAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  videoCompletedAt            DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  liaison  User?    @relation("OnboardingLiaison", fields: [liaisonUserId], references: [id], onDelete: SetNull)
+  user           User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company        Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  liaison        User?                           @relation("OnboardingLiaison", fields: [liaisonUserId], references: [id], onDelete: SetNull)
   checklistItems MemberOnboardingChecklistItem[]
 
   @@unique([userId, companyId])
@@ -908,11 +908,11 @@ model MemberOnboarding {
 }
 
 model MemberOnboardingChecklistItem {
-  id            String    @id @default(cuid())
+  id           String    @id @default(cuid())
   onboardingId String
-  itemKey       String
-  sortOrder     Int       @default(0)
-  completedAt   DateTime?
+  itemKey      String
+  sortOrder    Int       @default(0)
+  completedAt  DateTime?
 
   onboarding MemberOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
 
@@ -921,18 +921,18 @@ model MemberOnboardingChecklistItem {
 }
 
 model LifecycleTriggerRule {
-  id            String                 @id @default(cuid())
-  kind          LifecycleTriggerKind
-  windowDays    Int                    @default(30)
-  threshold     Int                    @default(3)
-  scope         LifecycleTriggerScope  @default(GLOBAL)
-  companyId     String?
-  categoryMode  LifecycleCategoryMode  @default(TOTAL_COUNT)
-  active        Boolean                @default(true)
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  id           String                @id @default(cuid())
+  kind         LifecycleTriggerKind
+  windowDays   Int                   @default(30)
+  threshold    Int                   @default(3)
+  scope        LifecycleTriggerScope @default(GLOBAL)
+  companyId    String?
+  categoryMode LifecycleCategoryMode @default(TOTAL_COUNT)
+  active       Boolean               @default(true)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
-  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company Company?               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   fires   LifecycleTriggerFire[]
 
   @@index([kind, active])
@@ -940,14 +940,14 @@ model LifecycleTriggerRule {
 }
 
 model LifecycleTriggerFire {
-  id               String   @id @default(cuid())
-  ruleId           String
-  subjectUserId    String
-  windowStart      DateTime
-  windowEnd        DateTime
-  triggeredAt      DateTime @default(now())
+  id                  String    @id @default(cuid())
+  ruleId              String
+  subjectUserId       String
+  windowStart         DateTime
+  windowEnd           DateTime
+  triggeredAt         DateTime  @default(now())
   /// JSON array of FeedbackEvent or RecognitionEvent ids (strings).
-  sourceEventIds   String
+  sourceEventIds      String
   followUpCompletedAt DateTime?
 
   rule    LifecycleTriggerRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
@@ -998,9 +998,9 @@ model OffboardingRun {
   accountDeactivatedAt DateTime?
   notes                String?
 
-  user      User    @relation("OffboardingSubject", fields: [userId], references: [id], onDelete: Cascade)
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  startedBy User    @relation("OffboardingStartedBy", fields: [startedById], references: [id], onDelete: Restrict)
+  user      User                       @relation("OffboardingSubject", fields: [userId], references: [id], onDelete: Cascade)
+  company   Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  startedBy User                       @relation("OffboardingStartedBy", fields: [startedById], references: [id], onDelete: Restrict)
   checklist OffboardingChecklistItem[]
 
   @@index([companyId, status])
@@ -1020,6 +1020,22 @@ model OffboardingChecklistItem {
   @@index([runId])
 }
 
+model CalendarLabel {
+  id        String   @id @default(cuid())
+  /// Stable key for built-in labels; custom labels keep this null.
+  key       String?  @unique
+  name      String
+  color     String   @default("#6366f1")
+  sortOrder Int      @default(0)
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events CalendarEvent[]
+
+  @@index([sortOrder])
+}
+
 model CalendarEvent {
   id                      String             @id @default(cuid())
   title                   String
@@ -1029,6 +1045,7 @@ model CalendarEvent {
   timezone                String             @default("UTC")
   organizerUserId         String
   projectId               String?
+  labelId                 String?
   sourceKind              CalendarSourceKind @default(MANUAL)
   sourceId                String?
   meetUrl                 String?
@@ -1038,12 +1055,14 @@ model CalendarEvent {
   createdAt               DateTime           @default(now())
   updatedAt               DateTime           @updatedAt
 
-  organizer User     @relation("CalendarOrganizer", fields: [organizerUserId], references: [id], onDelete: Cascade)
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  organizer User               @relation("CalendarOrganizer", fields: [organizerUserId], references: [id], onDelete: Cascade)
+  project   Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  label     CalendarLabel?     @relation(fields: [labelId], references: [id], onDelete: SetNull)
   attendees CalendarAttendee[]
 
   @@index([organizerUserId, startsAt])
   @@index([projectId])
+  @@index([labelId])
   @@index([projectId, startsAt])
 }
 

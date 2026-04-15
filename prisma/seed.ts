@@ -92,6 +92,7 @@ async function main() {
   await prisma.staffInvite.deleteMany();
   await prisma.calendarAttendee.deleteMany();
   await prisma.calendarEvent.deleteMany();
+  await prisma.calendarLabel.deleteMany();
   await prisma.offboardingChecklistItem.deleteMany();
   await prisma.offboardingRun.deleteMany();
   await prisma.inAppNotification.deleteMany();
@@ -126,6 +127,14 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.roleDefinition.deleteMany();
   await prisma.orgGroup.deleteMany();
+
+  await prisma.calendarLabel.createMany({
+    data: [
+      { key: "meeting", name: "Meeting", color: "#6366f1", sortOrder: 0, isDefault: true },
+      { key: "project", name: "Project", color: "#0f766e", sortOrder: 1, isDefault: true },
+      { key: "deadline", name: "Deadline", color: "#f97316", sortOrder: 2, isDefault: true },
+    ],
+  });
 
   for (const key of PERMISSION_KEYS) {
     await prisma.permissionDefinition.create({
