@@ -6,8 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   if (isClerkEnabled()) redirect("/sign-in");
+
+  const sp = await searchParams;
+  const err = sp.error;
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-16">
@@ -19,6 +26,18 @@ export default async function LoginPage() {
       <Card className="space-y-4 p-6">
         <CardTitle>Sign in</CardTitle>
         <form action={loginAction} className="space-y-3">
+          {err === "invalid" ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+              Invalid email or password. If this is a new database, run <code className="font-mono">npm run db:seed</code>{" "}
+              against the same <code className="font-mono">DATABASE_URL</code> as production, then use password{" "}
+              <code className="font-mono">demo1234</code>.
+            </p>
+          ) : null}
+          {err === "sso" ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+              This account uses SSO. Sign in with the configured provider instead.
+            </p>
+          ) : null}
           <div className="space-y-1">
             <label className="text-xs font-medium text-[hsl(var(--muted))]" htmlFor="email">
               Email

@@ -13,16 +13,16 @@ export async function loginAction(formData: FormData) {
 
   const user = await prisma.user.findFirst({ where: { email, deletedAt: null } });
   if (!user || !user.active) {
-    throw new Error("Invalid email or password.");
+    redirect("/login?error=invalid");
   }
 
   if (!user.passwordHash) {
-    throw new Error("This account uses SSO. Sign in with the configured provider instead.");
+    redirect("/login?error=sso");
   }
 
   const ok = await compare(password, user.passwordHash);
   if (!ok) {
-    throw new Error("Invalid email or password.");
+    redirect("/login?error=invalid");
   }
 
   const session = await getAppSession();
