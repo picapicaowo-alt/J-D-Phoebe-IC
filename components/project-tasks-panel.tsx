@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useOptimistic, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { WorkflowNodeStatus } from "@prisma/client";
 import {
   addProjectSubtaskAction,
@@ -11,6 +12,7 @@ import {
   undoLastProjectTaskDeletionAction,
   updateWorkflowNodeMetaAction,
 } from "@/app/actions/project-tasks";
+import { statusFromAggregatedProgress } from "@/lib/project-task-progress";
 import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +55,90 @@ export type ProjectTasksCopy = {
   editDetails: string;
   dialogClose: string;
 };
+
+type TaskOptimisticAction =
+  | { type: "add-root"; row: ProjectTaskRow }
+  | { type: "add-sub"; parentId: string; row: ProjectTaskRow }
+  | { type: "toggle"; nodeId: string }
+  | { type: "delete"; nodeId: string }
+  | { type: "clear-all" };
+
+function findNodeInForest(forest: ProjectTaskRow[], id: string): ProjectTaskRow | null {
+  for (const t of forest) {
+    if (t.id === id) return t;
+    const inner = findNodeInForest(t.children, id);
+    if (inner) return inner;
+  }
+  return null;
+}
+
+function collectLeafIdsLocal(node: ProjectTaskRow): string[] {
+  if (!node.children.length) return [node.id];
+  return node.children.flatMap(collectLeafIdsLocal);
+}
+
+function applyDeepToggle(forest: ProjectTaskRow[], leafIds: Set<string>, done: boolean): ProjectTaskRow[] {
+  const st: WorkflowNodeStatus = done ? "DONE" : "NOT_STARTED";
+  const pct = done ? 100 : 0;
+  return forest.map(mapNode);
+
+  function mapNode(t: ProjectTaskRow): ProjectTaskRow {
+    const kids = t.children.map(mapNode);
+    if (leafIds.has(t.id)) {
+      return { ...t, status: st, progressPercent: pct, children: kids };
+    }
+    if (kids.length) {
+      const newPct = Math.round(kids.reduce((s, c) => s + c.progressPercent, 0) / kids.length);
+      return { ...t, children: kids, progressPercent: newPct, status: statusFromAggregatedProgress(newPct) };
+    }
+    return { ...t, children: kids };
+  }
+}
+
+function addSubToParent(forest: ProjectTaskRow[], parentId: string, row: ProjectTaskRow): ProjectTaskRow[] {
+  return forest.map((t) => {
+    if (t.id === parentId) return { ...t, children: [...t.children, row] };
+    if (t.children.length) return { ...t, children: addSubToParent(t.children, parentId, row) };
+    return t;
+  });
+}
+
+function removeNode(forest: ProjectTaskRow[], nodeId: string): ProjectTaskRow[] {
+  const out: ProjectTaskRow[] = [];
+  for (const t of forest) {
+    if (t.id === nodeId) continue;
+    out.push({ ...t, children: removeNode(t.children, nodeId) });
+  }
+  return out;
+}
+
+function applyTasksOptimistic(prev: ProjectTaskRow[], action: TaskOptimisticAction): ProjectTaskRow[] {
+  switch (action.type) {
+    case "add-root":
+      return [...prev, action.row];
+    case "add-sub":
+      return addSubToParent(prev, action.parentId, action.row);
+    case "toggle": {
+      const target = findNodeInForest(prev, action.nodeId);
+      if (!target) return prev;
+      const leaves = collectLeafIdsLocal(target);
+      const leafSet = new Set(leaves);
+      const nodes = leaves.map((id) => findNodeInForest(prev, id)).filter(Boolean) as ProjectTaskRow[];
+      const allDone = nodes.length > 0 && nodes.every((n) => isComplete(n.status));
+      return applyDeepToggle(prev, leafSet, !allDone);
+    }
+    case "delete":
+      return removeNode(prev, action.nodeId);
+    case "clear-all":
+      return [];
+    default:
+      return prev;
+  }
+}
+
+function tempOptimId() {
+  return `optim:${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
 
 function isoToDatetimeLocalValue(iso: string | null): string {
   if (!iso) return "";
@@ -158,6 +244,7 @@ function NodeMetaDialog({
   memberOptions: { id: string; name: string }[];
   copy: ProjectTasksCopy;
 }) {
+  const router = useRouter();
   return (
     <dialog
       id={dialogId}
@@ -174,7 +261,17 @@ function NodeMetaDialog({
           label={copy.dialogClose}
         />
       </div>
-      <form action={updateWorkflowNodeMetaAction} className="max-h-[calc(90vh-100px)] space-y-3 overflow-y-auto p-4">
+      <form
+        className="max-h-[calc(90vh-100px)] space-y-3 overflow-y-auto p-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
+          void updateWorkflowNodeMetaAction(fd).finally(() => {
+            router.refresh();
+            (document.getElementById(dialogId) as HTMLDialogElement | null)?.close();
+          });
+        }}
+      >
         <input type="hidden" name="projectId" value={projectId} />
         <input type="hidden" name="nodeId" value={node.id} />
         <div className="space-y-1">
@@ -233,7 +330,11 @@ export function ProjectTasksPanel({
   copy: ProjectTasksCopy;
   locale: "en" | "zh";
 }) {
-  const [open, setOpen] = useState<Record<string, boolean>>(() => {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [optimisticTasks, runOptimistic] = useOptimistic(tasks, applyTasksOptimistic);
+
+  const [open, setOpen] = useState(() => {
     const o: Record<string, boolean> = {};
     for (const t of tasks) {
       if (t.children.length) o[t.id] = true;
@@ -242,7 +343,11 @@ export function ProjectTasksPanel({
   });
 
   return (
-    <div className="overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm">
+    <div
+      className={`overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm transition-opacity duration-150 ${
+        isPending ? "opacity-90" : ""
+      }`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--border))] px-4 py-4">
         <div className="flex items-center gap-3">
           <span className="h-4 w-4 shrink-0 rounded border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/15" aria-hidden />
@@ -250,26 +355,74 @@ export function ProjectTasksPanel({
         </div>
         {canEdit ? (
           <div className="flex flex-wrap items-center gap-2">
-            <form action={undoLastProjectTaskDeletionAction} title={undoAvailable ? copy.undoHint : copy.undoDisabledHint}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                startTransition(() => {
+                  void undoLastProjectTaskDeletionAction(fd).finally(() => router.refresh());
+                });
+              }}
+              title={undoAvailable ? copy.undoHint : copy.undoDisabledHint}
+            >
               <input type="hidden" name="projectId" value={projectId} />
-              <Button type="submit" variant="secondary" className="h-8 gap-2 px-2.5" disabled={!undoAvailable}>
+              <Button type="submit" variant="secondary" className="h-8 gap-2 px-2.5" disabled={!undoAvailable || isPending}>
                 <IconUndo />
                 {copy.undo}
               </Button>
             </form>
             <form
-              action={deleteAllProjectTasksAction}
               onSubmit={(e) => {
-                if (!window.confirm(copy.confirmDeleteAll)) e.preventDefault();
+                if (!window.confirm(copy.confirmDeleteAll)) {
+                  e.preventDefault();
+                  return;
+                }
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                startTransition(() => {
+                  runOptimistic({ type: "clear-all" });
+                  void deleteAllProjectTasksAction(fd).finally(() => router.refresh());
+                });
               }}
             >
               <input type="hidden" name="projectId" value={projectId} />
-              <Button type="submit" variant="secondary" className="h-8 gap-2 text-rose-600 dark:text-rose-400">
+              <Button type="submit" variant="secondary" className="h-8 gap-2 text-rose-600 dark:text-rose-400" disabled={isPending}>
                 <IconTrash />
                 {copy.deleteAll}
               </Button>
             </form>
-            <form action={addProjectTaskAction} className="flex flex-wrap items-center gap-2">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const form = e.currentTarget;
+                const fd = new FormData(form);
+                const title = String(fd.get("title") ?? "").trim();
+                if (!title) return;
+                const assigneeId = String(fd.get("assigneeId") ?? "").trim();
+                const assigneeName = assigneeId ? (memberOptions.find((m) => m.id === assigneeId)?.name ?? null) : null;
+                const dueRaw = String(fd.get("dueAt") ?? "").trim();
+                const dueAt = dueRaw ? new Date(dueRaw).toISOString() : null;
+                startTransition(() => {
+                  runOptimistic({
+                    type: "add-root",
+                    row: {
+                      id: tempOptimId(),
+                      title,
+                      progressPercent: 0,
+                      status: "NOT_STARTED",
+                      assigneeName,
+                      assigneeId: assigneeId || null,
+                      dueAt,
+                      description: null,
+                      children: [],
+                    },
+                  });
+                  void addProjectTaskAction(fd).finally(() => router.refresh());
+                });
+                form.reset();
+              }}
+              className="flex flex-wrap items-center gap-2"
+            >
               <input type="hidden" name="projectId" value={projectId} />
               <Select name="assigneeId" className="h-8 max-w-[160px] text-xs" defaultValue="">
                 <option value="">—</option>
@@ -284,7 +437,7 @@ export function ProjectTasksPanel({
                 {copy.deadlineOptional}
                 <Input name="dueAt" type="datetime-local" className="h-8 text-xs" />
               </label>
-              <Button type="submit" variant="secondary" className="h-8 gap-1.5 px-3">
+              <Button type="submit" variant="secondary" className="h-8 gap-1.5 px-3" disabled={isPending}>
                 <IconPlus />
                 {copy.addTask}
               </Button>
@@ -294,10 +447,10 @@ export function ProjectTasksPanel({
       </div>
 
       <div className="space-y-3 p-4">
-        {!tasks.length ? (
+        {!optimisticTasks.length ? (
           <p className="text-sm text-[hsl(var(--muted))]">{copy.empty}</p>
         ) : (
-          tasks.map((task) => {
+          optimisticTasks.map((task) => {
             const expanded = open[task.id] ?? false;
             const hasKids = task.children.length > 0;
             const taskDialogId = `task-meta-${task.id}`;
@@ -306,7 +459,17 @@ export function ProjectTasksPanel({
               <div key={task.id} className="rounded-[10px] border border-[hsl(var(--border))] p-px">
                 <div className="flex flex-wrap items-center gap-3 px-3 py-3 md:flex-nowrap">
                   {canEdit ? (
-                    <form action={toggleProjectTaskLeafAction} className="shrink-0">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const fd = new FormData(e.currentTarget);
+                        startTransition(() => {
+                          runOptimistic({ type: "toggle", nodeId: task.id });
+                          void toggleProjectTaskLeafAction(fd).finally(() => router.refresh());
+                        });
+                      }}
+                      className="shrink-0"
+                    >
                       <input type="hidden" name="projectId" value={projectId} />
                       <input type="hidden" name="nodeId" value={task.id} />
                       <button
@@ -317,6 +480,7 @@ export function ProjectTasksPanel({
                             : "border-[hsl(var(--border))] bg-[hsl(var(--card))]"
                         }`}
                         aria-label={taskDone ? "Mark task and subtasks incomplete" : "Mark task and subtasks complete"}
+                        disabled={isPending}
                       >
                         {taskDone ? (
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
@@ -369,10 +533,19 @@ export function ProjectTasksPanel({
                         >
                           {copy.editDetails}
                         </OpenDialogButton>
-                        <form action={deleteProjectTaskAction}>
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const fd = new FormData(e.currentTarget);
+                            startTransition(() => {
+                              runOptimistic({ type: "delete", nodeId: task.id });
+                              void deleteProjectTaskAction(fd).finally(() => router.refresh());
+                            });
+                          }}
+                        >
                           <input type="hidden" name="projectId" value={projectId} />
                           <input type="hidden" name="nodeId" value={task.id} />
-                          <Button type="submit" variant="ghost" className="h-8 w-full justify-start text-sm text-rose-600">
+                          <Button type="submit" variant="ghost" className="h-8 w-full justify-start text-sm text-rose-600" disabled={isPending}>
                             {copy.deleteTask}
                           </Button>
                         </form>
@@ -405,7 +578,17 @@ export function ProjectTasksPanel({
                         <div key={sub.id}>
                           <div className="flex flex-wrap items-center gap-3 rounded-[10px] bg-slate-50 px-3 py-3 dark:bg-zinc-900/60 md:flex-nowrap">
                             {canEdit ? (
-                              <form action={toggleProjectTaskLeafAction} className="shrink-0">
+                              <form
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const fd = new FormData(e.currentTarget);
+                                  startTransition(() => {
+                                    runOptimistic({ type: "toggle", nodeId: sub.id });
+                                    void toggleProjectTaskLeafAction(fd).finally(() => router.refresh());
+                                  });
+                                }}
+                                className="shrink-0"
+                              >
                                 <input type="hidden" name="projectId" value={projectId} />
                                 <input type="hidden" name="nodeId" value={sub.id} />
                                 <button
@@ -416,6 +599,7 @@ export function ProjectTasksPanel({
                                       : "border-[hsl(var(--border))] bg-[hsl(var(--card))]"
                                   }`}
                                   aria-label={done ? "Mark incomplete" : "Mark complete"}
+                                  disabled={isPending}
                                 >
                                   {done ? (
                                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
@@ -464,10 +648,19 @@ export function ProjectTasksPanel({
                                   >
                                     {copy.editDetails}
                                   </OpenDialogButton>
-                                  <form action={deleteProjectTaskAction}>
+                                  <form
+                                    onSubmit={(e) => {
+                                      e.preventDefault();
+                                      const fd = new FormData(e.currentTarget);
+                                      startTransition(() => {
+                                        runOptimistic({ type: "delete", nodeId: sub.id });
+                                        void deleteProjectTaskAction(fd).finally(() => router.refresh());
+                                      });
+                                    }}
+                                  >
                                     <input type="hidden" name="projectId" value={projectId} />
                                     <input type="hidden" name="nodeId" value={sub.id} />
-                                    <Button type="submit" variant="ghost" className="h-8 w-8 shrink-0 p-0 text-[hsl(var(--muted))] hover:text-rose-600">
+                                    <Button type="submit" variant="ghost" className="h-8 w-8 shrink-0 p-0 text-[hsl(var(--muted))] hover:text-rose-600" disabled={isPending}>
                                       <IconTrash />
                                     </Button>
                                   </form>
@@ -493,7 +686,39 @@ export function ProjectTasksPanel({
                       );
                     })}
                     {canEdit ? (
-                      <form action={addProjectSubtaskAction} className="flex flex-wrap items-center gap-2 pt-1">
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const form = e.currentTarget;
+                          const fd = new FormData(form);
+                          const title = String(fd.get("title") ?? "").trim();
+                          if (!title) return;
+                          const assigneeId = String(fd.get("assigneeId") ?? "").trim();
+                          const assigneeName = assigneeId ? (memberOptions.find((m) => m.id === assigneeId)?.name ?? null) : null;
+                          const dueRaw = String(fd.get("dueAt") ?? "").trim();
+                          const dueAt = dueRaw ? new Date(dueRaw).toISOString() : null;
+                          startTransition(() => {
+                            runOptimistic({
+                              type: "add-sub",
+                              parentId: task.id,
+                              row: {
+                                id: tempOptimId(),
+                                title,
+                                progressPercent: 0,
+                                status: "NOT_STARTED",
+                                assigneeName,
+                                assigneeId: assigneeId || null,
+                                dueAt,
+                                description: null,
+                                children: [],
+                              },
+                            });
+                            void addProjectSubtaskAction(fd).finally(() => router.refresh());
+                          });
+                          form.reset();
+                        }}
+                        className="flex flex-wrap items-center gap-2 pt-1"
+                      >
                         <input type="hidden" name="projectId" value={projectId} />
                         <input type="hidden" name="parentNodeId" value={task.id} />
                         <Input name="title" required placeholder={copy.newSubPh} className="h-8 max-w-[200px] flex-1 text-sm" />
@@ -509,7 +734,7 @@ export function ProjectTasksPanel({
                           {copy.deadlineOptional}
                           <Input name="dueAt" type="datetime-local" className="h-8 text-xs" />
                         </label>
-                        <Button type="submit" variant="secondary" className="h-8">
+                        <Button type="submit" variant="secondary" className="h-8" disabled={isPending}>
                           {copy.addSubtask}
                         </Button>
                       </form>

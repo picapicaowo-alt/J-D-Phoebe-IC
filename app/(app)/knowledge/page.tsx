@@ -147,25 +147,32 @@ export default async function KnowledgeHubPage() {
   const user = (await requireUser()) as AccessUser;
   if (!(await userHasPermission(user, "knowledge.read"))) redirect("/home");
   const locale = await getLocale();
-  const canCreate = await userHasPermission(user, "knowledge.create");
 
-  const [counts, recent] = await Promise.all([
-    Promise.all(
-      ORDER.map((layer) =>
-        prisma.knowledgeAsset.count({
-          where: { deletedAt: null, layer },
-        }),
-      ),
-    ),
+  const [layerGroups, recent, canCreate] = await Promise.all([
+    prisma.knowledgeAsset.groupBy({
+      by: ["layer"],
+      where: { deletedAt: null },
+      _count: { _all: true },
+    }),
     prisma.knowledgeAsset.findMany({
       where: { deletedAt: null },
       orderBy: { createdAt: "desc" },
       take: 8,
       include: { author: true },
     }),
+    userHasPermission(user, "knowledge.create"),
   ]);
 
-  const countByLayer = Object.fromEntries(ORDER.map((layer, i) => [layer, counts[i]])) as Record<KnowledgeLayer, number>;
+  const countByLayer = ORDER.reduce(
+    (acc, layer) => {
+      acc[layer] = 0;
+      return acc;
+    },
+    {} as Record<KnowledgeLayer, number>,
+  );
+  for (const row of layerGroups) {
+    countByLayer[row.layer] = row._count._all;
+  }
 
   return (
     <div className="space-y-10">

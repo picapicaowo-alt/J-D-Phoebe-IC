@@ -26,12 +26,18 @@ function addDaysUTC(d: Date, days: number) {
   return x;
 }
 
-async function sumLedger(userId: string, cat: LeaderboardCategory, start: Date, end: Date) {
-  const a = await prisma.scoreLedgerEntry.aggregate({
-    where: { userId, leaderboardCategory: cat, createdAt: { gte: start, lt: end } },
+/** One query per window instead of one aggregate per category (avoids 4× round-trips per week). */
+async function ledgerSumByCategory(userId: string, start: Date, end: Date): Promise<Map<LeaderboardCategory, number>> {
+  const rows = await prisma.scoreLedgerEntry.groupBy({
+    by: ["leaderboardCategory"],
+    where: { userId, createdAt: { gte: start, lt: end } },
     _sum: { delta: true },
   });
-  return a._sum.delta ?? 0;
+  const m = new Map<LeaderboardCategory, number>();
+  for (const r of rows) {
+    m.set(r.leaderboardCategory, r._sum.delta ?? 0);
+  }
+  return m;
 }
 
 const LB_LABEL: Record<LeaderboardCategory, MessageKey> = {
@@ -178,13 +184,15 @@ export default async function HomePage({
   const weekEnd = addDaysUTC(weekStart, 7);
   const prevWeekStart = addDaysUTC(weekStart, -7);
   const cats: LeaderboardCategory[] = ["EXECUTION", "COLLABORATION", "KNOWLEDGE", "RECOGNITION"];
-  const scoreRows = await Promise.all(
-    cats.map(async (c) => {
-      const cur = await sumLedger(user.id, c, weekStart, weekEnd);
-      const prev = await sumLedger(user.id, c, prevWeekStart, weekStart);
-      return { c, cur, delta: cur - prev };
-    }),
-  );
+  const [curWeekSums, prevWeekSums] = await Promise.all([
+    ledgerSumByCategory(user.id, weekStart, weekEnd),
+    ledgerSumByCategory(user.id, prevWeekStart, weekStart),
+  ]);
+  const scoreRows = cats.map((c) => {
+    const cur = curWeekSums.get(c) ?? 0;
+    const prev = prevWeekSums.get(c) ?? 0;
+    return { c, cur, delta: cur - prev };
+  });
 
   const dueSoonWhere = {
     deletedAt: null,

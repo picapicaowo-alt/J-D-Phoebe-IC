@@ -1,12 +1,26 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { WorkflowNodeStatus, WorkflowNodeType } from "@prisma/client";
 import { getAppSession, requireUser } from "@/lib/auth";
 import { canEditWorkflow, canManageProject, canViewProject, type AccessUser } from "@/lib/access";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { syncProjectTaskRollups } from "@/lib/project-task-progress";
+
+/** Run rollup + second revalidate after the response is sent so mutations return fast (avoids Vercel / PgBouncer timeouts). */
+function scheduleTaskRollupRevalidate(projectId: string) {
+  after(async () => {
+    try {
+      await syncProjectTaskRollups(projectId);
+      revalidatePath(`/projects/${projectId}`);
+      revalidatePath("/projects");
+    } catch (err) {
+      console.error("[syncProjectTaskRollups]", projectId, err);
+    }
+  });
+}
 
 function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -87,9 +101,9 @@ export async function addProjectTaskAction(formData: FormData) {
     });
   }
 
-  await syncProjectTaskRollups(projectId);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  scheduleTaskRollupRevalidate(projectId);
 }
 
 export async function addProjectSubtaskAction(formData: FormData) {
@@ -136,9 +150,9 @@ export async function addProjectSubtaskAction(formData: FormData) {
     });
   }
 
-  await syncProjectTaskRollups(projectId);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  scheduleTaskRollupRevalidate(projectId);
 }
 
 export async function updateWorkflowNodeMetaAction(formData: FormData) {
@@ -169,9 +183,9 @@ export async function updateWorkflowNodeMetaAction(formData: FormData) {
     });
   }
 
-  await syncProjectTaskRollups(projectId);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  scheduleTaskRollupRevalidate(projectId);
 }
 
 /** All leaf nodes under `rootId` (including `rootId` when it has no children). */
@@ -227,9 +241,9 @@ export async function toggleProjectTaskLeafAction(formData: FormData) {
       : { status: WorkflowNodeStatus.NOT_STARTED, progressPercent: 0 },
   });
 
-  await syncProjectTaskRollups(projectId);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  scheduleTaskRollupRevalidate(projectId);
 }
 
 export async function deleteProjectTaskAction(formData: FormData) {
@@ -254,9 +268,9 @@ export async function deleteProjectTaskAction(formData: FormData) {
   session.taskUndo = { projectId, mode: "nodes", nodeIds };
   await session.save();
 
-  await syncProjectTaskRollups(projectId);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  scheduleTaskRollupRevalidate(projectId);
 }
 
 export async function deleteAllProjectTasksAction(formData: FormData) {
@@ -285,6 +299,7 @@ export async function deleteAllProjectTasksAction(formData: FormData) {
   await prisma.project.update({ where: { id: projectId }, data: { progressPercent: 0 } });
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  scheduleTaskRollupRevalidate(projectId);
 }
 
 export async function undoLastProjectTaskDeletionAction(formData: FormData) {
@@ -316,7 +331,7 @@ export async function undoLastProjectTaskDeletionAction(formData: FormData) {
   delete session.taskUndo;
   await session.save();
 
-  await syncProjectTaskRollups(projectId);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  scheduleTaskRollupRevalidate(projectId);
 }
