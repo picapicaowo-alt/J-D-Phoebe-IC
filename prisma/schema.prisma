@@ -315,6 +315,8 @@ model User {
   phone         String?
   timezone      String    @default("UTC")
   active        Boolean   @default(true)
+  /// When true, user must change password at /settings/change-password before using the app.
+  mustChangePassword Boolean @default(false)
   isSuperAdmin  Boolean   @default(false)
   /// Public URL or app-relative path to uploaded avatar.
   avatarUrl     String?
@@ -856,6 +858,8 @@ model MemberOnboarding {
   liaisonEmail    String?
   overdueSelfNotifiedAt       DateTime?
   overdueSupervisorNotifiedAt DateTime?
+  /// User confirmed they opened the onboarding pack / primary materials (gates checklist).
+  materialsOpenedAt DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

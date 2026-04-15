@@ -38,6 +38,7 @@ function calendarHref(opts: {
   clearEvent?: boolean;
   sourceKind?: string;
   sourceId?: string;
+  defaultProjectId?: string;
 }) {
   const p = new URLSearchParams();
   if (opts.view === "year") {
@@ -52,6 +53,7 @@ function calendarHref(opts: {
     p.set("sourceKind", opts.sourceKind ?? "MANUAL");
     p.set("sourceId", opts.sourceId);
   }
+  if (opts.defaultProjectId) p.set("defaultProjectId", opts.defaultProjectId);
   if (opts.clearEvent) {
     /* omit eventId */
   } else if (opts.eventId) p.set("eventId", opts.eventId);
@@ -70,6 +72,7 @@ export default async function CalendarPage({
     m?: string;
     view?: string;
     eventId?: string;
+    defaultProjectId?: string;
   }>;
 }) {
   const user = (await requireUser()) as AccessUser;
@@ -78,6 +81,7 @@ export default async function CalendarPage({
   const locale = await getLocale();
   const sp = await searchParams;
   const showCreate = String(sp.create ?? "") === "1";
+  const defaultProjectIdRaw = String(sp.defaultProjectId ?? "").trim();
   const sourceKind = (String(sp.sourceKind ?? "MANUAL").trim() || "MANUAL") as CalendarSourceKind;
   const sourceId = String(sp.sourceId ?? "").trim() || "";
   const view = String(sp.view ?? "").trim() === "year" ? ("year" as const) : ("month" as const);
@@ -160,6 +164,8 @@ export default async function CalendarPage({
     inviteCandidatesPromise,
   ]);
 
+  const defaultProjectId = projects.some((p) => p.id === defaultProjectIdRaw) ? defaultProjectIdRaw : "";
+
   const eventToEdit =
     eventIdRaw.length > 0
       ? await prisma.calendarEvent.findFirst({
@@ -182,9 +188,10 @@ export default async function CalendarPage({
   const prev = month === 1 ? { y: year - 1, m: 12 } : { y: year, m: month - 1 };
   const next = month === 12 ? { y: year + 1, m: 1 } : { y: year, m: month + 1 };
   const src = sourceId ? { sourceKind, sourceId } : {};
-  const prevHref = calendarHref({ y: prev.y, m: prev.m, view: "month", create: showCreate, ...src });
-  const nextHref = calendarHref({ y: next.y, m: next.m, view: "month", create: showCreate, ...src });
-  const todayHref = calendarHref({ y: now.getFullYear(), m: now.getMonth() + 1, view: "month", create: showCreate, ...src });
+  const projQ = defaultProjectId ? { defaultProjectId } : {};
+  const prevHref = calendarHref({ y: prev.y, m: prev.m, view: "month", create: showCreate, ...src, ...projQ });
+  const nextHref = calendarHref({ y: next.y, m: next.m, view: "month", create: showCreate, ...src, ...projQ });
+  const todayHref = calendarHref({ y: now.getFullYear(), m: now.getMonth() + 1, view: "month", create: showCreate, ...src, ...projQ });
 
   const monthEvents = monthEventsDb.map((ev) => ({
     id: ev.id,
@@ -195,16 +202,17 @@ export default async function CalendarPage({
   }));
 
   const eventHref = (id: string) =>
-    calendarHref({ y: year, m: month, view: "month", eventId: id, create: showCreate, ...src });
+    calendarHref({ y: year, m: month, view: "month", eventId: id, create: showCreate, ...src, ...projQ });
 
-  const yearNavPrev = calendarHref({ view: "year", y: yearForYearView - 1, ...src });
-  const yearNavNext = calendarHref({ view: "year", y: yearForYearView + 1, ...src });
-  const monthLinkFromYear = (m: number) => calendarHref({ y: yearForYearView, m, view: "month", ...src });
+  const yearNavPrev = calendarHref({ view: "year", y: yearForYearView - 1, ...src, ...projQ });
+  const yearNavNext = calendarHref({ view: "year", y: yearForYearView + 1, ...src, ...projQ });
+  const monthLinkFromYear = (m: number) => calendarHref({ y: yearForYearView, m, view: "month", ...src, ...projQ });
 
   const preserveQuery = {
     ...(showCreate ? { create: true as const } : {}),
     ...(sourceId ? { sourceKind, sourceId } : {}),
     ...(eventIdRaw ? { eventId: eventIdRaw } : {}),
+    ...(defaultProjectId ? { defaultProjectId } : {}),
   };
 
   const yearPickerTitle = locale === "zh" ? `${yearForYearView}年` : String(yearForYearView);
@@ -218,13 +226,13 @@ export default async function CalendarPage({
 
       <div className="flex flex-wrap items-center justify-end gap-2 rounded-[12px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-2">
         <Link
-          href={calendarHref({ y: year, m: month, view: "month", create: showCreate, ...src })}
+          href={calendarHref({ y: year, m: month, view: "month", create: showCreate, ...src, ...projQ })}
           className={`rounded-full px-3 py-1.5 text-sm font-medium ${view === "month" ? "bg-[hsl(var(--primary))]/12 text-[hsl(var(--primary))] ring-1 ring-[hsl(var(--primary))]/25" : "text-[hsl(var(--muted))] hover:bg-black/[0.04]"}`}
         >
           {t(locale, "calendarViewMonth")}
         </Link>
         <Link
-          href={calendarHref({ view: "year", y: yearForYearView, ...src, create: showCreate })}
+          href={calendarHref({ view: "year", y: yearForYearView, ...src, create: showCreate, ...projQ })}
           className={`rounded-full px-3 py-1.5 text-sm font-medium ${view === "year" ? "bg-[hsl(var(--primary))]/12 text-[hsl(var(--primary))] ring-1 ring-[hsl(var(--primary))]/25" : "text-[hsl(var(--muted))] hover:bg-black/[0.04]"}`}
         >
           {t(locale, "calendarViewYear")}
@@ -265,7 +273,7 @@ export default async function CalendarPage({
                 ‹
               </Link>
               <Link
-                href={calendarHref({ y: now.getFullYear(), view: "year", ...src })}
+                href={calendarHref({ y: now.getFullYear(), view: "year", ...src, ...projQ })}
                 className="rounded-[6px] border border-[hsl(var(--border))] px-3 py-1.5 font-medium hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
               >
                 {t(locale, "calendarToday")}
@@ -287,7 +295,7 @@ export default async function CalendarPage({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="font-display text-base font-bold">{t(locale, "calendarEditEvent")}</CardTitle>
             <Link
-              href={calendarHref({ y: year, m: month, view: "month", clearEvent: true, create: showCreate, ...src })}
+              href={calendarHref({ y: year, m: month, view: "month", clearEvent: true, create: showCreate, ...src, ...projQ })}
               className="text-sm font-medium text-[hsl(var(--muted))] hover:underline"
             >
               {t(locale, "btnReset")}
@@ -317,7 +325,7 @@ export default async function CalendarPage({
             </div>
             <div className="space-y-1 sm:col-span-2">
               <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarProjectOptional")}</label>
-              <Select name="projectId" className="rounded-[6px]" defaultValue={eventToEdit.projectId ?? ""}>
+              <Select name="projectId" className="rounded-[6px]" defaultValue={eventToEdit.projectId ?? defaultProjectId}>
                 <option value="">—</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -365,11 +373,11 @@ export default async function CalendarPage({
             </div>
             <div className="space-y-1 sm:col-span-2">
               <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarMeetUrl")}</label>
-              <Input name="meetUrl" className="rounded-[6px]" placeholder="https://meet.google.com/..." />
+              <Input name="meetUrl" className="rounded-[6px]" placeholder="https://…" />
             </div>
             <div className="space-y-1 sm:col-span-2">
               <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarProjectOptional")}</label>
-              <Select name="projectId" className="rounded-[6px]" defaultValue="">
+              <Select name="projectId" className="rounded-[6px]" defaultValue={defaultProjectId}>
                 <option value="">—</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -405,6 +413,7 @@ export default async function CalendarPage({
               view: view === "year" ? "month" : "month",
               create: true,
               ...src,
+              ...projQ,
             })}
             className="inline-flex items-center justify-center rounded-[6px] bg-[hsl(var(--primary))] px-4 py-2 text-sm font-medium text-white shadow-[0_4px_12px_rgba(99,102,241,0.25)] transition hover:-translate-y-px hover:bg-[hsl(var(--primary-hover))]"
           >
@@ -460,6 +469,7 @@ export default async function CalendarPage({
                           view: "month",
                           eventId: ev.id,
                           ...src,
+                          ...projQ,
                         })}
                         className="text-sm font-semibold text-[hsl(var(--primary))] hover:underline"
                       >

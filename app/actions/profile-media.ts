@@ -24,6 +24,12 @@ async function persistImage(buf: Buffer, mime: string, folder: string): Promise<
     return blob.url;
   }
 
+  if (process.env.VERCEL === "1") {
+    throw new Error(
+      "Image upload on Vercel requires BLOB_READ_WRITE_TOKEN (Vercel Blob). Add it under Project → Settings → Environment Variables, then redeploy.",
+    );
+  }
+
   const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : mime === "image/gif" ? "gif" : "jpg";
   const relDir = path.join("public", "uploads", folder);
   const dir = path.join(process.cwd(), relDir);

@@ -1,10 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { CalendarSourceKind, LifecycleTriggerKind, LifecycleTriggerScope, OffboardingStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
-import { assertPermission, userHasPermission } from "@/lib/permissions";
+import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { AuditEntityType } from "@prisma/client";
@@ -24,6 +25,20 @@ function parseExternalEmailsFromForm(formData: FormData): string[] {
   return [...new Set(parts.filter((e) => EMAIL_RE.test(e)))];
 }
 
+export async function acknowledgeMemberOnboardingMaterialsAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  const onboardingId = must(formData, "onboardingId");
+  const ob = await prisma.memberOnboarding.findFirst({
+    where: { id: onboardingId, userId: user.id },
+  });
+  if (!ob) throw new Error("Forbidden");
+  await prisma.memberOnboarding.update({
+    where: { id: onboardingId },
+    data: { materialsOpenedAt: new Date() },
+  });
+  revalidatePath("/onboarding/member");
+}
+
 export async function toggleMemberOnboardingChecklistAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   const itemId = must(formData, "itemId");
@@ -33,6 +48,26 @@ export async function toggleMemberOnboardingChecklistAction(formData: FormData) 
   });
   if (!item || item.onboarding.userId !== user.id) throw new Error("Forbidden");
   if (item.onboarding.completedAt) throw new Error("Already completed");
+
+  const togglingOn = !item.completedAt;
+  if (togglingOn) {
+    if (item.itemKey === "OB_READ_PACKAGE" && !item.onboarding.materialsOpenedAt) {
+      redirect(`/onboarding/member?companyId=${item.onboarding.companyId}&onboardingErr=materials`);
+    }
+    const siblings = await prisma.memberOnboardingChecklistItem.findMany({
+      where: { onboardingId: item.onboardingId },
+      orderBy: { sortOrder: "asc" },
+    });
+    const order = ["OB_READ_PACKAGE", "OB_ACK_POLICIES", "OB_SUPERVISOR_MEET"];
+    const idx = order.indexOf(item.itemKey);
+    if (idx > 0) {
+      const prevKey = order[idx - 1];
+      const prev = siblings.find((s) => s.itemKey === prevKey);
+      if (!prev?.completedAt) {
+        redirect(`/onboarding/member?companyId=${item.onboarding.companyId}&onboardingErr=order`);
+      }
+    }
+  }
 
   await prisma.memberOnboardingChecklistItem.update({
     where: { id: itemId },
@@ -173,42 +208,6 @@ export async function createCalendarEventAction(formData: FormData) {
           select: { id: true, email: true },
         })
       : [];
-  const googleAttendeeEmails = [
-    ...new Set(
-      [
-        ...attendeeUsers.map((u) => u.email.trim()).filter(Boolean),
-        ...externalAttendeeEmails,
-      ].filter((e) => EMAIL_RE.test(e)),
-    ),
-  ];
-
-  let externalCalendarEventId: string | null = null;
-  if (await userHasPermission(actor, "lifecycle.calendar.google")) {
-    const cred = await prisma.googleCalendarCredential.findUnique({ where: { userId: actor.id } });
-    if (cred) {
-      try {
-        const { insertAppEventToGoogleCalendar } = await import("@/lib/google-calendar-sync");
-        externalCalendarEventId = await insertAppEventToGoogleCalendar({
-          userId: actor.id,
-          title,
-          description,
-          startsAt,
-          endsAt,
-          meetUrl,
-          attendeeEmails: googleAttendeeEmails.length ? googleAttendeeEmails : undefined,
-        });
-      } catch (e) {
-        console.error("Google Calendar sync failed", e);
-      }
-    }
-  }
-  if (externalCalendarEventId) {
-    await prisma.calendarEvent.update({
-      where: { id: ev.id },
-      data: { externalCalendarEventId },
-    });
-  }
-
   if (attendeeUsers.length) {
     await prisma.calendarAttendee.createMany({
       data: attendeeUsers.map((u) => ({ eventId: ev.id, userId: u.id })),
@@ -237,6 +236,9 @@ export async function createCalendarEventAction(formData: FormData) {
     newValue: title,
   });
   revalidatePath("/calendar");
+  if (projectId) revalidatePath(`/projects/${projectId}`);
+  const d = ev.startsAt;
+  redirect(`/calendar?y=${d.getFullYear()}&m=${d.getMonth() + 1}&eventId=${ev.id}`);
 }
 
 export async function updateCalendarEventAction(formData: FormData) {

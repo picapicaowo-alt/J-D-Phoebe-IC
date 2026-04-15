@@ -7,10 +7,13 @@ import type { AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { prisma } from "@/lib/prisma";
-import { getCompanionManifest } from "@/lib/companion-manifest";
+import { isSuperAdmin } from "@/lib/access";
+import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/companion-manifest";
+import { updateCompanionAction } from "@/app/actions/companion";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 export default async function ProfileSettingsPage() {
   const actor = (await requireUser()) as AccessUser;
@@ -24,6 +27,10 @@ export default async function ProfileSettingsPage() {
 
   const companion = user.companionProfile;
   const asset = companion ? getCompanionManifest().find((e) => e.species === companion.species) : null;
+  const companionSpeciesOptions =
+    isSuperAdmin(actor) && user.companionIntroCompletedAt
+      ? getCompanionManifest()
+      : getCompanionManifestForUser(actor);
 
   return (
     <div className="mx-auto max-w-xl space-y-8">
@@ -93,6 +100,11 @@ export default async function ProfileSettingsPage() {
       <Card className="space-y-3 p-5">
         <CardTitle className="text-base">{t(locale, "profileCompanionCardTitle")}</CardTitle>
         <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "profileCompanionCardLead")}</p>
+        {!user.companionIntroCompletedAt ? (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">{t(locale, "companionPermanentWarning")}</p>
+        ) : !isSuperAdmin(actor) ? (
+          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "companionPermanentWarning")}</p>
+        ) : null}
         {companion && asset ? (
           <div className="flex items-start gap-4 rounded-xl border border-[hsl(var(--border))] p-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -102,9 +114,11 @@ export default async function ProfileSettingsPage() {
                 {companion.name ?? (locale === "zh" ? "小伙伴" : "Companion")} · {t(locale, "homeMood")} {companion.mood} · {t(locale, "homeLevel")}{" "}
                 {companion.level}
               </p>
-              <Link href="/onboarding/companion" className="inline-block text-sm font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline">
-                {t(locale, "profileCompanionManage")}
-              </Link>
+              {!user.companionIntroCompletedAt ? (
+                <Link href="/onboarding/companion" className="inline-block text-sm font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline">
+                  {t(locale, "profileCompanionManage")}
+                </Link>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -114,6 +128,27 @@ export default async function ProfileSettingsPage() {
             </Link>
           </p>
         )}
+        {isSuperAdmin(actor) && user.companionIntroCompletedAt && companion ? (
+          <form action={updateCompanionAction} className="flex flex-wrap items-end gap-2 border-t border-[hsl(var(--border))] pt-4">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "staffSpecies")}</label>
+              <Select name="species" defaultValue={companion.species}>
+                {companionSpeciesOptions.map((e) => (
+                  <option key={e.id} value={e.species}>
+                    {locale === "zh" ? e.name_zh : e.name_en}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "staffDisplayName")}</label>
+              <Input name="name" placeholder={t(locale, "commonOptional")} defaultValue={companion.name ?? ""} />
+            </div>
+            <Button type="submit" variant="secondary" className="h-9 text-sm">
+              {t(locale, "staffSaveCompanion")}
+            </Button>
+          </form>
+        ) : null}
       </Card>
     </div>
   );

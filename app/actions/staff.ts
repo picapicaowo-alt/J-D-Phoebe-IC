@@ -22,13 +22,16 @@ export async function createStaffAction(formData: FormData) {
   }
 
   const email = requireString(formData, "email").toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(email)) {
+    throw new Error("Invalid email address");
+  }
   const name = requireString(formData, "name");
   const password = requireString(formData, "password");
   const title = String(formData.get("title") ?? "").trim() || null;
 
   const passwordHash = await hash(password, 10);
   const user = await prisma.user.create({
-    data: { email, name, title, passwordHash, active: true },
+    data: { email, name, title, passwordHash, active: true, mustChangePassword: true },
   });
   await writeAudit({ actorId: actor.id, entityType: "USER", entityId: user.id, action: "CREATE", newValue: email });
   revalidatePath("/staff");

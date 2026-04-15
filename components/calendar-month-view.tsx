@@ -43,7 +43,7 @@ export function CalendarMonthView({
   nextLabel: string;
   todayLabel: string;
   eventDetailHref?: (eventId: string) => string;
-  preserveQuery?: { create?: boolean; sourceKind?: string; sourceId?: string; eventId?: string };
+  preserveQuery?: { create?: boolean; sourceKind?: string; sourceId?: string; eventId?: string; defaultProjectId?: string };
 }) {
   const first = new Date(year, month - 1, 1);
   const startWeekday = first.getDay();
@@ -80,6 +80,7 @@ export function CalendarMonthView({
             sourceKind: preserveQuery?.sourceKind,
             sourceId: preserveQuery?.sourceId,
             eventId: preserveQuery?.eventId,
+            defaultProjectId: preserveQuery?.defaultProjectId,
           }}
         />
         <div className="flex flex-wrap items-center gap-2 text-sm">

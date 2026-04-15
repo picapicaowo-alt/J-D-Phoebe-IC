@@ -47,6 +47,9 @@ export default async function NewStaffPage() {
           </div>
           <Button type="submit">{t(locale, "staffCreateAccountBtn")}</Button>
         </form>
+        <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "staffForcePasswordChange")}</p>
+        <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "staffVerificationNote")}</p>
+        <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "staffEmailNoreplyHint")}</p>
         <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "staffCreateAssignHint")}</p>
       </Card>
     </div>

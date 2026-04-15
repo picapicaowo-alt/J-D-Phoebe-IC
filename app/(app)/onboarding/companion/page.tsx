@@ -1,24 +1,28 @@
 import { redirect } from "next/navigation";
 import { updateCompanionAction } from "@/app/actions/companion";
 import { requireUser } from "@/lib/auth";
-import { getCompanionManifest } from "@/lib/companion-manifest";
+import { getCompanionManifestForUser } from "@/lib/companion-manifest";
+import type { AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 export default async function CompanionOnboardingPage() {
-  const user = await requireUser();
+  const user = (await requireUser()) as AccessUser;
   const locale = await getLocale();
   if (user.companionIntroCompletedAt) redirect("/home");
 
-  const manifest = getCompanionManifest();
+  const manifest = getCompanionManifestForUser(user);
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <Card className="space-y-4 p-6">
         <CardTitle>{t(locale, "onboardCompanionTitle")}</CardTitle>
         <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "onboardCompanionLead")}</p>
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-[hsl(var(--foreground))]">
+          {t(locale, "companionPermanentWarning")}
+        </p>
         <form action={updateCompanionAction} className="space-y-4">
           <input type="hidden" name="next" value="home" />
           <div className="space-y-2">

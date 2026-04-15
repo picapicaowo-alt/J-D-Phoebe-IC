@@ -27,7 +27,7 @@ import { t, tFeedbackCategory, tRecognitionTagCategory } from "@/lib/messages";
 import { tLedgerReason } from "@/lib/ledger-labels";
 import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
 import { displayFeedbackSecondary } from "@/lib/feedback-catalog";
-import { getCompanionManifest } from "@/lib/companion-manifest";
+import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/companion-manifest";
 import { sumAbilityByUser } from "@/lib/scoring";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -47,6 +47,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
   const target = await prisma.user.findFirst({
     where: { id: userId, deletedAt: null },
     include: {
+      groupMemberships: { include: { roleDefinition: true, orgGroup: true } },
       companyMemberships: { include: { company: true, roleDefinition: true, department: true, supervisor: true } },
       projectMemberships: { include: { project: { include: { company: true } }, roleDefinition: true } },
       companionProfile: true,
@@ -64,6 +65,13 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
     },
   });
   if (!target) notFound();
+
+  const companionSpeciesOptions =
+    isSuperAdmin(actor) && (actor.id !== target.id || target.companionIntroCompletedAt)
+      ? getCompanionManifest()
+      : getCompanionManifestForUser(target as AccessUser);
+  const canEditCompanionHere =
+    isSuperAdmin(actor) || (actor.id === target.id && !target.companionIntroCompletedAt);
 
   const isAnyCompanyAdmin = actor.companyMemberships.some((m) => m.roleDefinition.key === "COMPANY_ADMIN");
   const isAnyGroupAdmin = actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN");
@@ -314,12 +322,16 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
           ) : (
             <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffCompanionNoSelection")}</p>
           )}
-          {actor.id === target.id ? (
+          {actor.id === target.id && target.companionIntroCompletedAt && !isSuperAdmin(actor) ? (
+            <p className="mt-2 border-t pt-2 text-sm text-[hsl(var(--muted))]">{t(locale, "companionPermanentWarning")}</p>
+          ) : null}
+          {canEditCompanionHere ? (
             <form action={updateCompanionAction} className="mt-2 flex flex-wrap items-end gap-2 border-t pt-2">
+              {actor.id !== target.id ? <input type="hidden" name="userId" value={target.id} /> : null}
               <div className="space-y-1">
                 <label className="text-xs font-medium">{t(locale, "staffSpecies")}</label>
-                <Select name="species" defaultValue={target.companionProfile?.species ?? "BUNNY"}>
-                  {getCompanionManifest().map((e) => (
+                <Select name="species" defaultValue={target.companionProfile?.species ?? companionSpeciesOptions[0]?.species ?? "BUNNY"}>
+                  {companionSpeciesOptions.map((e) => (
                     <option key={e.id} value={e.species}>
                       {locale === "zh" ? e.name_zh : e.name_en}
                     </option>

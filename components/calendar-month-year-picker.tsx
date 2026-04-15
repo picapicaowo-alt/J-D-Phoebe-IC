@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 function buildMonthUrl(
   y: number,
   m: number,
-  preserve: { create?: boolean; sourceKind?: string; sourceId?: string; eventId?: string },
+  preserve: { create?: boolean; sourceKind?: string; sourceId?: string; eventId?: string; defaultProjectId?: string },
 ) {
   const p = new URLSearchParams();
   p.set("y", String(y));
@@ -19,6 +19,7 @@ function buildMonthUrl(
     p.set("sourceKind", preserve.sourceKind || "MANUAL");
     p.set("sourceId", preserve.sourceId);
   }
+  if (preserve.defaultProjectId) p.set("defaultProjectId", preserve.defaultProjectId);
   return `/calendar?${p.toString()}`;
 }
 
@@ -33,7 +34,7 @@ export function CalendarMonthYearPicker({
   month: number;
   monthTitle: string;
   locale: "en" | "zh";
-  preserve: { create?: boolean; sourceKind?: string; sourceId?: string; eventId?: string };
+  preserve: { create?: boolean; sourceKind?: string; sourceId?: string; eventId?: string; defaultProjectId?: string };
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);

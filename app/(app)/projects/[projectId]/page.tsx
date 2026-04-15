@@ -25,6 +25,7 @@ import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tProjectStatus } f
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
+import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { countdownPhrase, isOverdue, toDatetimeLocalValue } from "@/lib/deadlines";
@@ -168,7 +169,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     orderBy: { createdAt: "desc" },
   });
 
-  const [ownKnowledge, sharedKnowledgeInbound, sharedAttachmentInbound, projectDepts, projectGroupList] = await Promise.all([
+  const [ownKnowledge, sharedKnowledgeInbound, sharedAttachmentInbound, projectDepts, projectGroupList, projectCalendarEvents] =
+    await Promise.all([
     prisma.knowledgeAsset.findMany({
       where: { projectId: project.id, deletedAt: null },
       include: { author: true },
@@ -196,6 +198,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     prisma.projectGroup.findMany({
       where: { companyId: project.companyId },
       orderBy: { sortOrder: "asc" },
+    }),
+    prisma.calendarEvent.findMany({
+      where: { projectId: project.id },
+      include: { organizer: true },
+      orderBy: { startsAt: "desc" },
+      take: 30,
     }),
   ]);
 
@@ -238,6 +246,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       user.projectMemberships.some((m) => m.projectId === project.id));
   const canEditKnowledge = await userHasPermission(user, "knowledge.create");
   const canReadKnowledge = await userHasPermission(user, "knowledge.read");
+  const canReadCalendar = await userHasPermission(user, "project.read");
 
   const progressPct = clampProjectProgressPercent(project.progressPercent);
   const relationCount = project.outgoingRelations.length + project.incomingRelations.length;
@@ -360,6 +369,44 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <div className="h-full rounded-full bg-zinc-900 dark:bg-zinc-100" style={{ width: `${progressPct}%` }} />
         </div>
       </div>
+
+      {canReadCalendar ? (
+        <Card className="space-y-3 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>{t(locale, "projRelatedEventsTitle")}</CardTitle>
+            <Link
+              href={`/calendar?create=1&y=${new Date().getFullYear()}&m=${new Date().getMonth() + 1}&view=month&defaultProjectId=${project.id}`}
+              className={secondaryBtn}
+            >
+              {t(locale, "calendarNewEvent")}
+            </Link>
+          </div>
+          {!projectCalendarEvents.length ? (
+            <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "projRelatedEventsEmpty")}</p>
+          ) : (
+            <ul className="divide-y divide-[hsl(var(--border))]">
+              {projectCalendarEvents.map((ev) => (
+                <li key={ev.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0">
+                  <div>
+                    <Link
+                      href={`/calendar?y=${ev.startsAt.getFullYear()}&m=${ev.startsAt.getMonth() + 1}&view=month&eventId=${ev.id}`}
+                      className="font-medium text-[hsl(var(--primary))] hover:underline"
+                    >
+                      {ev.title}
+                    </Link>
+                    <p className="mt-1 text-base leading-relaxed text-[hsl(var(--muted))]">
+                      {ev.startsAt.toISOString().slice(0, 16).replace("T", " ")} — {ev.organizer.name}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link href="/calendar" className="inline-block text-base font-medium text-[hsl(var(--primary))] hover:underline">
+            {t(locale, "projRelatedEventsOpenCalendar")}
+          </Link>
+        </Card>
+      ) : null}
 
       <ProjectTasksPanel
         projectId={project.id}

@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import path from "path";
 import type { CompanionSpecies } from "@prisma/client";
+import type { AccessUser } from "@/lib/access";
 
 export type CompanionManifestEntry = {
   id: string;
@@ -23,4 +24,15 @@ export function companionDisplayName(species: CompanionSpecies, locale: "en" | "
   const row = getCompanionManifest().find((e) => e.species === species);
   if (!row) return species;
   return locale === "zh" ? row.name_zh : row.name_en;
+}
+
+/** Larger companion pool for elevated roles; default members see a smaller curated set. */
+export function getCompanionManifestForUser(user: AccessUser): CompanionManifestEntry[] {
+  const all = getCompanionManifest();
+  if (user.isSuperAdmin) return all;
+  if (user.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN")) return all;
+  if (user.companyMemberships.some((m) => ["COMPANY_ADMIN", "PROJECT_MANAGER"].includes(m.roleDefinition.key))) {
+    return all;
+  }
+  return all.slice(0, 4);
 }

@@ -56,7 +56,7 @@ export async function getCurrentUser() {
   return loadUserById(session.userId);
 }
 
-export async function requireUser() {
+export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
   if (isClerkEnabled()) {
     const { auth } = await import("@clerk/nextjs/server");
     const { userId } = await auth();
@@ -75,6 +75,9 @@ export async function requireUser() {
   if (!user.firstSignInAt) {
     await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
     return (await loadUserById(user.id)) as AccessUser;
+  }
+  if (!opts?.skipPasswordResetGate && user.mustChangePassword) {
+    redirect("/settings/change-password");
   }
   return user as AccessUser;
 }
