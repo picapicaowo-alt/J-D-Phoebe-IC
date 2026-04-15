@@ -5,7 +5,7 @@ import { getCompanionManifestForUser } from "@/lib/companion-manifest";
 import type { AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 export default async function CompanionOnboardingPage() {
@@ -48,9 +48,9 @@ export default async function CompanionOnboardingPage() {
             <Input name="name" placeholder={t(locale, "onboardCompanionNamePh")} required maxLength={40} />
           </div>
           <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "onboardCompanionLevelHint")}</p>
-          <Button type="submit" className="w-full">
+          <FormSubmitButton type="submit" className="w-full">
             {t(locale, "onboardCompanionSave")}
-          </Button>
+          </FormSubmitButton>
         </form>
       </Card>
     </div>

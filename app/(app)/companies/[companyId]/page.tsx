@@ -9,6 +9,7 @@ import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/l
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -88,16 +89,16 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
             <form action={uploadCompanyLogoAction} encType="multipart/form-data" className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="companyId" value={company.id} />
               <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" className="max-w-xs text-xs" />
-              <Button type="submit" variant="secondary" className="h-9 text-xs">
+              <FormSubmitButton type="submit" variant="secondary" className="h-9 text-xs">
                 {t(locale, "btnSave")}
-              </Button>
+              </FormSubmitButton>
             </form>
             {company.logoUrl ? (
               <form action={removeCompanyLogoAction}>
                 <input type="hidden" name="companyId" value={company.id} />
-                <Button type="submit" variant="secondary" className="h-8 text-xs">
+                <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                   {t(locale, "profileLogoRemove")}
-                </Button>
+                </FormSubmitButton>
               </form>
             ) : null}
           </div>
@@ -156,23 +157,23 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
                 ))}
               </Select>
             </div>
-            <Button type="submit">{t(locale, "btnSave")}</Button>
+            <FormSubmitButton type="submit">{t(locale, "btnSave")}</FormSubmitButton>
           </form>
 
           <div className="flex flex-wrap gap-2 border-t border-[hsl(var(--border))] pt-4">
             {company.status !== "ARCHIVED" ? (
               <form action={archiveCompanyAction}>
                 <input type="hidden" name="companyId" value={company.id} />
-                <Button type="submit" variant="secondary">
+                <FormSubmitButton type="submit" variant="secondary">
                   {t(locale, "companyArchiveBtn")}
-                </Button>
+                </FormSubmitButton>
               </form>
             ) : (
               <form action={restoreCompanyAction}>
                 <input type="hidden" name="companyId" value={company.id} />
-                <Button type="submit" variant="secondary">
+                <FormSubmitButton type="submit" variant="secondary">
                   {t(locale, "companyRestoreActiveBtn")}
-                </Button>
+                </FormSubmitButton>
               </form>
             )}
           </div>
@@ -180,9 +181,9 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
           {canSoftDeleteCompany ? (
             <form action={softDeleteCompanyAction} className="border-t border-[hsl(var(--border))] pt-4">
               <input type="hidden" name="companyId" value={company.id} />
-              <Button type="submit" variant="secondary" className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100">
+              <FormSubmitButton type="submit" variant="secondary" className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100">
                 {t(locale, "companyMoveTrashBtn")}
-              </Button>
+              </FormSubmitButton>
             </form>
           ) : null}
         </Card>
@@ -198,9 +199,9 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
               <label className="text-xs font-medium">{t(locale, "companyDepartmentName")}</label>
               <Input name="name" required placeholder={t(locale, "companyDepartmentPlaceholder")} />
             </div>
-            <Button type="submit" variant="secondary">
+            <FormSubmitButton type="submit" variant="secondary">
               {t(locale, "companyDepartmentAdd")}
-            </Button>
+            </FormSubmitButton>
           </form>
           <ul className="space-y-2 text-sm">
             {company.departments.map((d) => (
@@ -208,15 +209,15 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
                 <form action={updateDepartmentAction} className="flex flex-1 flex-wrap items-end gap-2">
                   <input type="hidden" name="departmentId" value={d.id} />
                   <Input name="name" defaultValue={d.name} required className="min-w-[160px] flex-1 text-sm" />
-                  <Button type="submit" variant="secondary" className="h-8 text-xs">
+                  <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                     {t(locale, "btnSave")}
-                  </Button>
+                  </FormSubmitButton>
                 </form>
                 <form action={deleteDepartmentAction}>
                   <input type="hidden" name="departmentId" value={d.id} />
-                  <Button type="submit" variant="secondary" className="h-8 text-xs">
+                  <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                     {t(locale, "btnRemove")}
-                  </Button>
+                  </FormSubmitButton>
                 </form>
               </li>
             ))}

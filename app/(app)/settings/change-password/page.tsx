@@ -2,7 +2,7 @@ import { changePasswordAction } from "@/app/actions/auth";
 import { requireUser } from "@/lib/auth";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
@@ -43,9 +43,9 @@ export default async function ChangePasswordPage({
             <label className="text-sm font-medium">{t(locale, "settingsChangePasswordConfirm")}</label>
             <Input name="confirmPassword" type="password" required minLength={8} autoComplete="new-password" className="text-base" />
           </div>
-          <Button type="submit" className="w-full">
+          <FormSubmitButton type="submit" className="w-full">
             {t(locale, "settingsChangePasswordSubmit")}
-          </Button>
+          </FormSubmitButton>
         </form>
       </Card>
     </div>

@@ -30,12 +30,15 @@ export function CalendarMonthYearPicker({
   monthTitle,
   locale,
   preserve,
+  pushRoute,
 }: {
   year: number;
   month: number;
   monthTitle: string;
   locale: "en" | "zh";
   preserve: { create?: boolean; slotDay?: number; sourceKind?: string; sourceId?: string; eventId?: string; defaultProjectId?: string };
+  /** When set (e.g. wrapped in `startTransition`), keeps the calendar responsive during App Router navigations. */
+  pushRoute?: (href: string) => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -64,10 +67,12 @@ export function CalendarMonthYearPicker({
 
   const go = useCallback(
     (y: number, m: number) => {
-      router.push(buildMonthUrl(y, m, preserve));
+      const href = buildMonthUrl(y, m, preserve);
+      if (pushRoute) pushRoute(href);
+      else router.push(href);
       setOpen(false);
     },
-    [router, preserve],
+    [router, preserve, pushRoute],
   );
 
   const monthLabel = (mm: number) =>

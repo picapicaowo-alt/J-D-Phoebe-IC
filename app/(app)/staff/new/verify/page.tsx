@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 import type { AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getLocale } from "@/lib/locale";
@@ -58,7 +58,7 @@ export default async function StaffInviteVerifyPage({
             <label className="text-xs font-medium">{t(locale, "staffInviteOtpLabel")}</label>
             <Input name="otp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={8} required placeholder="000000" />
           </div>
-          <Button type="submit">{t(locale, "staffInviteVerifySubmit")}</Button>
+          <FormSubmitButton type="submit">{t(locale, "staffInviteVerifySubmit")}</FormSubmitButton>
         </form>
       </Card>
     </div>

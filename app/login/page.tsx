@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { loginAction } from "@/app/actions/auth";
 import { isClerkEnabled } from "@/lib/clerk-config";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
@@ -50,9 +50,9 @@ export default async function LoginPage({
             </label>
             <Input id="password" name="password" type="password" autoComplete="current-password" required />
           </div>
-          <Button type="submit" className="w-full">
+          <FormSubmitButton type="submit" className="w-full" pendingLabel="Signing in…">
             Continue
-          </Button>
+          </FormSubmitButton>
         </form>
         <p className="text-xs text-[hsl(var(--muted))]">
           Demo accounts use password <span className="font-mono text-[hsl(var(--foreground))]">demo1234</span> after seed.

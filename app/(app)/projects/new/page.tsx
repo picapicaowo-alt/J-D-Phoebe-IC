@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { canManageCompanyProjects, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -150,7 +150,7 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
               </Select>
             </div>
           </div>
-          <Button type="submit">{t(locale, "projCreateSubmit")}</Button>
+          <FormSubmitButton type="submit">{t(locale, "projCreateSubmit")}</FormSubmitButton>
         </form>
       </Card>
     </div>

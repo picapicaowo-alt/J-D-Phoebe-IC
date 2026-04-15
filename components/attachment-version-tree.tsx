@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { AttachmentResourceKind } from "@prisma/client";
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { softDeleteAttachmentAction } from "@/app/actions/attachment-trash";
 
 export type AttachmentVersionRow = {
@@ -79,9 +79,9 @@ export function AttachmentVersionTree({
                   {showTrash ? (
                     <form action={softDeleteAttachmentAction} className="inline">
                       <input type="hidden" name="id" value={row.id} />
-                      <Button type="submit" variant="secondary" className="h-6 px-1.5 text-xs">
+                      <FormSubmitButton type="submit" variant="secondary" className="h-6 px-1.5 text-xs">
                         {t(locale, "attMoveTrash")}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
                 </li>

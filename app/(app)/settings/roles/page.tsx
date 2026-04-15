@@ -5,7 +5,7 @@ import { type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getLocale } from "@/lib/locale";
@@ -41,7 +41,7 @@ export default async function RolesSettingsPage() {
                 <label className="text-xs font-medium">{t(locale, "staffDisplayName")}</label>
                 <Input name="displayName" defaultValue={r.displayName} required />
               </div>
-              <Button type="submit">{t(locale, "btnSave")}</Button>
+              <FormSubmitButton type="submit">{t(locale, "btnSave")}</FormSubmitButton>
             </form>
             {r.description ? <p className="text-xs text-[hsl(var(--muted))]">{r.description}</p> : null}
           </Card>

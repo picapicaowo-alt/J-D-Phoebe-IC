@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import type { AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { redirect } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getLocale } from "@/lib/locale";
@@ -70,7 +70,7 @@ export default async function NewStaffPage({
             <label className="text-xs font-medium">{t(locale, "staffTitle")}</label>
             <Input name="title" />
           </div>
-          <Button type="submit">{t(locale, "staffInviteSendCode")}</Button>
+          <FormSubmitButton type="submit">{t(locale, "staffInviteSendCode")}</FormSubmitButton>
         </form>
         <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "staffForcePasswordChange")}</p>
         <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "staffVerificationNote")}</p>

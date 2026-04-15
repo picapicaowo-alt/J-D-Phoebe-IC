@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getLocale } from "@/lib/locale";
@@ -58,7 +58,7 @@ export default async function GroupPage() {
                   className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm outline-none ring-[hsl(var(--accent))] focus:ring-2"
                 />
               </div>
-              <Button type="submit">{t(locale, "groupSaveChangesBtn")}</Button>
+              <FormSubmitButton type="submit">{t(locale, "groupSaveChangesBtn")}</FormSubmitButton>
             </form>
           ) : (
             <div className="space-y-2 text-sm">

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { markNotificationReadAction } from "@/app/actions/lifecycle";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 
 export default async function NotificationsPage() {
@@ -39,9 +39,9 @@ export default async function NotificationsPage() {
                 {!n.readAt ? (
                   <form action={markNotificationReadAction}>
                     <input type="hidden" name="notificationId" value={n.id} />
-                    <Button type="submit" variant="secondary" className="h-8 rounded-[6px] text-xs">
+                    <FormSubmitButton type="submit" variant="secondary" className="h-8 rounded-[6px] text-xs">
                       {t(locale, "notificationsMarkRead")}
-                    </Button>
+                    </FormSubmitButton>
                   </form>
                 ) : null}
               </li>

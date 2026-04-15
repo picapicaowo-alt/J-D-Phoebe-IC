@@ -6,7 +6,7 @@ import { userHasPermission } from "@/lib/permissions";
 import type { AccessUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { Card, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { getLocale } from "@/lib/locale";
 import { t, type MessageKey } from "@/lib/messages";
 import { leaderboardTotals, type LeaderboardScope } from "@/lib/leaderboard-query";
@@ -217,9 +217,9 @@ export default async function LeaderboardPage({
             </select>
           </div>
           <div className="flex items-end gap-2 md:col-span-2 lg:col-span-1">
-            <Button type="submit" variant="secondary" className="h-10 flex-1 rounded-lg text-xs">
+            <FormSubmitButton type="submit" variant="secondary" className="h-10 flex-1 rounded-lg text-xs">
               {t(locale, "btnApply")}
-            </Button>
+            </FormSubmitButton>
             <Link className="mb-2 inline-flex h-10 items-center text-xs font-medium text-zinc-500 underline" href="/leaderboard">
               {t(locale, "btnReset")}
             </Link>

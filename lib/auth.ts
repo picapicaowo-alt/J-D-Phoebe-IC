@@ -1,6 +1,7 @@
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import type { AccessUser } from "@/lib/access";
 import { isClerkEnabled } from "@/lib/clerk-config";
 import { prisma } from "@/lib/prisma";
@@ -24,7 +25,7 @@ export async function getAppSession() {
   return getIronSession<AppSessionData>(await cookies(), sessionOptions);
 }
 
-export async function getCurrentUser() {
+async function getCurrentUserImpl() {
   if (isClerkEnabled()) {
     const { auth, currentUser } = await import("@clerk/nextjs/server");
     const { userId } = await auth();
@@ -55,6 +56,9 @@ export async function getCurrentUser() {
   if (!session.userId) return null;
   return loadUserById(session.userId);
 }
+
+/** Per-request dedupe so layouts and streamed children do not repeat the same Prisma load. */
+export const getCurrentUser = cache(getCurrentUserImpl);
 
 export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
   if (isClerkEnabled()) {

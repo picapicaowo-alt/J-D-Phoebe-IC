@@ -10,7 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/access";
 import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/companion-manifest";
 import { updateCompanionAction } from "@/app/actions/companion";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -47,16 +47,16 @@ export default async function ProfileSettingsPage() {
           <form action={uploadUserAvatarAction} encType="multipart/form-data" className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="userId" value={user.id} />
             <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" className="max-w-xs text-sm" />
-            <Button type="submit" variant="secondary" className="h-10 text-sm">
+            <FormSubmitButton type="submit" variant="secondary" className="h-10 text-sm">
               {t(locale, "btnSave")}
-            </Button>
+            </FormSubmitButton>
           </form>
           {user.avatarUrl ? (
             <form action={removeUserAvatarAction}>
               <input type="hidden" name="userId" value={user.id} />
-              <Button type="submit" variant="secondary" className="h-9 text-sm">
+              <FormSubmitButton type="submit" variant="secondary" className="h-9 text-sm">
                 {t(locale, "profileAvatarRemove")}
-              </Button>
+              </FormSubmitButton>
             </form>
           ) : null}
         </div>
@@ -91,9 +91,9 @@ export default async function ProfileSettingsPage() {
               {t(locale, "staffActive")}
             </label>
           ) : null}
-          <Button type="submit" className="min-w-[8rem]">
+          <FormSubmitButton type="submit" className="min-w-[8rem]">
             {t(locale, "staffSave")}
-          </Button>
+          </FormSubmitButton>
         </form>
       </Card>
 
@@ -144,9 +144,9 @@ export default async function ProfileSettingsPage() {
               <label className="text-xs font-medium">{t(locale, "staffDisplayName")}</label>
               <Input name="name" placeholder={t(locale, "commonOptional")} defaultValue={companion.name ?? ""} />
             </div>
-            <Button type="submit" variant="secondary" className="h-9 text-sm">
+            <FormSubmitButton type="submit" variant="secondary" className="h-9 text-sm">
               {t(locale, "staffSaveCompanion")}
-            </Button>
+            </FormSubmitButton>
           </form>
         ) : null}
       </Card>

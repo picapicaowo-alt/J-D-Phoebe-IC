@@ -10,6 +10,7 @@ import { getLocale } from "@/lib/locale";
 import { t, tRecognitionMode, tRecognitionTagCategory } from "@/lib/messages";
 import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
 import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -96,9 +97,9 @@ export default async function ProjectRecognitionPage({ params }: { params: Promi
               <Input name="message" placeholder={t(locale, "projRecCommentPh")} />
             </div>
             <div className="md:col-span-2">
-              <Button type="submit" variant="secondary">
+              <FormSubmitButton type="submit" variant="secondary">
                 {t(locale, "projRecSend")}
-              </Button>
+              </FormSubmitButton>
             </div>
           </form>
         ) : (

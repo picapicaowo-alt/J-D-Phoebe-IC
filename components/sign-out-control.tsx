@@ -2,7 +2,7 @@
 
 import { SignOutButton } from "@clerk/nextjs";
 import { logoutAction } from "@/app/actions/auth";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { cn } from "@/lib/utils";
 
 const ghostBtn =
@@ -20,9 +20,9 @@ export function SignOutControl({ clerkEnabled }: { clerkEnabled: boolean }) {
   }
   return (
     <form action={logoutAction}>
-      <Button type="submit" variant="ghost" className="h-8 px-2 text-xs">
+      <FormSubmitButton type="submit" variant="ghost" className="h-8 px-2 text-xs">
         Sign out
-      </Button>
+      </FormSubmitButton>
     </form>
   );
 }

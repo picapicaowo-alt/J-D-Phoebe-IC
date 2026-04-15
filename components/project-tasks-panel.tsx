@@ -14,7 +14,7 @@ import {
 } from "@/app/actions/project-tasks";
 import { statusFromAggregatedProgress } from "@/lib/project-task-progress";
 import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
@@ -299,9 +299,9 @@ function NodeMetaDialog({
           </Select>
         </div>
         <div className="flex flex-wrap gap-2 pt-1">
-          <Button type="submit" className="min-w-[120px]">
+          <FormSubmitButton type="submit" className="min-w-[120px]">
             {copy.saveMeta}
-          </Button>
+          </FormSubmitButton>
           <CloseDialogButton
             dialogId={dialogId}
             className="rounded-lg border border-[hsl(var(--border))] px-4 py-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
@@ -366,10 +366,10 @@ export function ProjectTasksPanel({
               title={undoAvailable ? copy.undoHint : copy.undoDisabledHint}
             >
               <input type="hidden" name="projectId" value={projectId} />
-              <Button type="submit" variant="secondary" className="h-8 gap-2 px-2.5" disabled={!undoAvailable || isPending}>
+              <FormSubmitButton type="submit" variant="secondary" className="h-8 gap-2 px-2.5" disabled={!undoAvailable || isPending}>
                 <IconUndo />
                 {copy.undo}
-              </Button>
+              </FormSubmitButton>
             </form>
             <form
               onSubmit={(e) => {
@@ -386,10 +386,10 @@ export function ProjectTasksPanel({
               }}
             >
               <input type="hidden" name="projectId" value={projectId} />
-              <Button type="submit" variant="secondary" className="h-8 gap-2 text-rose-600 dark:text-rose-400" disabled={isPending}>
+              <FormSubmitButton type="submit" variant="secondary" className="h-8 gap-2 text-rose-600 dark:text-rose-400" disabled={isPending}>
                 <IconTrash />
                 {copy.deleteAll}
-              </Button>
+              </FormSubmitButton>
             </form>
             <form
               onSubmit={(e) => {
@@ -437,10 +437,10 @@ export function ProjectTasksPanel({
                 {copy.deadlineOptional}
                 <Input name="dueAt" type="datetime-local" className="h-8 text-xs" />
               </label>
-              <Button type="submit" variant="secondary" className="h-8 gap-1.5 px-3" disabled={isPending}>
+              <FormSubmitButton type="submit" variant="secondary" className="h-8 gap-1.5 px-3" disabled={isPending}>
                 <IconPlus />
                 {copy.addTask}
-              </Button>
+              </FormSubmitButton>
             </form>
           </div>
         ) : null}
@@ -545,9 +545,9 @@ export function ProjectTasksPanel({
                         >
                           <input type="hidden" name="projectId" value={projectId} />
                           <input type="hidden" name="nodeId" value={task.id} />
-                          <Button type="submit" variant="ghost" className="h-8 w-full justify-start text-sm text-rose-600" disabled={isPending}>
+                          <FormSubmitButton type="submit" variant="ghost" className="h-8 w-full justify-start text-sm text-rose-600" disabled={isPending}>
                             {copy.deleteTask}
-                          </Button>
+                          </FormSubmitButton>
                         </form>
                       </div>
                     </details>
@@ -660,9 +660,9 @@ export function ProjectTasksPanel({
                                   >
                                     <input type="hidden" name="projectId" value={projectId} />
                                     <input type="hidden" name="nodeId" value={sub.id} />
-                                    <Button type="submit" variant="ghost" className="h-8 w-8 shrink-0 p-0 text-[hsl(var(--muted))] hover:text-rose-600" disabled={isPending}>
+                                    <FormSubmitButton type="submit" variant="ghost" className="h-8 w-8 shrink-0 p-0 text-[hsl(var(--muted))] hover:text-rose-600" disabled={isPending}>
                                       <IconTrash />
-                                    </Button>
+                                    </FormSubmitButton>
                                   </form>
                                 </div>
                               </details>
@@ -734,9 +734,9 @@ export function ProjectTasksPanel({
                           {copy.deadlineOptional}
                           <Input name="dueAt" type="datetime-local" className="h-8 text-xs" />
                         </label>
-                        <Button type="submit" variant="secondary" className="h-8" disabled={isPending}>
+                        <FormSubmitButton type="submit" variant="secondary" className="h-8" disabled={isPending}>
                           {copy.addSubtask}
-                        </Button>
+                        </FormSubmitButton>
                       </form>
                     ) : null}
                   </div>

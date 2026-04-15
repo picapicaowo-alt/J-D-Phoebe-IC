@@ -1,8 +1,8 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormState } from "react-dom";
 import { registerFormAction, type RegisterActionResult } from "@/app/actions/register";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Input } from "@/components/ui/input";
 import type { Locale } from "@/lib/locale";
 import { t, type MessageKey } from "@/lib/messages";
@@ -12,15 +12,6 @@ type Props = { locale: Locale };
 function messageFor(result: RegisterActionResult | null, locale: Locale): string {
   if (!result) return "";
   return t(locale, result.messageKey as MessageKey);
-}
-
-function SubmitButton({ label }: { label: string }) {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? "…" : label}
-    </Button>
-  );
 }
 
 export function HomeRegisterForm({ locale }: Props) {
@@ -48,7 +39,9 @@ export function HomeRegisterForm({ locale }: Props) {
         <Input id="reg-password" name="password" type="password" autoComplete="new-password" required minLength={8} />
       </div>
       {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-      <SubmitButton label={t(locale, "homeRegisterSubmit")} />
+      <FormSubmitButton type="submit" className="w-full" pendingLabel="…">
+        {t(locale, "homeRegisterSubmit")}
+      </FormSubmitButton>
     </form>
   );
 }

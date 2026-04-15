@@ -13,7 +13,7 @@ import { requireUser } from "@/lib/auth";
 import type { AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
@@ -75,21 +75,21 @@ export default async function TrashPage() {
                   {canRestore ? (
                     <form action={restoreUserAction}>
                       <input type="hidden" name="userId" value={u.id} />
-                      <Button type="submit" className="h-8 px-2 text-xs" variant="secondary">
+                      <FormSubmitButton type="submit" className="h-8 px-2 text-xs" variant="secondary">
                         {t(locale, "btnRestore")}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
                   {canPurge ? (
                     <form action={purgeUserAction}>
                       <input type="hidden" name="userId" value={u.id} />
-                      <Button
+                      <FormSubmitButton
                         type="submit"
                         className="h-8 border border-rose-600/40 bg-rose-600/10 px-2 text-xs text-rose-800 dark:text-rose-100"
                         variant="secondary"
                       >
                         {t(locale, "btnPurge")}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
                 </div>
@@ -115,21 +115,21 @@ export default async function TrashPage() {
                   {canRestore ? (
                     <form action={restoreCompanyTrashAction}>
                       <input type="hidden" name="companyId" value={c.id} />
-                      <Button type="submit" className="h-8 px-2 text-xs" variant="secondary">
+                      <FormSubmitButton type="submit" className="h-8 px-2 text-xs" variant="secondary">
                         {t(locale, "btnRestore")}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
                   {canPurge ? (
                     <form action={purgeCompanyAction}>
                       <input type="hidden" name="companyId" value={c.id} />
-                      <Button
+                      <FormSubmitButton
                         type="submit"
                         className="h-8 border border-rose-600/40 bg-rose-600/10 px-2 text-xs text-rose-800 dark:text-rose-100"
                         variant="secondary"
                       >
                         {t(locale, "btnPurge")}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
                 </div>
@@ -155,21 +155,21 @@ export default async function TrashPage() {
                   {canRestore ? (
                     <form action={restoreProjectTrashAction}>
                       <input type="hidden" name="projectId" value={p.id} />
-                      <Button type="submit" className="h-8 px-2 text-xs" variant="secondary">
+                      <FormSubmitButton type="submit" className="h-8 px-2 text-xs" variant="secondary">
                         {t(locale, "btnRestore")}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
                   {canPurge ? (
                     <form action={purgeProjectAction}>
                       <input type="hidden" name="projectId" value={p.id} />
-                      <Button
+                      <FormSubmitButton
                         type="submit"
                         className="h-8 border border-rose-600/40 bg-rose-600/10 px-2 text-xs text-rose-800 dark:text-rose-100"
                         variant="secondary"
                       >
                         {t(locale, "btnPurge")}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
                 </div>
@@ -194,9 +194,9 @@ export default async function TrashPage() {
                 {canRestore ? (
                   <form action={restoreAttachmentTrashAction}>
                     <input type="hidden" name="id" value={a.id} />
-                    <Button type="submit" className="h-8 px-2 text-xs" variant="secondary">
+                    <FormSubmitButton type="submit" className="h-8 px-2 text-xs" variant="secondary">
                       {t(locale, "attRestore")}
-                    </Button>
+                    </FormSubmitButton>
                   </form>
                 ) : null}
               </li>

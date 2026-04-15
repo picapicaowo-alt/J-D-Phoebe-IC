@@ -31,7 +31,7 @@ import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/compani
 import { sumAbilityByUser } from "@/lib/scoring";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -210,16 +210,16 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
             <form action={uploadUserAvatarAction} encType="multipart/form-data" className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="userId" value={target.id} />
               <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" className="max-w-xs text-xs" />
-              <Button type="submit" variant="secondary" className="h-9 text-xs">
+              <FormSubmitButton type="submit" variant="secondary" className="h-9 text-xs">
                 {t(locale, "btnSave")}
-              </Button>
+              </FormSubmitButton>
             </form>
             {target.avatarUrl ? (
               <form action={removeUserAvatarAction}>
                 <input type="hidden" name="userId" value={target.id} />
-                <Button type="submit" variant="secondary" className="h-8 text-xs">
+                <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                   {t(locale, "profileAvatarRemove")}
-                </Button>
+                </FormSubmitButton>
               </form>
             ) : null}
           </div>
@@ -248,7 +248,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                 {t(locale, "staffActive")}
               </label>
             ) : null}
-            <Button type="submit">{t(locale, "staffSave")}</Button>
+            <FormSubmitButton type="submit">{t(locale, "staffSave")}</FormSubmitButton>
           </form>
         </Card>
       ) : (
@@ -346,9 +346,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                   defaultValue={target.companionProfile?.name ?? ""}
                 />
               </div>
-              <Button type="submit" variant="secondary" className="h-9 text-xs">
+              <FormSubmitButton type="submit" variant="secondary" className="h-9 text-xs">
                 {t(locale, "staffSaveCompanion")}
-              </Button>
+              </FormSubmitButton>
             </form>
           ) : null}
         </Card>
@@ -420,9 +420,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                         </select>
                       </div>
                       <div className="md:col-span-2">
-                        <Button type="submit" variant="secondary" className="h-8 text-xs">
+                        <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                           {t(locale, "resAddLink")}
-                        </Button>
+                        </FormSubmitButton>
                       </div>
                     </form>
                     <form action={updateMemberOutputMetaAction} className="grid gap-2 md:grid-cols-2">
@@ -464,9 +464,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                         </Select>
                       </div>
                       <div className="md:col-span-2">
-                        <Button type="submit" variant="secondary" className="h-8 text-xs">
+                        <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                           {t(locale, "btnSave")}
-                        </Button>
+                        </FormSubmitButton>
                       </div>
                     </form>
                   </div>
@@ -525,9 +525,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
               <Input name="linkLabel" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
             </div>
             <div className="md:col-span-2">
-              <Button type="submit" variant="secondary" className="h-8 text-xs">
+              <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                 {t(locale, "staffMoCreate")}
-              </Button>
+              </FormSubmitButton>
             </div>
           </form>
         ) : null}
@@ -592,7 +592,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
               <Input name="message" />
             </div>
             <div className="md:col-span-2">
-              <Button type="submit" variant="secondary">{t(locale, "projSaveObservation")}</Button>
+              <FormSubmitButton type="submit" variant="secondary">
+                {t(locale, "projSaveObservation")}
+              </FormSubmitButton>
             </div>
           </form>
         </Card>
@@ -669,7 +671,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                 </option>
               ))}
             </Select>
-            <Button type="submit">{t(locale, "projAssignBtn")}</Button>
+            <FormSubmitButton type="submit">{t(locale, "projAssignBtn")}</FormSubmitButton>
           </form>
         </Card>
       ) : null}
@@ -688,9 +690,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                 </option>
               ))}
             </Select>
-            <Button type="submit" variant="secondary">
+            <FormSubmitButton type="submit" variant="secondary">
               {t(locale, "offboardingStart")}
-            </Button>
+            </FormSubmitButton>
           </form>
           <ul className="space-y-3 text-xs">
             {offboardingRuns.map((run) => (
@@ -704,9 +706,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                       <span className={c.completedAt ? "text-[hsl(var(--muted))] line-through" : ""}>{c.label}</span>
                       <form action={toggleOffboardingChecklistAction}>
                         <input type="hidden" name="itemId" value={c.id} />
-                        <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                        <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
                           {c.completedAt ? "Undo" : "Done"}
-                        </Button>
+                        </FormSubmitButton>
                       </form>
                     </li>
                   ))}
@@ -714,9 +716,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                 {run.status === "IN_PROGRESS" && run.checklist.every((c) => c.completedAt) ? (
                   <form action={completeOffboardingRunAction} className="mt-2">
                     <input type="hidden" name="runId" value={run.id} />
-                    <Button type="submit" className="h-8 text-xs">
+                    <FormSubmitButton type="submit" className="h-8 text-xs">
                       {t(locale, "onboardingCompleted")}
-                    </Button>
+                    </FormSubmitButton>
                   </form>
                 ) : null}
               </li>
@@ -746,7 +748,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                 </option>
               ))}
             </Select>
-            <Button type="submit">{t(locale, "projAssignBtn")}</Button>
+            <FormSubmitButton type="submit">{t(locale, "projAssignBtn")}</FormSubmitButton>
           </form>
         </Card>
       ) : null}
@@ -757,9 +759,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
           <p className="mt-1 text-xs text-[hsl(var(--muted))]">{t(locale, "projSoftDeleteHint")}</p>
           <form action={softDeleteUserAction} className="mt-3">
             <input type="hidden" name="userId" value={target.id} />
-            <Button type="submit" variant="secondary" className="border border-rose-600/40 bg-rose-600/10 text-rose-900 dark:text-rose-100">
+            <FormSubmitButton type="submit" variant="secondary" className="border border-rose-600/40 bg-rose-600/10 text-rose-900 dark:text-rose-100">
               {t(locale, "projMoveUserTrash")}
-            </Button>
+            </FormSubmitButton>
           </form>
         </Card>
       ) : null}
@@ -784,9 +786,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                     <form action={removeCompanyMembershipAction}>
                       <input type="hidden" name="userId" value={target.id} />
                       <input type="hidden" name="companyId" value={m.companyId} />
-                      <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                      <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
                         {t(locale, "btnRemove")}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
                 </div>
@@ -807,9 +809,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                           ))}
                       </Select>
                     </div>
-                    <Button type="submit" variant="secondary" className="h-8 text-xs">
+                    <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                       {t(locale, "btnSave")}
-                    </Button>
+                    </FormSubmitButton>
                   </form>
                 ) : null}
                 {canAssignCompanyUI ? (
@@ -827,9 +829,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                         ))}
                       </Select>
                     </div>
-                    <Button type="submit" variant="secondary" className="h-8 text-xs">
+                    <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                       {t(locale, "btnSave")}
-                    </Button>
+                    </FormSubmitButton>
                   </form>
                 ) : null}
               </li>
@@ -854,9 +856,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                   <form action={removeProjectMembershipAction}>
                     <input type="hidden" name="userId" value={target.id} />
                     <input type="hidden" name="projectId" value={m.projectId} />
-                    <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                    <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
                       {t(locale, "btnRemove")}
-                    </Button>
+                    </FormSubmitButton>
                   </form>
                 ) : null}
               </li>

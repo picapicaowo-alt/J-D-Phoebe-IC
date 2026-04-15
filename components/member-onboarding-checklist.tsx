@@ -1,6 +1,7 @@
 "use client";
 
 import { toggleMemberOnboardingChecklistAction } from "@/app/actions/lifecycle";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import type { Locale } from "@/lib/locale";
 import { t, type MessageKey } from "@/lib/messages";
 
@@ -41,15 +42,17 @@ export function MemberOnboardingChecklist({
             ) : (
               <form action={toggleMemberOnboardingChecklistAction}>
                 <input type="hidden" name="itemId" value={it.id} />
-                <button
+                <FormSubmitButton
                   type="submit"
+                  variant="ghost"
                   disabled={gateFirst}
                   title={gateFirst ? t(locale, "onboardingMaterialsAckHelp") : undefined}
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[hsl(var(--border))] text-xs text-[hsl(var(--primary))] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="mt-0.5 h-5 w-5 shrink-0 rounded-full border border-[hsl(var(--border))] p-0 text-xs text-[hsl(var(--primary))] disabled:cursor-not-allowed disabled:opacity-40"
                   aria-pressed={Boolean(it.completedAt)}
+                  pendingLabel=""
                 >
                   {it.completedAt ? "✓" : ""}
-                </button>
+                </FormSubmitButton>
               </form>
             )}
             <span className={`text-base leading-relaxed ${it.completedAt ? "text-[hsl(var(--muted))] line-through" : "text-[hsl(var(--foreground))]"}`}>

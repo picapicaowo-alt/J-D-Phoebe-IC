@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -69,9 +70,9 @@ export default async function ProjectGrowthPage({ params }: { params: Promise<{ 
               <Input name="message" placeholder={t(locale, "projFeedPlaceholder")} />
             </div>
             <div className="md:col-span-2">
-              <Button type="submit" variant="secondary">
+              <FormSubmitButton type="submit" variant="secondary">
                 {t(locale, "projFeedRecordBtn")}
-              </Button>
+              </FormSubmitButton>
             </div>
           </form>
         </Card>

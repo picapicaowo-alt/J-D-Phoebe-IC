@@ -6,7 +6,7 @@ import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
 import type { AccessUser } from "@/lib/access";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { MemberOnboardingChecklist } from "@/components/member-onboarding-checklist";
 import { acknowledgeMemberOnboardingMaterialsAction } from "@/app/actions/lifecycle";
@@ -135,9 +135,9 @@ export default async function MemberOnboardingPage({
             <p className="mt-2 text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "onboardingMaterialsAckHelp")}</p>
             <form action={acknowledgeMemberOnboardingMaterialsAction} className="mt-4">
               <input type="hidden" name="onboardingId" value={ob.id} />
-              <Button type="submit" variant="secondary">
+              <FormSubmitButton type="submit" variant="secondary">
                 {t(locale, "onboardingMaterialsAckBtn")}
-              </Button>
+              </FormSubmitButton>
             </form>
           </div>
         ) : null}

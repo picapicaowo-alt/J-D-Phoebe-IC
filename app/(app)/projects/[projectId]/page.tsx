@@ -24,7 +24,7 @@ import { getLocale } from "@/lib/locale";
 import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tProjectStatus } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -481,9 +481,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   <Input name="note" placeholder={t(locale, "projOptionalRelationNote")} />
                 </div>
                 <div className="md:col-span-3">
-                  <Button type="submit" variant="secondary">
+                  <FormSubmitButton type="submit" variant="secondary">
                     {t(locale, "projAddRelation")}
-                  </Button>
+                  </FormSubmitButton>
                 </div>
               </form>
             ) : null}
@@ -516,16 +516,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                               placeholder={t(locale, "projEditNote")}
                               className="h-9 min-w-[220px] text-sm"
                             />
-                            <Button type="submit" variant="secondary" className="h-9 px-2 text-sm">
+                            <FormSubmitButton type="submit" variant="secondary" className="h-9 px-2 text-sm">
                               {t(locale, "projSaveNote")}
-                            </Button>
+                            </FormSubmitButton>
                           </form>
                         </details>
                         <form action={removeProjectRelationAction}>
                           <input type="hidden" name="relationId" value={rel.id} />
-                          <Button type="submit" variant="secondary" className="h-9 px-2 text-sm">
+                          <FormSubmitButton type="submit" variant="secondary" className="h-9 px-2 text-sm">
                             {t(locale, "btnRemove")}
-                          </Button>
+                          </FormSubmitButton>
                         </form>
                       </div>
                     ) : null}
@@ -541,9 +541,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                               <form action={toggleProjectRelationShareKnowledgeAction} className="shrink-0">
                                 <input type="hidden" name="relationId" value={rel.id} />
                                 <input type="hidden" name="knowledgeAssetId" value={ka.id} />
-                                <Button type="submit" variant="secondary" className="h-8 px-2 text-sm">
+                                <FormSubmitButton type="submit" variant="secondary" className="h-8 px-2 text-sm">
                                   {sharedKIds.has(ka.id) ? t(locale, "projShareStop") : t(locale, "projShareStart")}
-                                </Button>
+                                </FormSubmitButton>
                               </form>
                             </li>
                           ))}
@@ -553,9 +553,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                               <form action={toggleProjectRelationShareAttachmentAction} className="shrink-0">
                                 <input type="hidden" name="relationId" value={rel.id} />
                                 <input type="hidden" name="attachmentId" value={f.id} />
-                                <Button type="submit" variant="secondary" className="h-8 px-2 text-sm">
+                                <FormSubmitButton type="submit" variant="secondary" className="h-8 px-2 text-sm">
                                   {sharedAIds.has(f.id) ? t(locale, "projShareStop") : t(locale, "projShareStart")}
-                                </Button>
+                                </FormSubmitButton>
                               </form>
                             </li>
                           ))}
@@ -594,16 +594,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                               placeholder={t(locale, "projEditNote")}
                               className="h-9 min-w-[220px] text-sm"
                             />
-                            <Button type="submit" variant="secondary" className="h-9 px-2 text-sm">
+                            <FormSubmitButton type="submit" variant="secondary" className="h-9 px-2 text-sm">
                               {t(locale, "projSaveNote")}
-                            </Button>
+                            </FormSubmitButton>
                           </form>
                         </details>
                         <form action={removeProjectRelationAction}>
                           <input type="hidden" name="relationId" value={rel.id} />
-                          <Button type="submit" variant="secondary" className="h-9 px-2 text-sm">
+                          <FormSubmitButton type="submit" variant="secondary" className="h-9 px-2 text-sm">
                             {t(locale, "btnRemove")}
-                          </Button>
+                          </FormSubmitButton>
                         </form>
                       </div>
                     ) : null}
@@ -619,9 +619,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                               <form action={toggleProjectRelationShareKnowledgeAction} className="shrink-0">
                                 <input type="hidden" name="relationId" value={rel.id} />
                                 <input type="hidden" name="knowledgeAssetId" value={ka.id} />
-                                <Button type="submit" variant="secondary" className="h-8 px-2 text-sm">
+                                <FormSubmitButton type="submit" variant="secondary" className="h-8 px-2 text-sm">
                                   {sharedKIds.has(ka.id) ? t(locale, "projShareStop") : t(locale, "projShareStart")}
-                                </Button>
+                                </FormSubmitButton>
                               </form>
                             </li>
                           ))}
@@ -631,9 +631,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                               <form action={toggleProjectRelationShareAttachmentAction} className="shrink-0">
                                 <input type="hidden" name="relationId" value={rel.id} />
                                 <input type="hidden" name="attachmentId" value={f.id} />
-                                <Button type="submit" variant="secondary" className="h-8 px-2 text-sm">
+                                <FormSubmitButton type="submit" variant="secondary" className="h-8 px-2 text-sm">
                                   {sharedAIds.has(f.id) ? t(locale, "projShareStop") : t(locale, "projShareStart")}
-                                </Button>
+                                </FormSubmitButton>
                               </form>
                             </li>
                           ))}
@@ -704,9 +704,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                     <label className="text-sm font-medium uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonSourceUrl")}</label>
                     <Input name="sourceUrl" type="url" className="text-sm" placeholder="https://..." />
                   </div>
-                  <Button type="submit" variant="secondary" className="h-9 text-sm">
+                  <FormSubmitButton type="submit" variant="secondary" className="h-9 text-sm">
                     {t(locale, "btnSave")}
-                  </Button>
+                  </FormSubmitButton>
                 </form>
               </details>
             ) : null}
@@ -817,9 +817,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                             </OpenDialogButton>
                             <form action={softDeleteKnowledgeAssetAction}>
                               <input type="hidden" name="id" value={asset.id} />
-                              <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                              <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
                                 {t(locale, "btnArchive")}
-                              </Button>
+                              </FormSubmitButton>
                             </form>
                           </>
                         ) : null}
@@ -900,9 +900,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                             <input type="hidden" name="projectId" value={project.id} />
                             <input type="hidden" name="companyId" value={project.companyId} />
                             <div className="flex flex-wrap gap-2 pt-1">
-                              <Button type="submit" variant="secondary" className="h-8 text-xs">
+                              <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                                 {t(locale, "kbSaveChanges")}
-                              </Button>
+                              </FormSubmitButton>
                               <CloseDialogButton
                                 dialogId={`proj-kb-edit-${asset.id}`}
                                 className="rounded-md border border-[hsl(var(--border))] px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10"
@@ -1057,9 +1057,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                         {canManage ? (
                           <form action={softDeleteAttachmentAction} className="inline">
                             <input type="hidden" name="id" value={f.id} />
-                            <Button type="submit" variant="secondary" className="h-8 px-2 text-sm">
+                            <FormSubmitButton type="submit" variant="secondary" className="h-8 px-2 text-sm">
                               {t(locale, "attMoveTrash")}
-                            </Button>
+                            </FormSubmitButton>
                           </form>
                         ) : null}
                       </div>
@@ -1115,9 +1115,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                               <Input name="description" defaultValue={f.description ?? ""} className="text-xs" />
                             </div>
                             <div className="flex flex-wrap gap-2 pt-1">
-                              <Button type="submit" variant="secondary" className="h-8 text-xs">
+                              <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                                 {t(locale, "kbSaveChanges")}
-                              </Button>
+                              </FormSubmitButton>
                               <CloseDialogButton
                                 dialogId={`proj-file-edit-${f.id}`}
                                 className="rounded-md border border-[hsl(var(--border))] px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10"
@@ -1187,9 +1187,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   </select>
                 </div>
                 <div className="md:col-span-2">
-                  <Button type="submit" variant="secondary" className="h-9 text-sm">
+                  <FormSubmitButton type="submit" variant="secondary" className="h-9 text-sm">
                     {t(locale, "resAddLink")}
-                  </Button>
+                  </FormSubmitButton>
                 </div>
               </form>
             ) : null}
@@ -1279,36 +1279,36 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <label className="text-sm font-medium">{t(locale, "projProjectDeadlineLabel")}</label>
                 <Input name="deadline" type="datetime-local" defaultValue={toDatetimeLocalValue(project.deadline)} />
               </div>
-              <Button type="submit">{t(locale, "btnSave")}</Button>
+              <FormSubmitButton type="submit">{t(locale, "btnSave")}</FormSubmitButton>
             </form>
             <>
                 <div className="flex gap-2 border-t pt-4">
                   {project.status !== "ARCHIVED" ? (
                     <form action={archiveProjectAction}>
                       <input type="hidden" name="projectId" value={project.id} />
-                      <Button type="submit" variant="secondary">
+                      <FormSubmitButton type="submit" variant="secondary">
                         {t(locale, "projArchive")}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   ) : (
                     <form action={restoreProjectAction}>
                       <input type="hidden" name="projectId" value={project.id} />
-                      <Button type="submit" variant="secondary">
+                      <FormSubmitButton type="submit" variant="secondary">
                         {t(locale, "projRestore")}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   )}
                 </div>
                 {canSoftDeleteProject ? (
                   <form action={softDeleteProjectAction} className="border-t pt-4">
                     <input type="hidden" name="projectId" value={project.id} />
-                    <Button
+                    <FormSubmitButton
                       type="submit"
                       variant="secondary"
                       className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100"
                     >
                       {t(locale, "projMoveTrash")}
-                    </Button>
+                    </FormSubmitButton>
                   </form>
                 ) : null}
               </>
@@ -1354,9 +1354,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   ))}
                 </Select>
               </div>
-              <Button type="submit" variant="secondary">
+              <FormSubmitButton type="submit" variant="secondary">
                 {t(locale, "projAddSelectedBtn")}
-              </Button>
+              </FormSubmitButton>
             </form>
           ) : null}
           <ul className="space-y-2 text-sm">
@@ -1376,9 +1376,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   <form action={removeProjectMembershipAction}>
                     <input type="hidden" name="userId" value={m.userId} />
                     <input type="hidden" name="projectId" value={project.id} />
-                    <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                    <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
                       {t(locale, "btnRemove")}
-                    </Button>
+                    </FormSubmitButton>
                   </form>
                 ) : null}
               </li>

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { createLifecycleTriggerRuleAction, deleteLifecycleTriggerRuleAction } from "@/app/actions/lifecycle";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -87,9 +87,9 @@ export default async function LifecycleSettingsPage() {
             </Select>
           </div>
           <div className="flex items-end">
-            <Button type="submit" className="rounded-[6px]">
+            <FormSubmitButton type="submit" className="rounded-[6px]">
               {t(locale, "lifecycleSaveRule")}
-            </Button>
+            </FormSubmitButton>
           </div>
         </form>
       </Card>
@@ -106,9 +106,9 @@ export default async function LifecycleSettingsPage() {
               </span>
               <form action={deleteLifecycleTriggerRuleAction}>
                 <input type="hidden" name="ruleId" value={r.id} />
-                <Button type="submit" variant="secondary" className="h-8 rounded-[6px] text-xs">
+                <FormSubmitButton type="submit" variant="secondary" className="h-8 rounded-[6px] text-xs">
                   {t(locale, "lifecycleDeleteRule")}
-                </Button>
+                </FormSubmitButton>
               </form>
             </li>
           ))}

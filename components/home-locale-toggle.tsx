@@ -1,7 +1,7 @@
 import { setLocaleAction } from "@/app/actions/locale";
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 
 /** Primary site-wide language control (cookie). Button label is the language you switch *to*. */
@@ -17,9 +17,9 @@ export function HomeLocaleToggle({ locale }: { locale: Locale }) {
       <form action={setLocaleAction} className="mt-3 flex flex-wrap items-center gap-3">
         <input type="hidden" name="locale" value={nextLocale} />
         <input type="hidden" name="next" value="/home" />
-        <Button type="submit" variant="secondary" className="h-11 min-w-[100px] text-base font-semibold">
+        <FormSubmitButton type="submit" variant="secondary" className="h-11 min-w-[100px] text-base font-semibold">
           {buttonLabel}
-        </Button>
+        </FormSubmitButton>
         <span className="text-xs text-[hsl(var(--muted))]">
           {t(locale, nextLocale === "zh" ? "localeToggleAfterZh" : "localeToggleAfterEn")}
         </span>
