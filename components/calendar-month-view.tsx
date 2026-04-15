@@ -41,7 +41,7 @@ export function CalendarMonthView({
   prevLabel,
   nextLabel,
   todayLabel,
-  eventDetailHref,
+  eventDetailHrefTemplate,
   preserveQuery,
   showCreate,
   cancelCreateHref,
@@ -57,7 +57,7 @@ export function CalendarMonthView({
   prevLabel: string;
   nextLabel: string;
   todayLabel: string;
-  eventDetailHref?: (eventId: string) => string;
+  eventDetailHrefTemplate?: string;
   preserveQuery?: CalendarMonthNavPreserve;
   showCreate: boolean;
   cancelCreateHref: string;
@@ -180,7 +180,7 @@ export function CalendarMonthView({
                   </div>
                   <ul className="relative z-[2] space-y-1 pointer-events-none">
                     {(byDay.get(day) ?? []).slice(0, 5).map((ev) => {
-                      const href = eventDetailHref?.(ev.id);
+                      const href = eventDetailHrefTemplate?.replace("EVENT_ID_PLACEHOLDER", ev.id);
                       const cls =
                         "block truncate rounded-md bg-[hsl(var(--primary))]/12 px-1.5 py-1 text-sm font-medium leading-snug text-[hsl(var(--foreground))] hover:bg-[hsl(var(--primary))]/20";
                       return (

@@ -185,7 +185,7 @@ export default async function CalendarPage({
     sourceKind: ev.sourceKind,
   }));
 
-  const eventHref = (id: string) => calendarHref({ y: year, m: month, view: "month", eventId: id, ...src, ...projQ });
+  const eventDetailHrefTemplate = calendarHref({ y: year, m: month, view: "month", eventId: "EVENT_ID_PLACEHOLDER", ...src, ...projQ });
 
   const yearNavPrev = calendarHref({ view: "year", y: yearForYearView - 1, create: showCreate, ...src, ...projQ, ...slotQ, ...eventQ });
   const yearNavNext = calendarHref({ view: "year", y: yearForYearView + 1, create: showCreate, ...src, ...projQ, ...slotQ, ...eventQ });
@@ -239,7 +239,7 @@ export default async function CalendarPage({
           prevLabel={t(locale, "calendarMonthPrev")}
           nextLabel={t(locale, "calendarMonthNext")}
           todayLabel={t(locale, "calendarToday")}
-          eventDetailHref={eventHref}
+          eventDetailHrefTemplate={eventDetailHrefTemplate}
           preserveQuery={preserveQuery}
           showCreate={showCreate}
           cancelCreateHref={cancelCreateHref}
