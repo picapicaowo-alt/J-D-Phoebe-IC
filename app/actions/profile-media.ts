@@ -50,6 +50,7 @@ export async function uploadUserAvatarAction(formData: FormData) {
   await prisma.user.update({ where: { id: userId }, data: { avatarUrl: url } });
   revalidatePath(`/staff/${userId}`);
   revalidatePath("/staff");
+  revalidatePath("/settings/profile");
 }
 
 export async function removeUserAvatarAction(formData: FormData) {
@@ -61,6 +62,7 @@ export async function removeUserAvatarAction(formData: FormData) {
   await prisma.user.update({ where: { id: userId }, data: { avatarUrl: null } });
   revalidatePath(`/staff/${userId}`);
   revalidatePath("/staff");
+  revalidatePath("/settings/profile");
 }
 
 export async function uploadCompanyLogoAction(formData: FormData) {

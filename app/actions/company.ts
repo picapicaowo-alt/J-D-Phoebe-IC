@@ -52,6 +52,10 @@ export async function updateCompanyAction(formData: FormData) {
   const companyType = String(formData.get("companyType") ?? "").trim() || null;
   const introduction = String(formData.get("introduction") ?? "").trim() || null;
   const status = requireString(formData, "status") as CompanyStatus;
+  const onboardingPackageUrl = String(formData.get("onboardingPackageUrl") ?? "").trim() || null;
+  const onboardingPackageVersion = String(formData.get("onboardingPackageVersion") ?? "").trim() || "v1";
+  const onboardingDeadlineDays = Math.max(1, Math.min(365, Number(formData.get("onboardingDeadlineDays") ?? 14) || 14));
+  const prevPackageUrl = company.onboardingPackageUrl;
 
   if (name !== company.name) {
     await writeAudit({
@@ -67,8 +71,20 @@ export async function updateCompanyAction(formData: FormData) {
 
   await prisma.company.update({
     where: { id: companyId },
-    data: { name, companyType, introduction, status },
+    data: {
+      name,
+      companyType,
+      introduction,
+      status,
+      onboardingPackageUrl: onboardingPackageUrl,
+      onboardingPackageVersion,
+      onboardingDeadlineDays,
+    },
   });
+  if (onboardingPackageUrl && onboardingPackageUrl !== prevPackageUrl) {
+    const { backfillMemberOnboardingsForCompany } = await import("@/lib/member-onboarding");
+    await backfillMemberOnboardingsForCompany(companyId);
+  }
   revalidatePath(`/companies/${companyId}`);
   revalidatePath("/companies");
   revalidatePath("/group");

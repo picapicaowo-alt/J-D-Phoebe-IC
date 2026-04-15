@@ -57,6 +57,7 @@ const PROJECT_MANAGER_PERMS = [
   "staff.assign_project",
   "trash.read",
   "trash.restore",
+  "lifecycle.onboarding.hub",
 ];
 
 const COMPANY_CONTRIBUTOR_PERMS = [
@@ -70,6 +71,7 @@ const COMPANY_CONTRIBUTOR_PERMS = [
   "knowledge.read",
   "knowledge.create",
   "staff.read",
+  "lifecycle.onboarding.hub",
 ];
 
 const PROJECT_CONTRIBUTOR_PERMS = [
@@ -77,14 +79,27 @@ const PROJECT_CONTRIBUTOR_PERMS = [
   "company.read",
   "project.read",
   "project.workflow.read",
+  "project.workflow.update",
   "recognition.read",
   "leaderboard.read",
   "knowledge.read",
   "knowledge.create",
   "staff.read",
+  "lifecycle.onboarding.hub",
 ];
 
 async function main() {
+  await prisma.googleCalendarCredential.deleteMany();
+  await prisma.calendarAttendee.deleteMany();
+  await prisma.calendarEvent.deleteMany();
+  await prisma.offboardingChecklistItem.deleteMany();
+  await prisma.offboardingRun.deleteMany();
+  await prisma.inAppNotification.deleteMany();
+  await prisma.lifecycleReminderLog.deleteMany();
+  await prisma.lifecycleTriggerFire.deleteMany();
+  await prisma.lifecycleTriggerRule.deleteMany();
+  await prisma.memberOnboardingChecklistItem.deleteMany();
+  await prisma.memberOnboarding.deleteMany();
   await prisma.auditLogEntry.deleteMany();
   await prisma.scoreLedgerEntry.deleteMany();
   await prisma.feedbackEvent.deleteMany();
@@ -215,6 +230,9 @@ async function main() {
       companyType: "Legal & compliance",
       introduction: "Legal strategy, governance, and partnership structuring for the group and portfolio companies.",
       status: CompanyStatus.ACTIVE,
+      onboardingPackageUrl: "https://jdphoebe.local/demo/legal-onboarding-pack",
+      onboardingPackageVersion: "v1",
+      onboardingDeadlineDays: 14,
     },
   });
 
@@ -289,6 +307,16 @@ async function main() {
     },
   });
 
+  const onboardingDemo = await prisma.user.create({
+    data: {
+      email: "onboarding.demo@jdphoebe.local",
+      passwordHash,
+      name: "Eli Onboarding Demo",
+      title: "Associate",
+      active: true,
+    },
+  });
+
   await prisma.groupMembership.create({
     data: {
       userId: groupAdmin.id,
@@ -303,7 +331,48 @@ async function main() {
       { userId: pm.id, companyId: legalCo.id, roleDefinitionId: roleCompanyContributor.id },
       { userId: staff.id, companyId: legalCo.id, roleDefinitionId: roleCompanyContributor.id },
       { userId: staff.id, companyId: researchCo.id, roleDefinitionId: roleCompanyContributor.id },
+      { userId: onboardingDemo.id, companyId: legalCo.id, roleDefinitionId: roleCompanyContributor.id },
     ],
+  });
+
+  const obDeadline = new Date();
+  obDeadline.setUTCDate(obDeadline.getUTCDate() + 14);
+  const obPackUrl = "https://jdphoebe.local/demo/legal-onboarding-pack";
+  const nowSeed = new Date();
+
+  await prisma.memberOnboarding.create({
+    data: {
+      userId: staff.id,
+      companyId: legalCo.id,
+      packageUrl: obPackUrl,
+      packageVersion: "v1",
+      deadlineAt: obDeadline,
+      completedAt: nowSeed,
+      checklistItems: {
+        create: [
+          { itemKey: "OB_READ_PACKAGE", sortOrder: 0, completedAt: nowSeed },
+          { itemKey: "OB_ACK_POLICIES", sortOrder: 1, completedAt: nowSeed },
+          { itemKey: "OB_SUPERVISOR_MEET", sortOrder: 2, completedAt: nowSeed },
+        ],
+      },
+    },
+  });
+
+  await prisma.memberOnboarding.create({
+    data: {
+      userId: onboardingDemo.id,
+      companyId: legalCo.id,
+      packageUrl: obPackUrl,
+      packageVersion: "v1",
+      deadlineAt: obDeadline,
+      checklistItems: {
+        create: [
+          { itemKey: "OB_READ_PACKAGE", sortOrder: 0 },
+          { itemKey: "OB_ACK_POLICIES", sortOrder: 1 },
+          { itemKey: "OB_SUPERVISOR_MEET", sortOrder: 2 },
+        ],
+      },
+    },
   });
 
   const partnershipProject = await prisma.project.create({
@@ -670,7 +739,31 @@ async function main() {
     });
   }
 
+  await prisma.lifecycleTriggerRule.createMany({
+    data: [
+      {
+        kind: "FEEDBACK",
+        windowDays: 30,
+        threshold: 3,
+        scope: "GLOBAL",
+        companyId: null,
+        categoryMode: "TOTAL_COUNT",
+        active: true,
+      },
+      {
+        kind: "RECOGNITION",
+        windowDays: 30,
+        threshold: 3,
+        scope: "GLOBAL",
+        companyId: null,
+        categoryMode: "TOTAL_COUNT",
+        active: true,
+      },
+    ],
+  });
+
   console.log("Seed OK. Demo password for all seeded users:", passwordPlain);
+  console.log("Onboarding walkthrough: sign in as onboarding.demo@jdphoebe.local (pending checklist). Dana Staff has completed onboarding for Legal Affairs.");
 }
 
 main()

@@ -88,6 +88,10 @@ enum AuditEntityType {
   PROJECT_RELATION
   SCORE_LEDGER
   MEMBER_OUTPUT
+  MEMBER_ONBOARDING
+  LIFECYCLE_TRIGGER
+  OFFBOARDING_RUN
+  CALENDAR_EVENT
 }
 
 enum RecognitionMode {
@@ -164,6 +168,38 @@ enum ProjectRelationType {
   SHARED_ASSET
 }
 
+enum LifecycleTriggerKind {
+  FEEDBACK
+  RECOGNITION
+}
+
+enum LifecycleTriggerScope {
+  GLOBAL
+  COMPANY
+}
+
+enum LifecycleCategoryMode {
+  TOTAL_COUNT
+  ANY_CATEGORY
+  /// Each feedback category / recognition tag must reach threshold independently (any one category crossing counts).
+  PER_CATEGORY
+}
+
+enum OffboardingStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum CalendarSourceKind {
+  MANUAL
+  ONBOARDING
+  IMPROVEMENT_TRIGGER
+  RECOGNITION_TRIGGER
+  OFFBOARDING
+}
+
 // --- RBAC: permission matrix (roleDefinitionId + permissionKey) ---
 
 model PermissionDefinition {
@@ -213,6 +249,10 @@ model Company {
   /// Public URL or app-relative path to uploaded logo (internal identity).
   logoUrl          String?
   status           CompanyStatus  @default(ACTIVE)
+  /// HR onboarding pack (e.g. Google Drive); shown to new members assigned to this company.
+  onboardingPackageUrl       String?
+  onboardingPackageVersion     String         @default("v1")
+  onboardingDeadlineDays       Int            @default(14)
   archivedAt       DateTime?
   deletedAt        DateTime?
   createdAt        DateTime       @default(now())
@@ -221,8 +261,44 @@ model Company {
   orgGroup    OrgGroup           @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
   memberships CompanyMembership[]
   projects    Project[]
+  departments Department[]
+  projectGroups ProjectGroup[]
   knowledgeAssets KnowledgeAsset[]
   memberOutputs   MemberOutput[]
+  memberOnboardings MemberOnboarding[]
+  offboardingRuns   OffboardingRun[]
+  lifecycleTriggerRules LifecycleTriggerRule[]
+}
+
+/// Business unit within a company (e.g. Marketing, Compliance).
+model Department {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company            Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyMemberships CompanyMembership[]
+  projects           Project[]
+
+  @@index([companyId])
+}
+
+/// User-defined project buckets within a company (collapsible groups on the projects list).
+model ProjectGroup {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projects Project[]
+
+  @@index([companyId])
 }
 
 model User {
@@ -232,6 +308,9 @@ model User {
   clerkId       String?   @unique
   name          String
   title         String?
+  /// Extra contact emails (comma / semicolon separated); login email stays in `email`.
+  contactEmails String?
+  phone         String?
   timezone      String    @default("UTC")
   active        Boolean   @default(true)
   isSuperAdmin  Boolean   @default(false)
@@ -239,12 +318,17 @@ model User {
   avatarUrl     String?
   /// First-login companion picker completed; null means redirect to onboarding.
   companionIntroCompletedAt DateTime?
+  /// First authenticated app session (for onboarding audit).
+  firstSignInAt DateTime?
+  /// Recognition trigger: mark member for positive follow-up until this instant.
+  positiveAttentionUntil DateTime?
   deletedAt     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   groupMemberships   GroupMembership[]
   companyMemberships CompanyMembership[]
+  supervisorForMemberships CompanyMembership[] @relation("MembershipSupervisor")
   projectMemberships ProjectMembership[]
   nodeAssignments    WorkflowNodeAssignee[]
   ownedProjects      Project[]              @relation("ProjectOwner")
@@ -262,6 +346,16 @@ model User {
   knowledgeReuses      KnowledgeReuseEvent[] @relation("KnowledgeReuseActor")
   attachmentsAsContributor Attachment[]      @relation("AttachmentContributor")
   memberOutputs        MemberOutput[]
+  memberOnboardings    MemberOnboarding[]
+  onboardingsAsLiaison MemberOnboarding[] @relation("OnboardingLiaison")
+  inAppNotifications   InAppNotification[]
+  lifecycleReminderLogs LifecycleReminderLog[]
+  lifecycleTriggerFires LifecycleTriggerFire[]
+  organizedCalendarEvents CalendarEvent[] @relation("CalendarOrganizer")
+  calendarAttendees    CalendarAttendee[]
+  offboardingRunsSubject OffboardingRun[] @relation("OffboardingSubject")
+  offboardingRunsStarted OffboardingRun[] @relation("OffboardingStartedBy")
+  googleCalendarCredential GoogleCalendarCredential?
 }
 
 model Session {
@@ -312,13 +406,20 @@ model CompanyMembership {
   userId           String
   companyId        String
   roleDefinitionId String
+  departmentId     String?
+  /// Direct supervisor / onboarding liaison for this membership (HR assigns).
+  supervisorUserId String?
 
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   roleDefinition RoleDefinition @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
+  department     Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  supervisor     User?          @relation("MembershipSupervisor", fields: [supervisorUserId], references: [id], onDelete: SetNull)
 
   @@unique([userId, companyId])
   @@index([companyId])
+  @@index([departmentId])
+  @@index([supervisorUserId])
 }
 
 model ProjectMembership {
@@ -345,12 +446,18 @@ model Project {
   priority        Priority      @default(MEDIUM)
   deadline        DateTime?
   progressPercent Int           @default(0)
+  departmentId    String?
+  projectGroupId  String?
+  /// Sort order within a project group (or ungrouped list for that company).
+  groupSortOrder  Int           @default(0)
   archivedAt      DateTime?
   deletedAt       DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department  Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectGroup ProjectGroup? @relation(fields: [projectGroupId], references: [id], onDelete: SetNull)
   owner       User    @relation("ProjectOwner", fields: [ownerId], references: [id])
 
   memberships ProjectMembership[]
@@ -364,8 +471,11 @@ model Project {
   incomingRelations ProjectRelation[] @relation("ProjectRelationTo")
   attachments       Attachment[]      @relation("ProjectAttachment")
   memberOutputs     MemberOutput[]
+  calendarEvents    CalendarEvent[]
 
   @@index([companyId])
+  @@index([departmentId])
+  @@index([projectGroupId])
 }
 
 model ProjectRelation {
@@ -378,10 +488,40 @@ model ProjectRelation {
 
   fromProject Project @relation("ProjectRelationFrom", fields: [fromProjectId], references: [id], onDelete: Cascade)
   toProject   Project @relation("ProjectRelationTo", fields: [toProjectId], references: [id], onDelete: Cascade)
+  sharedKnowledge   ProjectRelationSharedKnowledge[]
+  sharedAttachments ProjectRelationSharedAttachment[]
 
   @@unique([fromProjectId, toProjectId, relationType])
   @@index([fromProjectId])
   @@index([toProjectId])
+}
+
+/// Surface a knowledge asset from one side of a relation on the peer project page.
+model ProjectRelationSharedKnowledge {
+  id               String @id @default(cuid())
+  relationId       String
+  knowledgeAssetId String
+  createdAt        DateTime @default(now())
+
+  relation       ProjectRelation @relation(fields: [relationId], references: [id], onDelete: Cascade)
+  knowledgeAsset KnowledgeAsset @relation(fields: [knowledgeAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([relationId, knowledgeAssetId])
+  @@index([knowledgeAssetId])
+}
+
+/// Surface a project-level attachment link from one side of a relation on the peer project page.
+model ProjectRelationSharedAttachment {
+  id           String @id @default(cuid())
+  relationId   String
+  attachmentId String
+  createdAt    DateTime @default(now())
+
+  relation   ProjectRelation @relation(fields: [relationId], references: [id], onDelete: Cascade)
+  attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@unique([relationId, attachmentId])
+  @@index([attachmentId])
 }
 
 model WorkflowLayer {
@@ -502,6 +642,7 @@ model Attachment {
   previousVersion Attachment?  @relation("AttachmentVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
   nextVersions  Attachment[]   @relation("AttachmentVersionChain")
   uploadedBy    User          @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+  relationShares ProjectRelationSharedAttachment[]
 
   @@index([workflowNodeId])
   @@index([knowledgeAssetId])
@@ -662,6 +803,7 @@ model KnowledgeAsset {
   feedbacks    FeedbackEvent[]
   reuses       KnowledgeReuseEvent[]
   attachments  Attachment[] @relation("KnowledgeAttachment")
+  relationShares ProjectRelationSharedKnowledge[]
 
   @@index([layer, createdAt])
   @@index([projectId, createdAt])
@@ -696,4 +838,196 @@ model AuditLogEntry {
   actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([entityType, entityId])
+}
+
+/// Per-user per-company onboarding run (package + checklist + audit).
+model MemberOnboarding {
+  id              String    @id @default(cuid())
+  userId          String
+  companyId       String
+  packageUrl      String
+  packageVersion  String
+  deadlineAt      DateTime
+  completedAt     DateTime?
+  liaisonUserId   String?
+  liaisonName     String?
+  liaisonEmail    String?
+  overdueSelfNotifiedAt       DateTime?
+  overdueSupervisorNotifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  liaison  User?    @relation("OnboardingLiaison", fields: [liaisonUserId], references: [id], onDelete: SetNull)
+  checklistItems MemberOnboardingChecklistItem[]
+
+  @@unique([userId, companyId])
+  @@index([userId, completedAt])
+  @@index([deadlineAt])
+}
+
+model MemberOnboardingChecklistItem {
+  id            String    @id @default(cuid())
+  onboardingId String
+  itemKey       String
+  sortOrder     Int       @default(0)
+  completedAt   DateTime?
+
+  onboarding MemberOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+
+  @@unique([onboardingId, itemKey])
+  @@index([onboardingId])
+}
+
+model LifecycleTriggerRule {
+  id            String                 @id @default(cuid())
+  kind          LifecycleTriggerKind
+  windowDays    Int                    @default(30)
+  threshold     Int                    @default(3)
+  scope         LifecycleTriggerScope  @default(GLOBAL)
+  companyId     String?
+  categoryMode  LifecycleCategoryMode  @default(TOTAL_COUNT)
+  active        Boolean                @default(true)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fires   LifecycleTriggerFire[]
+
+  @@index([kind, active])
+  @@index([companyId])
+}
+
+model LifecycleTriggerFire {
+  id               String   @id @default(cuid())
+  ruleId           String
+  subjectUserId    String
+  windowStart      DateTime
+  windowEnd        DateTime
+  triggeredAt      DateTime @default(now())
+  /// JSON array of FeedbackEvent or RecognitionEvent ids (strings).
+  sourceEventIds   String
+  followUpCompletedAt DateTime?
+
+  rule    LifecycleTriggerRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  subject User                 @relation(fields: [subjectUserId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, subjectUserId, windowStart])
+  @@index([subjectUserId])
+}
+
+model LifecycleReminderLog {
+  id              String   @id @default(cuid())
+  kind            String
+  recipientUserId String
+  relatedType     String?
+  relatedId       String?
+  payload         Json?
+  createdAt       DateTime @default(now())
+
+  recipient User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([recipientUserId, createdAt])
+}
+
+model InAppNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  kind      String
+  title     String
+  body      String?
+  href      String?
+  readAt    DateTime?
+  metadata  Json?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+model OffboardingRun {
+  id                   String            @id @default(cuid())
+  userId               String
+  companyId            String
+  status               OffboardingStatus @default(IN_PROGRESS)
+  startedById          String
+  startedAt            DateTime          @default(now())
+  completedAt          DateTime?
+  accountDeactivatedAt DateTime?
+  notes                String?
+
+  user      User    @relation("OffboardingSubject", fields: [userId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  startedBy User    @relation("OffboardingStartedBy", fields: [startedById], references: [id], onDelete: Restrict)
+  checklist OffboardingChecklistItem[]
+
+  @@index([companyId, status])
+  @@index([userId])
+}
+
+model OffboardingChecklistItem {
+  id          String    @id @default(cuid())
+  runId       String
+  itemKey     String
+  label       String
+  completedAt DateTime?
+
+  run OffboardingRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, itemKey])
+  @@index([runId])
+}
+
+model CalendarEvent {
+  id                      String             @id @default(cuid())
+  title                   String
+  description             String?
+  startsAt                DateTime
+  endsAt                  DateTime
+  timezone                String             @default("UTC")
+  organizerUserId         String
+  projectId               String?
+  sourceKind              CalendarSourceKind @default(MANUAL)
+  sourceId                String?
+  meetUrl                 String?
+  /// Guest emails without user accounts (e.g. external interviews).
+  externalAttendeeEmails  String[]           @default([])
+  externalCalendarEventId String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  organizer User     @relation("CalendarOrganizer", fields: [organizerUserId], references: [id], onDelete: Cascade)
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  attendees CalendarAttendee[]
+
+  @@index([organizerUserId, startsAt])
+  @@index([projectId])
+}
+
+model CalendarAttendee {
+  id      String @id @default(cuid())
+  eventId String
+  userId  String
+
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+}
+
+/// Google OAuth tokens for Calendar write-back (store refresh token server-side only).
+model GoogleCalendarCredential {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  refreshToken          String
+  accessToken           String?
+  accessTokenExpiresAt  DateTime?
+  scope                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

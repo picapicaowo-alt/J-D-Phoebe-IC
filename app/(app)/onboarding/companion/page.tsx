@@ -32,7 +32,7 @@ export default async function CompanionOnboardingPage() {
                   <input type="radio" name="species" value={e.species} defaultChecked={e.species === "BUNNY"} className="sr-only" />
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={e.file} alt="" width={48} height={48} className="h-12 w-12 object-contain" />
-                  <span className="text-center text-[10px] text-[hsl(var(--muted))]">
+                  <span className="text-center text-xs text-[hsl(var(--muted))]">
                     {locale === "zh" ? e.name_zh : e.name_en}
                   </span>
                 </label>

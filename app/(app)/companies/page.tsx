@@ -23,7 +23,15 @@ export default async function CompaniesPage() {
   const companies = await prisma.company.findMany({
     where: { orgGroupId: group.id, deletedAt: null },
     orderBy: { name: "asc" },
-    include: { _count: { select: { projects: true, memberships: true } } },
+    include: {
+      _count: { select: { projects: true, memberships: true } },
+      projects: {
+        where: { deletedAt: null, status: { notIn: ["COMPLETED", "ARCHIVED", "CANCELLED"] } },
+        orderBy: { updatedAt: "desc" },
+        take: 12,
+        select: { id: true, name: true, status: true, progressPercent: true },
+      },
+    },
   });
 
   const canCreate =
@@ -38,6 +46,7 @@ export default async function CompaniesPage() {
     logoUrl: c.logoUrl,
     projects: c._count.projects,
     members: c._count.memberships,
+    activeProjects: c.projects,
   }));
 
   return (

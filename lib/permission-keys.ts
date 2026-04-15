@@ -41,6 +41,11 @@ export const PERMISSION_KEYS = [
   "trash.read",
   "trash.restore",
   "trash.purge",
+  "lifecycle.onboarding.skip",
+  "lifecycle.onboarding.hub",
+  "lifecycle.hr.pipeline",
+  "lifecycle.email.send",
+  "lifecycle.calendar.google",
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

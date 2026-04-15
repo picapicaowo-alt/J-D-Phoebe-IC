@@ -79,7 +79,7 @@ export function AttachmentVersionTree({
                   {showTrash ? (
                     <form action={softDeleteAttachmentAction} className="inline">
                       <input type="hidden" name="id" value={row.id} />
-                      <Button type="submit" variant="secondary" className="h-6 px-1.5 text-[10px]">
+                      <Button type="submit" variant="secondary" className="h-6 px-1.5 text-xs">
                         {t(locale, "attMoveTrash")}
                       </Button>
                     </form>

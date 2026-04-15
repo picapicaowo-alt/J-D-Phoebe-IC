@@ -1,19 +1,9 @@
 import type { ProjectStatus } from "@prisma/client";
 
-/** Completion from workflow nodes: DONE + SKIPPED count as complete. */
-export function completionPercentFromNodes(nodes: { status: string }[]): number {
-  if (!nodes.length) return 0;
-  const done = nodes.filter((n) => n.status === "DONE" || n.status === "SKIPPED").length;
-  return Math.round((done / nodes.length) * 100);
-}
-
-export function combinedProjectProgressPercent(
-  stored: number,
-  nodes: { status: string }[],
-): number {
-  const fromNodes = completionPercentFromNodes(nodes);
-  if (!nodes.length) return Math.max(0, Math.min(100, stored));
-  return Math.max(0, Math.min(100, fromNodes));
+/** Stored project completion (0–100), clamped for display. */
+export function clampProjectProgressPercent(stored: number | null | undefined): number {
+  const n = typeof stored === "number" && Number.isFinite(stored) ? stored : 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
 export function projectStatusVisualClasses(status: ProjectStatus): {

@@ -18,3 +18,12 @@ export function isOverdue(deadline: Date | null | undefined, now = new Date()) {
   const startOfDue = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
   return startOfDue.getTime() < startOfToday.getTime();
 }
+
+/** Value for `<input type="datetime-local" />` in the browser's local timezone. */
+export function toDatetimeLocalValue(d: Date | null | undefined): string {
+  if (!d) return "";
+  const x = new Date(d);
+  if (Number.isNaN(x.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}T${pad(x.getHours())}:${pad(x.getMinutes())}`;
+}

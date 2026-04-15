@@ -45,6 +45,11 @@ const PERM: Record<PermissionKey, { en: string; zh: string }> = {
   "trash.read": { en: "View trash", zh: "查看回收站" },
   "trash.restore": { en: "Restore from trash", zh: "从回收站恢复" },
   "trash.purge": { en: "Purge trash", zh: "永久清除回收站项" },
+  "lifecycle.onboarding.skip": { en: "Skip member onboarding gate", zh: "跳过入职拦截（管理用）" },
+  "lifecycle.onboarding.hub": { en: "View onboarding hub", zh: "查看入职中心" },
+  "lifecycle.hr.pipeline": { en: "HR lifecycle inbox (triggers)", zh: "HR 生命周期收件（触发提醒）" },
+  "lifecycle.email.send": { en: "Send lifecycle emails (system)", zh: "发送生命周期系统邮件" },
+  "lifecycle.calendar.google": { en: "Sync calendar to Google", zh: "同步日历到 Google" },
 };
 
 export function describePermissionKey(locale: Locale, key: string): string {

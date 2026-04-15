@@ -37,8 +37,29 @@ export async function createProjectAction(formData: FormData) {
   const ownerId = requireString(formData, "ownerId");
   const priority = requireString(formData, "priority") as Priority;
   const status = (String(formData.get("status") ?? "PLANNING") || "PLANNING") as ProjectStatus;
+  const deadlineRaw = String(formData.get("deadline") ?? "").trim();
+  const deadlineParsed = deadlineRaw ? new Date(deadlineRaw) : null;
+  const deadline =
+    deadlineParsed && !Number.isNaN(deadlineParsed.getTime()) ? deadlineParsed : null;
   const requestedMemberIds = getStringArray(formData, "memberIds");
   const memberIds = [...new Set([ownerId, ...requestedMemberIds])];
+
+  const departmentIdRaw = String(formData.get("departmentId") ?? "").trim();
+  const departmentId: string | null = departmentIdRaw
+    ? await (async () => {
+        const d = await prisma.department.findFirst({ where: { id: departmentIdRaw, companyId } });
+        if (!d) throw new Error("Invalid department for this company");
+        return d.id;
+      })()
+    : null;
+  const projectGroupIdRaw = String(formData.get("projectGroupId") ?? "").trim();
+  const projectGroupId: string | null = projectGroupIdRaw
+    ? await (async () => {
+        const g = await prisma.projectGroup.findFirst({ where: { id: projectGroupIdRaw, companyId } });
+        if (!g) throw new Error("Invalid project group for this company");
+        return g.id;
+      })()
+    : null;
 
   const p = await prisma.project.create({
     data: {
@@ -48,6 +69,9 @@ export async function createProjectAction(formData: FormData) {
       ownerId,
       priority,
       status,
+      deadline,
+      departmentId,
+      projectGroupId,
     },
   });
 
@@ -102,6 +126,29 @@ export async function updateProjectAction(formData: FormData) {
   const ownerId = requireString(formData, "ownerId");
   const priority = requireString(formData, "priority") as Priority;
   const status = requireString(formData, "status") as ProjectStatus;
+  const deadlineRaw = String(formData.get("deadline") ?? "").trim();
+  const deadline = deadlineRaw ? new Date(deadlineRaw) : null;
+  const deadlineNorm =
+    deadline && !Number.isNaN(deadline.getTime()) ? deadline : null;
+
+  const departmentIdRaw = String(formData.get("departmentId") ?? "").trim();
+  const departmentId: string | null = departmentIdRaw
+    ? await (async () => {
+        const d = await prisma.department.findFirst({ where: { id: departmentIdRaw, companyId: project.companyId } });
+        if (!d) throw new Error("Invalid department for this company");
+        return d.id;
+      })()
+    : null;
+  const projectGroupIdRaw = String(formData.get("projectGroupId") ?? "").trim();
+  const projectGroupId: string | null = projectGroupIdRaw
+    ? await (async () => {
+        const g = await prisma.projectGroup.findFirst({
+          where: { id: projectGroupIdRaw, companyId: project.companyId },
+        });
+        if (!g) throw new Error("Invalid project group for this company");
+        return g.id;
+      })()
+    : null;
 
   if (name !== project.name) {
     await writeAudit({
@@ -117,10 +164,20 @@ export async function updateProjectAction(formData: FormData) {
 
   await prisma.project.update({
     where: { id: projectId },
-    data: { name, description, ownerId, priority, status },
+    data: {
+      name,
+      description,
+      ownerId,
+      priority,
+      status,
+      deadline: deadlineNorm,
+      departmentId,
+      projectGroupId,
+    },
   });
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
+  revalidatePath(`/companies/${project.companyId}`);
 }
 
 export async function archiveProjectAction(formData: FormData) {
@@ -207,10 +264,12 @@ export async function removeProjectRelationAction(formData: FormData) {
   const relationId = requireString(formData, "relationId");
   const relation = await prisma.projectRelation.findUnique({
     where: { id: relationId },
-    include: { fromProject: { include: { company: true } } },
+    include: { fromProject: { include: { company: true } }, toProject: { include: { company: true } } },
   });
   if (!relation) throw new Error("Relation not found");
-  if (!canManageProject(user, relation.fromProject)) throw new Error("Forbidden");
+  if (!canManageProject(user, relation.fromProject) && !canManageProject(user, relation.toProject)) {
+    throw new Error("Forbidden");
+  }
 
   await prisma.projectRelation.delete({ where: { id: relationId } });
   await writeAudit({
@@ -232,10 +291,12 @@ export async function updateProjectRelationNoteAction(formData: FormData) {
   const note = String(formData.get("note") ?? "").trim() || null;
   const relation = await prisma.projectRelation.findUnique({
     where: { id: relationId },
-    include: { fromProject: { include: { company: true } } },
+    include: { fromProject: { include: { company: true } }, toProject: { include: { company: true } } },
   });
   if (!relation) throw new Error("Relation not found");
-  if (!canManageProject(user, relation.fromProject)) throw new Error("Forbidden");
+  if (!canManageProject(user, relation.fromProject) && !canManageProject(user, relation.toProject)) {
+    throw new Error("Forbidden");
+  }
 
   await prisma.projectRelation.update({
     where: { id: relationId },

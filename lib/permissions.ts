@@ -58,3 +58,24 @@ export async function assertPermission(user: AccessUser, key: PermissionKey) {
     throw new Error(`Forbidden: missing permission "${key}"`);
   }
 }
+
+/** Users in the given companies whose company role grants `permissionKey`. */
+export async function getUserIdsWithPermissionInCompanies(permissionKey: string, companyIds: string[]): Promise<string[]> {
+  if (!companyIds.length) return [];
+  const rows = await prisma.companyMembership.findMany({
+    where: {
+      companyId: { in: companyIds },
+      user: { deletedAt: null, active: true },
+      roleDefinition: {
+        rolePermissions: {
+          some: {
+            allowed: true,
+            permissionDefinition: { key: permissionKey },
+          },
+        },
+      },
+    },
+    select: { userId: true },
+  });
+  return [...new Set(rows.map((r) => r.userId))];
+}

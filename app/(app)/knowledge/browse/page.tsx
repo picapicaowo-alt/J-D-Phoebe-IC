@@ -18,7 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AttachmentVersionTree } from "@/components/attachment-version-tree";
 import { DetailsHashOpener } from "@/components/details-hash-opener";
-import { getLocale } from "@/lib/locale";
+import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
+import { getLocale, type Locale } from "@/lib/locale";
 import { t, tKnowledgeLayer } from "@/lib/messages";
 
 const ORDER: KnowledgeLayer[] = [
@@ -27,6 +28,14 @@ const ORDER: KnowledgeLayer[] = [
   "INTERNAL_INSIGHT",
   "REUSABLE_OUTPUT",
 ];
+
+function sourceTypeLabel(locale: Locale, url: string | null | undefined): string {
+  const u = (url ?? "").trim();
+  if (!u) return t(locale, "kbSourceNone");
+  const low = u.toLowerCase();
+  if (low.includes("drive.google.com") || low.includes("docs.google.com")) return t(locale, "kbSourceGoogleDrive");
+  return t(locale, "kbSourceExternalLink");
+}
 
 export default async function KnowledgeBrowsePage({
   searchParams,
@@ -51,6 +60,8 @@ export default async function KnowledgeBrowsePage({
     rawLayer === "" || rawLayer === "ALL" || !ORDER.includes(rawLayer as KnowledgeLayer) ? "ALL" : (rawLayer as KnowledgeLayer);
   const isCategoryView = layerFilter !== "ALL";
   const projectFilter = String(sp.projectId ?? "").trim();
+  const projectScope = Boolean(projectFilter);
+  const hubEntryLayout = isCategoryView || projectScope;
   const companyFilter = String(sp.companyId ?? "").trim();
   const authorFilter = String(sp.authorId ?? "").trim();
   const tagFilter = String(sp.tag ?? "").trim();
@@ -75,7 +86,11 @@ export default async function KnowledgeBrowsePage({
       : {}),
   };
 
-  const [assets, deletedAssets, projects, authors, companies] = await Promise.all([
+  const scopedProjectPromise = projectFilter
+    ? prisma.project.findFirst({ where: { id: projectFilter, deletedAt: null }, include: { company: true } })
+    : Promise.resolve(null);
+
+  const [assets, deletedAssets, projects, authors, companies, categoryTotal, scopedProject] = await Promise.all([
     prisma.knowledgeAsset.findMany({
       where,
       include: {
@@ -96,7 +111,11 @@ export default async function KnowledgeBrowsePage({
     prisma.project.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" }, take: 100 }),
     prisma.user.findMany({ where: { deletedAt: null, active: true }, orderBy: { name: "asc" }, take: 200 }),
     prisma.company.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" }, take: 80 }),
+    isCategoryView ? prisma.knowledgeAsset.count({ where }) : Promise.resolve(0),
+    scopedProjectPromise,
   ]);
+
+  if (projectFilter && !scopedProject) redirect("/knowledge/browse");
 
   const layersToShow: KnowledgeLayer[] = isCategoryView ? [layerFilter as KnowledgeLayer] : ORDER;
 
@@ -104,46 +123,98 @@ export default async function KnowledgeBrowsePage({
     <div className="space-y-6">
       <DetailsHashOpener />
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs text-[hsl(var(--muted))]">
-            <Link href="/knowledge" className="underline">
+        <div className="min-w-0 flex-1 space-y-2">
+          {isCategoryView ? (
+            <Link
+              href="/knowledge"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
               {t(locale, "navKnowledge")}
             </Link>
-            {isCategoryView ? (
-              <>
-                {" "}
-                /{" "}
-                <Link href="/knowledge/browse" className="underline">
-                  {t(locale, "knowledgeSeeAll")}
-                </Link>{" "}
-                / {tKnowledgeLayer(locale, layerFilter as KnowledgeLayer)}
-              </>
-            ) : (
-              <> / {t(locale, "knowledgeSeeAll")}</>
-            )}
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {isCategoryView ? tKnowledgeLayer(locale, layerFilter as KnowledgeLayer) : t(locale, "knowledgeSeeAll")}
+          ) : (
+            <p className="text-sm text-[hsl(var(--muted))]">
+              <Link href="/knowledge" className="underline">
+                {t(locale, "navKnowledge")}
+              </Link>
+              {" / "}
+              {scopedProject ? (
+                <Link href={`/projects/${scopedProject.id}`} className="underline">
+                  {scopedProject.company.name} · {scopedProject.name}
+                </Link>
+              ) : (
+                t(locale, "knowledgeSeeAll")
+              )}
+            </p>
+          )}
+          <h1 className="text-2xl font-semibold tracking-tight text-[hsl(var(--foreground))]">
+            {scopedProject
+              ? `${scopedProject.company.name} · ${scopedProject.name}`
+              : isCategoryView
+                ? tKnowledgeLayer(locale, layerFilter as KnowledgeLayer)
+                : t(locale, "knowledgeSeeAll")}
           </h1>
-          <p className="mt-1 text-sm text-[hsl(var(--muted))]">
-            {isCategoryView ? t(locale, "kbCategoryViewCaption") : t(locale, "kbFullListCaption")}
+          <p className="text-sm text-[hsl(var(--muted))]">
+            {scopedProject
+              ? t(locale, "kbProjectScopedLead")
+              : isCategoryView
+                ? t(locale, "kbCategoryItemCount").replace("{n}", String(categoryTotal))
+                : t(locale, "kbFullListCaption")}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {isCategoryView ? (
-            <Link href="/knowledge#knowledge-add-section">
-              <Button type="button" variant="secondary" className="text-xs">
-                {t(locale, "kbAddFromHub")}
+          {isCategoryView && canCreate ? (
+            <Link href="/knowledge/browse#knowledge-create">
+              <Button type="button" className="rounded-[10px] px-4">
+                + {t(locale, "knowledgeAddNew")}
               </Button>
             </Link>
           ) : null}
-          <Link href="/knowledge">
-            <Button type="button" variant="secondary">
-              {t(locale, "navKnowledge")} {t(locale, "kbHubLink")}
-            </Button>
-          </Link>
+          {!isCategoryView ? (
+            <Link href="/knowledge">
+              <Button type="button" variant="secondary">
+                {t(locale, "navKnowledge")} {t(locale, "kbHubLink")}
+              </Button>
+            </Link>
+          ) : (
+            <Link href="/knowledge/browse">
+              <Button type="button" variant="secondary" className="text-xs">
+                {t(locale, "knowledgeSeeAll")}
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
+
+      {isCategoryView ? (
+        <form action="/knowledge/browse" method="get" className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/10 p-3">
+          <input type="hidden" name="layer" value={layerFilter} />
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted))]">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M20 20l-3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </span>
+            <Input
+              name="q"
+              defaultValue={q}
+              placeholder={t(locale, "kbSearchInCategoryPh")}
+              className="h-11 rounded-[10px] border-[hsl(var(--border))] bg-[hsl(var(--card))] pl-10 pr-3 text-sm shadow-sm"
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="submit" variant="secondary" className="h-9 rounded-[10px] text-xs">
+              {t(locale, "knowledgeSearch")}
+            </Button>
+            <a className="inline-flex h-9 items-center text-xs text-[hsl(var(--muted))] underline" href={`/knowledge/browse?layer=${layerFilter}`}>
+              {t(locale, "btnReset")}
+            </a>
+          </div>
+        </form>
+      ) : null}
 
       {isCategoryView ? (
         <form
@@ -152,14 +223,9 @@ export default async function KnowledgeBrowsePage({
           className="flex flex-wrap items-end gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs"
         >
           <input type="hidden" name="layer" value={layerFilter} />
-          <div className="flex min-w-[140px] flex-1 flex-col gap-0.5">
-            <label className="text-[10px] font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
-              {t(locale, "commonKeyword")}
-            </label>
-            <Input name="q" defaultValue={q} placeholder={t(locale, "kbPlaceholderKeyword")} className="h-8 text-xs" />
-          </div>
+          <input type="hidden" name="q" value={q} />
           <div className="flex min-w-[120px] flex-col gap-0.5">
-            <label className="text-[10px] font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
+            <label className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
               {t(locale, "commonCompany")}
             </label>
             <select
@@ -176,7 +242,7 @@ export default async function KnowledgeBrowsePage({
             </select>
           </div>
           <div className="flex min-w-[120px] flex-col gap-0.5">
-            <label className="text-[10px] font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
+            <label className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
               {t(locale, "commonProject")}
             </label>
             <select
@@ -193,7 +259,7 @@ export default async function KnowledgeBrowsePage({
             </select>
           </div>
           <div className="flex min-w-[100px] flex-col gap-0.5">
-            <label className="text-[10px] font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
+            <label className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
               {t(locale, "commonAuthor")}
             </label>
             <select
@@ -210,7 +276,7 @@ export default async function KnowledgeBrowsePage({
             </select>
           </div>
           <div className="flex min-w-[100px] flex-col gap-0.5">
-            <label className="text-[10px] font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
+            <label className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
               {t(locale, "commonTagContains")}
             </label>
             <Input name="tag" defaultValue={tagFilter} placeholder="…" className="h-8 text-xs" />
@@ -298,7 +364,10 @@ export default async function KnowledgeBrowsePage({
               <Button type="submit" variant="secondary">
                 {t(locale, "btnApply")}
               </Button>
-              <a className="inline-flex items-center text-xs underline" href="/knowledge/browse">
+              <a
+                className="inline-flex items-center text-sm underline"
+                href={scopedProject ? `/knowledge/browse?projectId=${scopedProject.id}` : "/knowledge/browse"}
+              >
                 {t(locale, "btnReset")}
               </a>
             </div>
@@ -307,23 +376,88 @@ export default async function KnowledgeBrowsePage({
       )}
 
       {!isCategoryView && canCreate ? (
+        projectScope ? (
+          <details className="scroll-mt-24 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-[hsl(var(--foreground))]">
+              {t(locale, "knowledgeAddNew")}
+            </summary>
+            <div className="border-t border-[hsl(var(--border))] p-4">
+              <form action={createKnowledgeAssetAction} className="grid gap-2 md:grid-cols-2">
+                {scopedProject ? (
+                  <>
+                    <input type="hidden" name="projectId" value={scopedProject.id} />
+                    <input type="hidden" name="companyId" value={scopedProject.companyId} />
+                  </>
+                ) : null}
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-sm font-medium">{t(locale, "commonTitle")}</label>
+                  <Input name="title" required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">{t(locale, "commonTitleEn")}</label>
+                  <Input name="titleEn" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">{t(locale, "commonTitleZh")}</label>
+                  <Input name="titleZh" />
+                </div>
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-sm font-medium">{t(locale, "commonLayer")}</label>
+                  <select name="layer" className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm">
+                    {ORDER.map((layer) => (
+                      <option key={layer} value={layer}>
+                        {tKnowledgeLayer(locale, layer)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-sm font-medium">{t(locale, "commonSummary")}</label>
+                  <Input name="summary" />
+                </div>
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-sm font-medium">{t(locale, "commonContent")}</label>
+                  <textarea
+                    name="content"
+                    rows={4}
+                    className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                    placeholder={t(locale, "kbContentOrUrlHint")}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">{t(locale, "commonLabels")}</label>
+                  <Input name="tags" placeholder={t(locale, "kbTagsPlaceholder")} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">{t(locale, "commonSourceUrl")}</label>
+                  <Input name="sourceUrl" type="url" placeholder="https://drive.google.com/..." />
+                </div>
+                <div className="md:col-span-2">
+                  <Button type="submit" variant="secondary">
+                    {t(locale, "kbCreateAsset")}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </details>
+        ) : (
         <Card id="knowledge-create" className="scroll-mt-24 space-y-3 p-4">
           <CardTitle>{t(locale, "knowledgeAddNew")}</CardTitle>
           <form action={createKnowledgeAssetAction} className="grid gap-2 md:grid-cols-2">
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "commonTitle")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonTitle")}</label>
               <Input name="title" required />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonTitleEn")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonTitleEn")}</label>
               <Input name="titleEn" />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonTitleZh")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonTitleZh")}</label>
               <Input name="titleZh" />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonLayer")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonLayer")}</label>
               <select name="layer" className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm">
                 {ORDER.map((layer) => (
                   <option key={layer} value={layer}>
@@ -333,7 +467,7 @@ export default async function KnowledgeBrowsePage({
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">
+              <label className="text-sm font-medium">
                 {t(locale, "commonProject")} ({t(locale, "commonOptional")})
               </label>
               <select name="projectId" className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm">
@@ -344,7 +478,7 @@ export default async function KnowledgeBrowsePage({
               </select>
             </div>
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">
+              <label className="text-sm font-medium">
                 {t(locale, "commonCompany")} ({t(locale, "commonOptional")})
               </label>
               <select name="companyId" className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm">
@@ -382,26 +516,96 @@ export default async function KnowledgeBrowsePage({
             </div>
           </form>
         </Card>
+        )
       ) : null}
 
       {layersToShow.map((layer) => {
         const rows = assets.filter((a) => a.layer === layer);
         return (
-          <Card key={layer} className={isCategoryView ? "space-y-3 border-dashed p-4" : "space-y-3 p-4"}>
+          <Card key={layer} className={hubEntryLayout ? "space-y-4 border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-sm" : "space-y-3 p-4"}>
             {!isCategoryView ? <CardTitle>{tKnowledgeLayer(locale, layer)}</CardTitle> : null}
             {rows.length ? (
-              <ul className="space-y-2 text-sm">
-                {rows.map((a) => (
-                  <li key={a.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                    <div className="font-medium">{a.title}</div>
-                    <div className="text-xs text-[hsl(var(--muted))]">
-                      {t(locale, "kbByAuthor")} {a.author.name} ·{" "}
-                      {a.project?.name ?? a.company?.name ?? t(locale, "kbUncategorizedShort")} ·{" "}
-                      {t(locale, "kbReusedTimes")} {a.reuseCount} {t(locale, "kbTimesSuffix")}
-                    </div>
-                    {a.summary ? <p className="mt-1 text-xs text-[hsl(var(--muted))]">{a.summary}</p> : null}
-                    <p className="mt-1 text-sm">{a.content}</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
+              <ul className={hubEntryLayout ? "space-y-4 text-sm" : "space-y-2 text-sm"}>
+                {rows.map((a) => {
+                  const descRaw = (a.summary ?? a.content ?? "").replace(/\s+/g, " ").trim();
+                  const descShort = descRaw.slice(0, 180);
+                  const attachUrl = a.attachments.map((x) => x.externalUrl).find((u) => u && String(u).trim());
+                  const openHref = ((a.sourceUrl ?? "").trim() || (attachUrl ?? "").trim()) || null;
+                  return (
+                  <li
+                    key={a.id}
+                    className={
+                      hubEntryLayout
+                        ? "rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-sm"
+                        : "rounded-md border border-[hsl(var(--border))] px-3 py-2"
+                    }
+                  >
+                    {hubEntryLayout ? (
+                      <>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <h3 className="min-w-0 flex-1 text-lg font-semibold leading-snug text-[hsl(var(--foreground))]">{a.title}</h3>
+                          <span className="shrink-0 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/10 px-2.5 py-0.5 text-xs text-[hsl(var(--muted))]">
+                            {sourceTypeLabel(locale, openHref)}
+                          </span>
+                        </div>
+                        {descRaw ? (
+                          <p className="mt-2 text-sm text-[hsl(var(--foreground))]/90">
+                            {descShort}
+                            {descRaw.length > 180 ? "…" : ""}
+                          </p>
+                        ) : null}
+                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[hsl(var(--muted))]">
+                          <span>
+                            {t(locale, "kbMetaContributor")}: {a.author.name}
+                          </span>
+                          <span>
+                            {t(locale, "kbMetaCompany")}: {a.company?.name ?? "—"}
+                          </span>
+                          {a.project ? (
+                            <span>
+                              {t(locale, "kbMetaProject")}: {a.project.name}
+                            </span>
+                          ) : null}
+                          <span>
+                            {t(locale, "kbMetaAdded")}: {a.createdAt.toISOString().slice(0, 10)}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="font-medium">{a.title}</div>
+                        <div className="text-xs text-[hsl(var(--muted))]">
+                          {t(locale, "kbByAuthor")} {a.author.name} ·{" "}
+                          {a.project?.name ?? a.company?.name ?? t(locale, "kbUncategorizedShort")} ·{" "}
+                          {t(locale, "kbReusedTimes")} {a.reuseCount} {t(locale, "kbTimesSuffix")}
+                        </div>
+                        {a.summary ? <p className="mt-1 text-xs text-[hsl(var(--muted))]">{a.summary}</p> : null}
+                        <p className="mt-1 text-sm">{a.content}</p>
+                      </>
+                    )}
+                    <div
+                      className={`flex flex-wrap gap-2 ${hubEntryLayout ? "mt-4 items-center justify-between gap-y-3" : "mt-2"}`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        {hubEntryLayout && openHref ? (
+                          <a
+                            href={openHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-transparent px-3 text-xs font-medium text-[hsl(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+                              <path
+                                d="M6 3H3v10h10v-3M13 3L8 8M9 3h4v4"
+                                stroke="currentColor"
+                                strokeWidth="1.2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                            {t(locale, "kbOpenResource")}
+                          </a>
+                        ) : null}
                       <form action={incrementKnowledgeReuseAction}>
                         <input type="hidden" name="id" value={a.id} />
                         <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
@@ -416,8 +620,129 @@ export default async function KnowledgeBrowsePage({
                           </Button>
                         </form>
                       ) : null}
+                      {hubEntryLayout && canCreate ? (
+                        <OpenDialogButton
+                          dialogId={`kb-edit-${a.id}`}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-transparent px-3 text-xs font-medium text-[hsl(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+                            <path
+                              d="M11.3 2.3l2.4 2.4M10 3.6L3 10.6v2.8h2.8l7-7 1.4-1.4-2.8-2.8z"
+                              stroke="currentColor"
+                              strokeWidth="1.2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          {t(locale, "kbEditKnowledge")}
+                        </OpenDialogButton>
+                      ) : null}
+                      </div>
+                      {hubEntryLayout ? (
+                        <span className="shrink-0 text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                          {t(locale, "kbReusedNTimes").replace("{n}", String(a.reuseCount))}
+                        </span>
+                      ) : null}
                     </div>
-                    {canCreate ? (
+                    {canCreate && hubEntryLayout ? (
+                      <dialog
+                        id={`kb-edit-${a.id}`}
+                        className="app-modal-dialog z-50 max-h-[min(90vh,640px)] w-[min(100vw-2rem,480px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+                      >
+                        <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-4 py-3">
+                          <div>
+                            <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">{t(locale, "kbEditKnowledge")}</h3>
+                            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbEditDialogSubtitle")}</p>
+                          </div>
+                          <CloseDialogButton
+                            dialogId={`kb-edit-${a.id}`}
+                            className="rounded-lg px-2 py-1 text-xs text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
+                            label={t(locale, "kbDialogClose")}
+                          />
+                        </div>
+                        <form action={updateKnowledgeAssetAction} className="max-h-[calc(90vh-120px)] space-y-3 overflow-y-auto p-4">
+                          <input type="hidden" name="id" value={a.id} />
+                          <input type="hidden" name="titleEn" value={a.titleEn ?? ""} />
+                          <input type="hidden" name="titleZh" value={a.titleZh ?? ""} />
+                          <textarea name="content" defaultValue={a.content} className="sr-only" readOnly rows={1} tabIndex={-1} aria-hidden />
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">{t(locale, "kbEditTitle")}</label>
+                            <Input name="title" defaultValue={a.title} required className="text-sm" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">{t(locale, "kbEditSummary")}</label>
+                            <Input name="summary" defaultValue={a.summary ?? ""} className="text-sm" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">{t(locale, "commonLayer")}</label>
+                            <select
+                              name="layer"
+                              defaultValue={a.layer}
+                              className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-sm"
+                            >
+                              {ORDER.map((layerOpt) => (
+                                <option key={layerOpt} value={layerOpt}>
+                                  {tKnowledgeLayer(locale, layerOpt)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">{t(locale, "commonSourceUrl")}</label>
+                            <Input name="sourceUrl" type="url" defaultValue={a.sourceUrl ?? ""} className="text-sm" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">{t(locale, "kbTagsField")}</label>
+                            <Input name="tags" defaultValue={a.tags ?? ""} className="text-sm" placeholder={t(locale, "kbTagsPlaceholder")} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">
+                              {t(locale, "commonProject")} ({t(locale, "commonOptional")})
+                            </label>
+                            <select
+                              name="projectId"
+                              defaultValue={a.projectId ?? ""}
+                              className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-sm"
+                            >
+                              <option value="">{t(locale, "kbGeneralProject")}</option>
+                              {projects.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">
+                              {t(locale, "commonCompany")} ({t(locale, "commonOptional")})
+                            </label>
+                            <select
+                              name="companyId"
+                              defaultValue={a.companyId ?? ""}
+                              className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-sm"
+                            >
+                              <option value="">{t(locale, "kbInferCompany")}</option>
+                              {companies.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex flex-wrap gap-2 pt-2">
+                            <Button type="submit" className="min-w-[120px] flex-1">
+                              {t(locale, "kbSaveChanges")}
+                            </Button>
+                            <CloseDialogButton
+                              dialogId={`kb-edit-${a.id}`}
+                              className="rounded-lg border border-[hsl(var(--border))] px-4 py-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                              label={t(locale, "kbDialogClose")}
+                            />
+                          </div>
+                        </form>
+                      </dialog>
+                    ) : null}
+                    {canCreate && !hubEntryLayout ? (
                       <form action={updateKnowledgeAssetAction} className="mt-2 grid gap-2 rounded-md border border-[hsl(var(--border))] p-2 md:grid-cols-2">
                         <input type="hidden" name="id" value={a.id} />
                         <div className="space-y-1 md:col-span-2">
@@ -431,6 +756,54 @@ export default async function KnowledgeBrowsePage({
                         <div className="space-y-1">
                           <label className="text-xs font-medium">{t(locale, "commonTitleZh")}</label>
                           <Input name="titleZh" defaultValue={a.titleZh ?? ""} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium">{t(locale, "commonLayer")}</label>
+                          <select
+                            name="layer"
+                            defaultValue={a.layer}
+                            className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                          >
+                            {ORDER.map((layerOpt) => (
+                              <option key={layerOpt} value={layerOpt}>
+                                {tKnowledgeLayer(locale, layerOpt)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium">
+                            {t(locale, "commonProject")} ({t(locale, "commonOptional")})
+                          </label>
+                          <select
+                            name="projectId"
+                            defaultValue={a.projectId ?? ""}
+                            className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                          >
+                            <option value="">{t(locale, "kbGeneralProject")}</option>
+                            {projects.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1 md:col-span-2">
+                          <label className="text-xs font-medium">
+                            {t(locale, "commonCompany")} ({t(locale, "commonOptional")})
+                          </label>
+                          <select
+                            name="companyId"
+                            defaultValue={a.companyId ?? ""}
+                            className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                          >
+                            <option value="">{t(locale, "kbInferCompany")}</option>
+                            {companies.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
                         </div>
                         <div className="space-y-1 md:col-span-2">
                           <label className="text-xs font-medium">{t(locale, "kbEditSummary")}</label>
@@ -461,76 +834,151 @@ export default async function KnowledgeBrowsePage({
                       </form>
                     ) : null}
                     {canCreate && (user.id === a.authorId || user.isSuperAdmin) ? (
-                      <div className="mt-2 space-y-2 rounded-md border border-dashed border-[hsl(var(--border))] p-2">
-                        <p className="text-xs font-medium">{t(locale, "kbAttachments")}</p>
-                        <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbAttachHelp")}</p>
-                        {a.attachments.length ? (
-                          <AttachmentVersionTree
-                            attachments={a.attachments.map((f) => ({
-                              id: f.id,
-                              previousVersionId: f.previousVersionId,
-                              fileName: f.fileName,
-                              createdAt: f.createdAt,
-                              resourceKind: f.resourceKind,
-                              externalUrl: f.externalUrl,
-                              description:
-                                [
-                                  f.titleEn || f.titleZh
-                                    ? `(${[f.titleEn, f.titleZh].filter(Boolean).join(" / ")})`
-                                    : null,
-                                  f.description,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" ") || null,
-                            }))}
-                            locale={locale}
-                            showTrash={canCreate && (user.id === a.authorId || user.isSuperAdmin)}
-                          />
-                        ) : (
-                          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
-                        )}
-                        <form
-                          action={addExternalResourceLinkAction}
-                          className="grid gap-2 border-t border-[hsl(var(--border))] pt-2 md:grid-cols-2"
-                        >
-                          <input type="hidden" name="knowledgeAssetId" value={a.id} />
-                          <div className="space-y-1 md:col-span-2">
-                            <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
-                            <Input name="externalUrl" type="url" required placeholder="https://drive.google.com/..." className="text-xs" />
-                          </div>
-                          <div className="space-y-1 md:col-span-2">
-                            <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
-                            <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
-                          </div>
-                          <div className="space-y-1 md:col-span-2">
-                            <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
-                            <Input name="description" className="text-xs" />
-                          </div>
-                          <div className="space-y-1 md:col-span-2">
-                            <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
-                            <select
-                              name="previousVersionId"
-                              className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
-                              defaultValue=""
+                      hubEntryLayout ? (
+                        <details className="mt-2 rounded-md border border-dashed border-[hsl(var(--border))] text-xs">
+                          <summary className="cursor-pointer select-none px-3 py-2 font-medium text-[hsl(var(--foreground))]">
+                            {t(locale, "kbAttachments")} ({a.attachments.length})
+                          </summary>
+                          <div className="space-y-2 border-t border-[hsl(var(--border))] p-2">
+                            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbAttachHelp")}</p>
+                            {a.attachments.length ? (
+                              <AttachmentVersionTree
+                                attachments={a.attachments.map((f) => ({
+                                  id: f.id,
+                                  previousVersionId: f.previousVersionId,
+                                  fileName: f.fileName,
+                                  createdAt: f.createdAt,
+                                  resourceKind: f.resourceKind,
+                                  externalUrl: f.externalUrl,
+                                  description:
+                                    [
+                                      f.titleEn || f.titleZh
+                                        ? `(${[f.titleEn, f.titleZh].filter(Boolean).join(" / ")})`
+                                        : null,
+                                      f.description,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ") || null,
+                                }))}
+                                locale={locale}
+                                showTrash={canCreate && (user.id === a.authorId || user.isSuperAdmin)}
+                              />
+                            ) : (
+                              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
+                            )}
+                            <form
+                              action={addExternalResourceLinkAction}
+                              className="grid gap-2 border-t border-[hsl(var(--border))] pt-2 md:grid-cols-2"
                             >
-                              <option value="">{t(locale, "wfNewVersionNone")}</option>
-                              {a.attachments.map((f) => (
-                                <option key={f.id} value={f.id}>
-                                  {f.fileName} ({f.createdAt.toISOString().slice(0, 10)})
-                                </option>
-                              ))}
-                            </select>
+                              <input type="hidden" name="knowledgeAssetId" value={a.id} />
+                              <div className="space-y-1 md:col-span-2">
+                                <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
+                                <Input name="externalUrl" type="url" required placeholder="https://drive.google.com/..." className="text-xs" />
+                              </div>
+                              <div className="space-y-1 md:col-span-2">
+                                <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
+                                <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
+                              </div>
+                              <div className="space-y-1 md:col-span-2">
+                                <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
+                                <Input name="description" className="text-xs" />
+                              </div>
+                              <div className="space-y-1 md:col-span-2">
+                                <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
+                                <select
+                                  name="previousVersionId"
+                                  className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                                  defaultValue=""
+                                >
+                                  <option value="">{t(locale, "wfNewVersionNone")}</option>
+                                  {a.attachments.map((f) => (
+                                    <option key={f.id} value={f.id}>
+                                      {f.fileName} ({f.createdAt.toISOString().slice(0, 10)})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="md:col-span-2">
+                                <Button type="submit" variant="secondary" className="h-8 text-xs">
+                                  {t(locale, "resAddLink")}
+                                </Button>
+                              </div>
+                            </form>
                           </div>
-                          <div className="md:col-span-2">
-                            <Button type="submit" variant="secondary" className="h-8 text-xs">
-                              {t(locale, "resAddLink")}
-                            </Button>
-                          </div>
-                        </form>
-                      </div>
+                        </details>
+                      ) : (
+                        <div className="mt-2 space-y-2 rounded-md border border-dashed border-[hsl(var(--border))] p-2">
+                          <p className="text-xs font-medium">{t(locale, "kbAttachments")}</p>
+                          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbAttachHelp")}</p>
+                          {a.attachments.length ? (
+                            <AttachmentVersionTree
+                              attachments={a.attachments.map((f) => ({
+                                id: f.id,
+                                previousVersionId: f.previousVersionId,
+                                fileName: f.fileName,
+                                createdAt: f.createdAt,
+                                resourceKind: f.resourceKind,
+                                externalUrl: f.externalUrl,
+                                description:
+                                  [
+                                    f.titleEn || f.titleZh
+                                      ? `(${[f.titleEn, f.titleZh].filter(Boolean).join(" / ")})`
+                                      : null,
+                                    f.description,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" ") || null,
+                              }))}
+                              locale={locale}
+                              showTrash={canCreate && (user.id === a.authorId || user.isSuperAdmin)}
+                            />
+                          ) : (
+                            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
+                          )}
+                          <form
+                            action={addExternalResourceLinkAction}
+                            className="grid gap-2 border-t border-[hsl(var(--border))] pt-2 md:grid-cols-2"
+                          >
+                            <input type="hidden" name="knowledgeAssetId" value={a.id} />
+                            <div className="space-y-1 md:col-span-2">
+                              <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
+                              <Input name="externalUrl" type="url" required placeholder="https://drive.google.com/..." className="text-xs" />
+                            </div>
+                            <div className="space-y-1 md:col-span-2">
+                              <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
+                              <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
+                            </div>
+                            <div className="space-y-1 md:col-span-2">
+                              <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
+                              <Input name="description" className="text-xs" />
+                            </div>
+                            <div className="space-y-1 md:col-span-2">
+                              <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
+                              <select
+                                name="previousVersionId"
+                                className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                                defaultValue=""
+                              >
+                                <option value="">{t(locale, "wfNewVersionNone")}</option>
+                                {a.attachments.map((f) => (
+                                  <option key={f.id} value={f.id}>
+                                    {f.fileName} ({f.createdAt.toISOString().slice(0, 10)})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="md:col-span-2">
+                              <Button type="submit" variant="secondary" className="h-8 text-xs">
+                                {t(locale, "resAddLink")}
+                              </Button>
+                            </div>
+                          </form>
+                        </div>
+                      )
                     ) : null}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             ) : (
               <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "kbNoAssetsInLayer")}</p>

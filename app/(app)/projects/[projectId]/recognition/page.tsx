@@ -24,7 +24,6 @@ export default async function ProjectRecognitionPage({ params }: { params: Promi
     include: {
       company: true,
       memberships: { include: { user: true } },
-      nodes: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" } },
       knowledgeAssets: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" }, take: 40 },
       recognitions: {
         include: { toUser: true, fromUser: true },
@@ -70,17 +69,6 @@ export default async function ProjectRecognitionPage({ params }: { params: Promi
             </div>
             <div className="md:col-span-2">
               <RecognitionSecondarySelect defaultCategory="COLLABORATION" locale={locale} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "projRecLinkNode")}</label>
-              <Select name="workflowNodeId">
-                <option value="">—</option>
-                {project.nodes.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.title}
-                  </option>
-                ))}
-              </Select>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "projRecLinkKnowledge")}</label>

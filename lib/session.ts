@@ -1,8 +1,14 @@
 import type { SessionOptions } from "iron-session";
 
+export type TaskUndoPayload =
+  | { projectId: string; mode: "nodes"; nodeIds: string[] }
+  | { projectId: string; mode: "bulk"; deletedAtISO: string };
+
 export type AppSessionData = {
   userId?: string;
   isLoggedIn?: boolean;
+  /** Last project task soft-delete batch (single task + subtasks, or delete-all), for Undo. */
+  taskUndo?: TaskUndoPayload;
 };
 
 export const sessionOptions: SessionOptions = {

@@ -63,10 +63,18 @@ export async function requireUser() {
     if (!userId) redirect("/sign-in");
     const user = await getCurrentUser();
     if (!user || !user.active) redirect("/pending-access");
+    if (!user.firstSignInAt) {
+      await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
+      return (await loadUserById(user.id)) as AccessUser;
+    }
     return user as AccessUser;
   }
 
   const user = await getCurrentUser();
   if (!user || !user.active) redirect("/login");
+  if (!user.firstSignInAt) {
+    await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
+    return (await loadUserById(user.id)) as AccessUser;
+  }
   return user as AccessUser;
 }

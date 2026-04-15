@@ -32,12 +32,69 @@ const CATS: LeaderboardCategory[] = ["EXECUTION", "COLLABORATION", "KNOWLEDGE", 
 
 function catTitle(locale: "en" | "zh", c: LeaderboardCategory): string {
   const key: Record<LeaderboardCategory, MessageKey> = {
-    EXECUTION: "lbExecution",
-    COLLABORATION: "lbCollaboration",
-    KNOWLEDGE: "lbKnowledge",
-    RECOGNITION: "lbRecognition",
+    EXECUTION: "lbTabExecution",
+    COLLABORATION: "lbTabCollaboration",
+    KNOWLEDGE: "lbTabKnowledge",
+    RECOGNITION: "lbTabRecognition",
   };
   return t(locale, key[c]);
+}
+
+const CAT_SCORE: Record<LeaderboardCategory, string> = {
+  EXECUTION: "text-sky-600 dark:text-sky-400",
+  COLLABORATION: "text-emerald-600 dark:text-emerald-400",
+  KNOWLEDGE: "text-violet-600 dark:text-violet-400",
+  RECOGNITION: "text-amber-600 dark:text-amber-400",
+};
+
+function CatTabIcon({ cat }: { cat: LeaderboardCategory }) {
+  if (cat === "EXECUTION") {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="shrink-0" aria-hidden>
+        <path d="M4 19h16M5 15l4-8 4 5 4-9 3 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (cat === "COLLABORATION") {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="shrink-0" aria-hidden>
+        <path
+          d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  if (cat === "KNOWLEDGE") {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="shrink-0" aria-hidden>
+        <path d="M4 19.5A2.5 2.5 0 016.5 17H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="shrink-0" aria-hidden>
+      <path d="M12 15c-2.5 0-4.5-2-4.5-4.5V6l4.5-3 4.5 3v4.5C16.5 13 14.5 15 12 15z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M8 21h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function rankBadge(locale: "en" | "zh", i: number) {
+  if (i === 0) return <span className="text-lg" title={t(locale, "lbRankFirst")}>👑</span>;
+  if (i === 1) return <span className="text-lg" title={t(locale, "lbRankSecond")}>🥈</span>;
+  if (i === 2) return <span className="text-lg" title={t(locale, "lbRankThird")}>🥉</span>;
+  return <span className="w-6 text-center text-sm font-semibold text-zinc-400">{i + 1}</span>;
+}
+
+function initials(name: string) {
+  const p = name.trim().split(/\s+/).filter(Boolean);
+  if (!p.length) return "?";
+  if (p.length === 1) return p[0]!.slice(0, 2).toUpperCase();
+  return (p[0]![0]! + p[p.length - 1]![0]!).toUpperCase();
 }
 
 export default async function LeaderboardPage({
@@ -116,82 +173,135 @@ export default async function LeaderboardPage({
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{t(locale, "navLeaderboards")}</h1>
-        <p className="mt-1 text-sm text-[hsl(var(--muted))]">{t(locale, "lbPageSubtitle")}</p>
+    <div className="space-y-8">
+      <div className="flex items-start gap-3">
+        <span className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <path d="M12 2l2.2 6.8H21l-5.5 4 2.1 6.7L12 16.9 6.4 19.5l2.1-6.7L3 8.8h6.8L12 2z" />
+          </svg>
+        </span>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{t(locale, "lbTrophyTitle")}</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{t(locale, "lbTrophySubtitle")}</p>
+        </div>
       </div>
 
-      <Card className="space-y-3 p-4">
-        <CardTitle>{t(locale, "lbFiltersCardTitle")}</CardTitle>
-        <div className="flex flex-wrap gap-2 text-sm">
-          {CATS.map((c) => (
-            <Link key={c} href={`/leaderboard${qs({ cat: c })}`}>
-              <Button type="button" variant={c === cat ? "primary" : "secondary"} className="h-8 text-xs">
-                {catTitle(locale, c)}
-              </Button>
-            </Link>
-          ))}
-        </div>
-        <form className="flex flex-wrap gap-2 text-sm" method="get">
+      <div className="rounded-xl border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+        <form className="grid gap-3 md:grid-cols-2 lg:grid-cols-4" method="get">
           <input type="hidden" name="cat" value={cat} />
-          <select name="period" defaultValue={period} className="h-9 rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs">
-            <option value="weekly">{t(locale, "periodWeekly")}</option>
-            <option value="monthly">{t(locale, "periodMonthly")}</option>
-          </select>
-          <select name="scope" defaultValue={scope} className="h-9 rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs">
-            <option value="ALL">{t(locale, "scopeAll")}</option>
-            <option value="COMPANY">{t(locale, "scopeCompany")}</option>
-            <option value="PROJECT">{t(locale, "scopeProject")}</option>
-            <option value="ROLE">{t(locale, "scopeRole")}</option>
-          </select>
-          <select name="companyId" defaultValue={companyId ?? ""} className="h-9 min-w-[160px] rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs">
-            <option value="">— {t(locale, "scopeCompany")}</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <select name="projectId" defaultValue={projectId ?? ""} className="h-9 min-w-[180px] rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs">
-            <option value="">— {t(locale, "scopeProject")}</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.company.name} / {p.name}</option>
-            ))}
-          </select>
-          <select name="roleKey" defaultValue={roleKey ?? ""} className="h-9 min-w-[160px] rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs">
-            <option value="">— {t(locale, "scopeRole")}</option>
-            {roles.map((r) => (
-              <option key={r.id} value={r.key}>{r.displayName}</option>
-            ))}
-          </select>
-          <Button type="submit" variant="secondary" className="h-9 text-xs">
-            {t(locale, "btnApply")}
-          </Button>
-          <Link className="self-center text-xs underline" href="/leaderboard">
-            {t(locale, "btnReset")}
-          </Link>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-zinc-500">{t(locale, "lbPeriodPrefix")}</label>
+            <select name="period" defaultValue={period} className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950">
+              <option value="weekly">{t(locale, "periodWeekly")}</option>
+              <option value="monthly">{t(locale, "periodMonthly")}</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-zinc-500">{t(locale, "kbAllCompanies")}</label>
+            <select name="companyId" defaultValue={companyId ?? ""} className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950">
+              <option value="">{t(locale, "kbAllCompanies")}</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-zinc-500">{t(locale, "lbFiltersCardTitle")}</label>
+            <select name="scope" defaultValue={scope} className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950">
+              <option value="ALL">{t(locale, "scopeAll")}</option>
+              <option value="COMPANY">{t(locale, "scopeCompany")}</option>
+              <option value="PROJECT">{t(locale, "scopeProject")}</option>
+              <option value="ROLE">{t(locale, "scopeRole")}</option>
+            </select>
+          </div>
+          <div className="flex items-end gap-2 md:col-span-2 lg:col-span-1">
+            <Button type="submit" variant="secondary" className="h-10 flex-1 rounded-lg text-xs">
+              {t(locale, "btnApply")}
+            </Button>
+            <Link className="mb-2 inline-flex h-10 items-center text-xs font-medium text-zinc-500 underline" href="/leaderboard">
+              {t(locale, "btnReset")}
+            </Link>
+          </div>
+          <div className="space-y-1 md:col-span-2">
+            <label className="text-xs font-medium text-zinc-500">{t(locale, "scopeProject")}</label>
+            <select name="projectId" defaultValue={projectId ?? ""} className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950">
+              <option value="">—</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.company.name} / {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1 md:col-span-2">
+            <label className="text-xs font-medium text-zinc-500">{t(locale, "scopeRole")}</label>
+            <select name="roleKey" defaultValue={roleKey ?? ""} className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950">
+              <option value="">—</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.key}>
+                  {r.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
         </form>
-      </Card>
+      </div>
 
-      <Card className="space-y-3 p-4">
-        <CardTitle>{catTitle(locale, cat)}</CardTitle>
-        <p className="text-xs text-[hsl(var(--muted))]">
-          {t(locale, "lbPeriodPrefix")} {periodStart.toISOString().slice(0, 10)} –{" "}
-          {new Date(periodEnd.getTime() - 1).toISOString().slice(0, 10)} · {t(locale, "lbScoresExplain")}
-        </p>
-        <ol className="space-y-2 text-sm">
+      <div className="flex flex-wrap gap-2 rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
+        {CATS.map((c) => (
+          <Link
+            key={c}
+            href={`/leaderboard${qs({ cat: c })}`}
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
+              c === cat
+                ? "bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-900"
+                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            }`}
+          >
+            <CatTabIcon cat={c} />
+            {catTitle(locale, c)}
+          </Link>
+        ))}
+      </div>
+
+      <Card className="overflow-hidden border-zinc-200/90 p-0 shadow-sm dark:border-zinc-800">
+        <div className="border-b border-zinc-100 bg-zinc-50/80 px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+            {catTitle(locale, cat)} · {t(locale, "lbLeaderboardBoard")}
+          </CardTitle>
+          <p className="mt-1 text-xs text-zinc-500">
+            {periodStart.toISOString().slice(0, 10)} – {new Date(periodEnd.getTime() - 1).toISOString().slice(0, 10)} · {t(locale, "lbScoresExplain")}
+          </p>
+        </div>
+        <ol className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {totals.length ? (
-            totals.map((row, i) => (
-              <li key={row.userId} className="flex items-center justify-between rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                <span>
-                  <span className="text-[hsl(var(--muted))]">{i + 1}.</span> {nameById.get(row.userId) ?? row.userId}
-                </span>
-                <span className="text-xs text-[hsl(var(--muted))]">
-                  {row.total} {t(locale, "lbPtsUnit")}
-                </span>
-              </li>
-            ))
+            totals.map((row, i) => {
+              const nm = nameById.get(row.userId) ?? row.userId;
+              return (
+                <li key={row.userId} className="flex items-center gap-4 px-5 py-4">
+                  <div className="flex w-10 shrink-0 justify-center">{rankBadge(locale, i)}</div>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-xs font-bold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                    {initials(nm)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      href={`/staff/${row.userId}`}
+                      className="truncate font-semibold text-zinc-900 hover:underline dark:text-zinc-50"
+                    >
+                      {nm}
+                    </Link>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className={`text-xl font-bold tabular-nums ${CAT_SCORE[cat]}`}>{row.total}</p>
+                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">{t(locale, "lbPtsUnit")}</p>
+                  </div>
+                </li>
+              );
+            })
           ) : (
-            <li className="text-sm text-[hsl(var(--muted))]">{t(locale, "lbEmptyPeriod")}</li>
+            <li className="px-5 py-8 text-center text-sm text-zinc-500">{t(locale, "lbEmptyPeriod")}</li>
           )}
         </ol>
       </Card>

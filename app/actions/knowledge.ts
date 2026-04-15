@@ -98,8 +98,17 @@ export async function updateKnowledgeAssetAction(formData: FormData) {
 
   const titleEn = String(formData.get("titleEn") ?? "").trim() || null;
   const titleZh = String(formData.get("titleZh") ?? "").trim() || null;
-  const companyId = String(formData.get("companyId") ?? "").trim() || null;
+  let companyId = String(formData.get("companyId") ?? "").trim() || null;
   const language = String(formData.get("language") ?? "").trim() || undefined;
+  const layerRaw = String(formData.get("layer") ?? "").trim() as KnowledgeLayer;
+  const layer = (Object.values(KnowledgeLayer) as string[]).includes(layerRaw) ? layerRaw : existing.layer;
+  const projectIdRaw = String(formData.get("projectId") ?? "").trim();
+  const projectId = projectIdRaw || null;
+  if (projectId) {
+    const p = await prisma.project.findFirst({ where: { id: projectId, deletedAt: null } });
+    if (!p) throw new Error("Project not found");
+    if (!companyId) companyId = p.companyId;
+  }
 
   await prisma.knowledgeAsset.update({
     where: { id },
@@ -111,6 +120,8 @@ export async function updateKnowledgeAssetAction(formData: FormData) {
       content,
       tags,
       sourceUrl,
+      layer,
+      projectId,
       ...(companyId !== null && companyId !== "" ? { companyId } : { companyId: null }),
       ...(language ? { language } : {}),
     },
@@ -126,6 +137,7 @@ export async function updateKnowledgeAssetAction(formData: FormData) {
   revalidatePath("/knowledge");
   revalidatePath("/knowledge/browse");
   if (existing.projectId) revalidatePath(`/projects/${existing.projectId}`);
+  if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
 export async function incrementKnowledgeReuseAction(formData: FormData) {
@@ -186,6 +198,7 @@ export async function softDeleteKnowledgeAssetAction(formData: FormData) {
   });
   revalidatePath("/knowledge");
   revalidatePath("/knowledge/browse");
+  if (existing.projectId) revalidatePath(`/projects/${existing.projectId}`);
 }
 
 export async function restoreKnowledgeAssetAction(formData: FormData) {

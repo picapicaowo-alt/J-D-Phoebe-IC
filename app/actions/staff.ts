@@ -61,16 +61,26 @@ export async function updateStaffAction(formData: FormData) {
     });
   }
 
+  const data: { name: string; title: string | null; active?: boolean; contactEmails?: string | null; phone?: string | null } = {
+    name,
+    title,
+    ...(isSuperAdmin(actor) ? { active } : {}),
+  };
+  if (formData.has("contactEmails")) {
+    data.contactEmails = String(formData.get("contactEmails") ?? "").trim() || null;
+  }
+  if (formData.has("phone")) {
+    data.phone = String(formData.get("phone") ?? "").trim() || null;
+  }
+
   await prisma.user.update({
     where: { id: userId },
-    data: {
-      name,
-      title,
-      ...(isSuperAdmin(actor) ? { active } : {}),
-    },
+    data,
   });
   revalidatePath(`/staff/${userId}`);
   revalidatePath("/staff");
+  revalidatePath("/settings/profile");
+  revalidatePath("/home");
 }
 
 export async function assignCompanyAction(formData: FormData) {
@@ -79,6 +89,55 @@ export async function assignCompanyAction(formData: FormData) {
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
   const roleDefinitionId = requireString(formData, "roleDefinitionId");
+  const departmentIdRaw = String(formData.get("departmentId") ?? "").trim();
+  const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
+  if (!company) throw new Error("Company not found");
+  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, company.orgGroupId) && !isCompanyAdmin(actor, companyId)) {
+    throw new Error("Forbidden");
+  }
+
+  const departmentId: string | null = departmentIdRaw
+    ? await (async () => {
+        const d = await prisma.department.findFirst({ where: { id: departmentIdRaw, companyId } });
+        if (!d) throw new Error("Invalid department for this company");
+        return d.id;
+      })()
+    : null;
+
+  const supervisorUserIdRaw = String(formData.get("supervisorUserId") ?? "").trim();
+  const supervisorUserId = supervisorUserIdRaw
+    ? await (async () => {
+        const u = await prisma.user.findFirst({ where: { id: supervisorUserIdRaw, deletedAt: null } });
+        if (!u) throw new Error("Invalid supervisor");
+        return u.id;
+      })()
+    : null;
+
+  await prisma.companyMembership.upsert({
+    where: { userId_companyId: { userId, companyId } },
+    create: { userId, companyId, roleDefinitionId, departmentId, supervisorUserId },
+    update: { roleDefinitionId, departmentId, supervisorUserId },
+  });
+  const { ensureMemberOnboardingForCompany } = await import("@/lib/member-onboarding");
+  await ensureMemberOnboardingForCompany(userId, companyId);
+  invalidatePermissionCache(userId);
+  revalidatePath(`/staff/${userId}`);
+  revalidatePath(`/companies/${companyId}`);
+}
+
+export async function updateCompanyMembershipSupervisorAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  await assertPermission(actor, "staff.assign_company");
+  const userId = requireString(formData, "userId");
+  const companyId = requireString(formData, "companyId");
+  const supervisorUserIdRaw = String(formData.get("supervisorUserId") ?? "").trim();
+  const supervisorUserId = supervisorUserIdRaw
+    ? await (async () => {
+        const u = await prisma.user.findFirst({ where: { id: supervisorUserIdRaw, deletedAt: null } });
+        if (!u) throw new Error("Invalid supervisor");
+        return u.id;
+      })()
+    : null;
 
   const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
   if (!company) throw new Error("Company not found");
@@ -86,14 +145,70 @@ export async function assignCompanyAction(formData: FormData) {
     throw new Error("Forbidden");
   }
 
-  await prisma.companyMembership.upsert({
+  const membership = await prisma.companyMembership.findUnique({
     where: { userId_companyId: { userId, companyId } },
-    create: { userId, companyId, roleDefinitionId },
-    update: { roleDefinitionId },
+  });
+  if (!membership) throw new Error("User is not a member of this company");
+
+  await prisma.companyMembership.update({
+    where: { id: membership.id },
+    data: { supervisorUserId },
+  });
+  const { ensureMemberOnboardingForCompany } = await import("@/lib/member-onboarding");
+  await ensureMemberOnboardingForCompany(userId, companyId);
+  if (supervisorUserId) {
+    const sup = await prisma.user.findFirst({ where: { id: supervisorUserId } });
+    if (sup) {
+      await prisma.memberOnboarding.updateMany({
+        where: { userId, companyId },
+        data: { liaisonUserId: sup.id, liaisonName: sup.name, liaisonEmail: sup.email },
+      });
+    }
+  } else {
+    await prisma.memberOnboarding.updateMany({
+      where: { userId, companyId },
+      data: { liaisonUserId: null, liaisonName: null, liaisonEmail: null },
+    });
+  }
+  invalidatePermissionCache(userId);
+  revalidatePath(`/staff/${userId}`);
+  revalidatePath(`/companies/${companyId}`);
+}
+
+export async function updateCompanyMembershipDepartmentAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  await assertPermission(actor, "staff.assign_company");
+  const userId = requireString(formData, "userId");
+  const companyId = requireString(formData, "companyId");
+  const departmentIdRaw = String(formData.get("departmentId") ?? "").trim();
+
+  const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
+  if (!company) throw new Error("Company not found");
+  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, company.orgGroupId) && !isCompanyAdmin(actor, companyId)) {
+    throw new Error("Forbidden");
+  }
+
+  const departmentId: string | null = departmentIdRaw
+    ? await (async () => {
+        const d = await prisma.department.findFirst({ where: { id: departmentIdRaw, companyId } });
+        if (!d) throw new Error("Invalid department for this company");
+        return d.id;
+      })()
+    : null;
+
+  const membership = await prisma.companyMembership.findUnique({
+    where: { userId_companyId: { userId, companyId } },
+  });
+  if (!membership) throw new Error("User is not a member of this company");
+
+  await prisma.companyMembership.update({
+    where: { id: membership.id },
+    data: { departmentId },
   });
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath(`/companies/${companyId}`);
+  revalidatePath("/staff");
 }
 
 export async function assignProjectAction(formData: FormData) {

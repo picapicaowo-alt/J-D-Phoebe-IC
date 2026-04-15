@@ -11,9 +11,9 @@ export default function HomePage() {
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight">J.D. Phoebe Group · Internal platform (prototype)</h1>
         <p className="text-sm text-[hsl(var(--muted))]">
-          Revised build: parent <strong>group</strong>, sub-<strong>companies</strong>, <strong>projects</strong>,{" "}
-          <strong>staff</strong> with password login, role definitions, company/project assignments, and a{" "}
-          <strong>graph-based workflow</strong> view (React Flow) backed by nodes and edges—not a flat to-do list.
+          Revised build: parent <strong>group</strong>, sub-<strong>companies</strong>, <strong>projects</strong> with
+          search and filters, <strong>staff</strong> with password login, role definitions, and company/project
+          assignments.
         </p>
       </div>
 

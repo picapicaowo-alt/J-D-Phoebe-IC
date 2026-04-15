@@ -8,6 +8,14 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      maxWidth: {
+        container: "1280px",
+      },
+      fontFamily: {
+        sans: ["var(--font-dm-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["General Sans", "var(--font-dm-sans)", "ui-sans-serif", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         background: "hsl(var(--background))",
@@ -15,6 +23,8 @@ const config: Config = {
         muted: "hsl(var(--muted))",
         accent: "hsl(var(--accent))",
         card: "hsl(var(--card))",
+        primary: "hsl(var(--primary))",
+        "primary-hover": "hsl(var(--primary-hover))",
       },
     },
   },

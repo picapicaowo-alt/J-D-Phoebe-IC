@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { softDeleteCompanyAction } from "@/app/actions/trash";
 import { archiveCompanyAction, restoreCompanyAction, updateCompanyAction } from "@/app/actions/company";
+import { createDepartmentAction, deleteDepartmentAction, updateDepartmentAction } from "@/app/actions/department";
 import { removeCompanyLogoAction, uploadCompanyLogoAction } from "@/app/actions/profile-media";
 import { requireUser } from "@/lib/auth";
 import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
@@ -26,7 +27,8 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
     include: {
       orgGroup: true,
       projects: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" }, take: 30 },
-      memberships: { include: { user: true, roleDefinition: true } },
+      memberships: { include: { user: true, roleDefinition: true, department: true } },
+      departments: { orderBy: { sortOrder: "asc" } },
     },
   });
   if (!company) notFound();
@@ -118,6 +120,27 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
                 className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
               />
             </div>
+            <div className="space-y-2 border-t border-[hsl(var(--border))] pt-3">
+              <p className="text-xs font-semibold text-[hsl(var(--foreground))]">{t(locale, "companyOnboardingTitle")}</p>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
+                <Input name="onboardingPackageUrl" defaultValue={company.onboardingPackageUrl ?? ""} placeholder="https://..." />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>
+                <Input name="onboardingPackageVersion" defaultValue={company.onboardingPackageVersion ?? "v1"} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">{t(locale, "companyOnboardingDeadlineDays")}</label>
+                <Input
+                  name="onboardingDeadlineDays"
+                  type="number"
+                  min={1}
+                  max={365}
+                  defaultValue={String(company.onboardingDeadlineDays ?? 14)}
+                />
+              </div>
+            </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "commonStatus")}</label>
               <Select name="status" defaultValue={company.status}>
@@ -160,17 +183,67 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
         </Card>
       ) : null}
 
+      {canManage ? (
+        <Card className="space-y-4 p-4">
+          <CardTitle>{t(locale, "companyDepartmentsTitle")}</CardTitle>
+          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyDepartmentsLead")}</p>
+          <form action={createDepartmentAction} className="flex flex-wrap items-end gap-2 border-b border-[hsl(var(--border))] pb-4">
+            <input type="hidden" name="companyId" value={company.id} />
+            <div className="min-w-[200px] flex-1 space-y-1">
+              <label className="text-xs font-medium">{t(locale, "companyDepartmentName")}</label>
+              <Input name="name" required placeholder={t(locale, "companyDepartmentPlaceholder")} />
+            </div>
+            <Button type="submit" variant="secondary">
+              {t(locale, "companyDepartmentAdd")}
+            </Button>
+          </form>
+          <ul className="space-y-2 text-sm">
+            {company.departments.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-end gap-2 rounded-md border border-[hsl(var(--border))] p-2">
+                <form action={updateDepartmentAction} className="flex flex-1 flex-wrap items-end gap-2">
+                  <input type="hidden" name="departmentId" value={d.id} />
+                  <Input name="name" defaultValue={d.name} required className="min-w-[160px] flex-1 text-sm" />
+                  <Button type="submit" variant="secondary" className="h-8 text-xs">
+                    {t(locale, "btnSave")}
+                  </Button>
+                </form>
+                <form action={deleteDepartmentAction}>
+                  <input type="hidden" name="departmentId" value={d.id} />
+                  <Button type="submit" variant="secondary" className="h-8 text-xs">
+                    {t(locale, "btnRemove")}
+                  </Button>
+                </form>
+              </li>
+            ))}
+            {!company.departments.length ? (
+              <li className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyDepartmentsEmpty")}</li>
+            ) : null}
+          </ul>
+        </Card>
+      ) : null}
+
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">{t(locale, "companySectionProjects")}</h2>
-        <div className="grid gap-2">
-          {company.projects.map((p) => (
-            <Card key={p.id} className="flex items-center justify-between p-3">
-              <Link className="font-medium hover:underline" href={`/projects/${p.id}`}>
-                {p.name}
-              </Link>
-              <span className="text-xs text-[hsl(var(--muted))]">{tProjectStatus(locale, p.status)}</span>
-            </Card>
-          ))}
+        <div className="grid gap-3">
+          {company.projects.map((p) => {
+            const pct = Math.max(0, Math.min(100, p.progressPercent));
+            return (
+              <Card key={p.id} className="space-y-2 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <Link className="font-medium hover:underline" href={`/projects/${p.id}`}>
+                    {p.name}
+                  </Link>
+                  <span className="shrink-0 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/10 px-2 py-0.5 text-xs text-[hsl(var(--muted))]">
+                    {tProjectStatus(locale, p.status)}
+                  </span>
+                </div>
+                <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyModalProgressLine").replace("{n}", String(pct))}</p>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-[hsl(var(--muted))]/20">
+                  <div className="h-full rounded-full bg-sky-500" style={{ width: `${pct}%` }} />
+                </div>
+              </Card>
+            );
+          })}
           {!company.projects.length ? (
             <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "companyNoProjectsYet")}</p>
           ) : null}
@@ -192,7 +265,8 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
               <tr className="border-b text-left text-xs text-[hsl(var(--muted))]">
                 <th className="py-2 pr-3">{t(locale, "commonName")}</th>
                 <th className="py-2 pr-3">{t(locale, "commonEmail")}</th>
-                <th className="py-2">{t(locale, "commonRole")}</th>
+                <th className="py-2 pr-3">{t(locale, "commonRole")}</th>
+                <th className="py-2">{t(locale, "projFieldDepartment")}</th>
               </tr>
             </thead>
             <tbody>
@@ -204,7 +278,8 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
                     </Link>
                   </td>
                   <td className="py-2 pr-3 text-[hsl(var(--muted))]">{m.user.email}</td>
-                  <td className="py-2">{m.roleDefinition.displayName}</td>
+                  <td className="py-2 pr-3">{m.roleDefinition.displayName}</td>
+                  <td className="py-2 text-[hsl(var(--muted))]">{m.department?.name ?? t(locale, "staffListEmDash")}</td>
                 </tr>
               ))}
             </tbody>

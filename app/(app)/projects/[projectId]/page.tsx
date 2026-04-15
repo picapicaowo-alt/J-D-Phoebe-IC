@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Priority, ProjectRelationType, ProjectStatus } from "@prisma/client";
+import { KnowledgeLayer, Priority, ProjectRelationType, ProjectStatus, WorkflowNodeStatus } from "@prisma/client";
 import { assignMultipleToProjectAction, removeProjectMembershipAction } from "@/app/actions/staff";
 import { softDeleteProjectAction } from "@/app/actions/trash";
 import {
@@ -11,26 +11,30 @@ import {
   updateProjectRelationNoteAction,
   updateProjectAction,
 } from "@/app/actions/project";
-import { addExternalResourceLinkAction } from "@/app/actions/attachments";
-import { requireUser } from "@/lib/auth";
-import { canEditProjectMap, canManageProject, canViewProject, type AccessUser } from "@/lib/access";
+import {
+  toggleProjectRelationShareAttachmentAction,
+  toggleProjectRelationShareKnowledgeAction,
+} from "@/app/actions/project-relation-share";
+import { createKnowledgeAssetAction, softDeleteKnowledgeAssetAction, updateKnowledgeAssetAction } from "@/app/actions/knowledge";
+import { addExternalResourceLinkAction, updateProjectExternalLinkAction } from "@/app/actions/attachments";
+import { softDeleteAttachmentAction } from "@/app/actions/attachment-trash";
+import { getAppSession, requireUser } from "@/lib/auth";
+import { canEditWorkflow, canManageProject, canViewProject, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
 import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tProjectStatus } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
-import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { countdownPhrase, isOverdue } from "@/lib/deadlines";
+import { countdownPhrase, isOverdue, toDatetimeLocalValue } from "@/lib/deadlines";
 import { AttachmentVersionTree } from "@/components/attachment-version-tree";
-import { ProjectMapNestedNodes } from "@/components/project-map-nested-nodes";
-import { ProjectTaskStructureEditor } from "@/components/project-task-structure-editor";
+import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
 import { UserFace } from "@/components/user-face";
 import { DetailsHashOpener } from "@/components/details-hash-opener";
-import { combinedProjectProgressPercent, projectStatusVisualClasses } from "@/lib/project-health";
-import { projectRollupPercentFromTasks } from "@/lib/task-progress";
-import { MAX_TASK_DEPTH, childrenByParentId, depthFromRoot, canSetParent } from "@/lib/workflow-node-tree";
+import { clampProjectProgressPercent } from "@/lib/project-health";
+import { ProjectTasksPanel, type ProjectTaskRow } from "@/components/project-tasks-panel";
+import type { Locale } from "@/lib/locale";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const STATUSES: ProjectStatus[] = [
@@ -52,6 +56,71 @@ const RELATION_TYPES: ProjectRelationType[] = [
   "SHARED_ASSET",
 ];
 
+const KNOWLEDGE_LAYERS: KnowledgeLayer[] = [
+  "TEMPLATE_PLAYBOOK",
+  "REFERENCE_RESOURCE",
+  "INTERNAL_INSIGHT",
+  "REUSABLE_OUTPUT",
+];
+
+type TaskNodeRow = {
+  id: string;
+  title: string;
+  parentNodeId: string | null;
+  progressPercent: number;
+  status: WorkflowNodeStatus;
+  sortOrder: number;
+  dueAt: Date | null;
+  description: string | null;
+  assignees: { user: { id: string; name: string } }[];
+};
+
+function buildProjectTaskRows(nodes: TaskNodeRow[]): ProjectTaskRow[] {
+  const byParent = new Map<string | null, TaskNodeRow[]>();
+  for (const n of nodes) {
+    const k = n.parentNodeId;
+    if (!byParent.has(k)) byParent.set(k, []);
+    byParent.get(k)!.push(n);
+  }
+  for (const list of byParent.values()) {
+    list.sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+  function walk(parentId: string | null): ProjectTaskRow[] {
+    return (byParent.get(parentId) ?? []).map((n) => ({
+      id: n.id,
+      title: n.title,
+      progressPercent: n.progressPercent,
+      status: n.status,
+      assigneeName: n.assignees[0]?.user?.name ?? null,
+      assigneeId: n.assignees[0]?.user?.id ?? null,
+      dueAt: n.dueAt ? n.dueAt.toISOString() : null,
+      description: n.description ?? null,
+      children: walk(n.id),
+    }));
+  }
+  return walk(null);
+}
+
+function daysLeftLine(deadline: Date | null, locale: Locale) {
+  if (!deadline) return { text: t(locale, "projDaysLeftNone"), urgent: false };
+  const days = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
+  if (days < 0) return { text: t(locale, "projOverdue"), urgent: true };
+  return {
+    text: t(locale, "projDaysLeftCount").replace("{n}", String(Math.max(0, days))),
+    urgent: days <= 7,
+  };
+}
+
+function priorityTone(p: Priority): string {
+  if (p === "URGENT" || p === "HIGH") {
+    return "bg-rose-600 text-white ring-1 ring-rose-600/30";
+  }
+  if (p === "MEDIUM") {
+    return "bg-amber-500/90 text-amber-950 ring-1 ring-amber-500/40";
+  }
+  return "bg-zinc-200 text-zinc-800 ring-1 ring-zinc-300 dark:bg-zinc-700 dark:text-zinc-100";
+}
+
 export default async function ProjectDetailPage({ params }: { params: Promise<{ projectId: string }> }) {
   const user = (await requireUser()) as AccessUser;
   const { projectId } = await params;
@@ -62,31 +131,26 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       company: true,
       owner: true,
       memberships: { include: { user: true, roleDefinition: true } },
+      outgoingRelations: {
+        include: {
+          toProject: { include: { company: true } },
+          sharedKnowledge: { include: { knowledgeAsset: { select: { id: true } } } },
+          sharedAttachments: { include: { attachment: { select: { id: true } } } },
+        },
+      },
+      incomingRelations: {
+        include: {
+          fromProject: { include: { company: true } },
+          sharedKnowledge: { include: { knowledgeAsset: { select: { id: true } } } },
+          sharedAttachments: { include: { attachment: { select: { id: true } } } },
+        },
+      },
       nodes: {
         where: { deletedAt: null },
         orderBy: { sortOrder: "asc" },
         include: {
-          assignees: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
+          assignees: { include: { user: { select: { id: true, name: true } } } },
         },
-      },
-      edges: {
-        where: { deletedAt: null },
-      },
-      knowledgeAssets: {
-        where: { deletedAt: null },
-        include: { author: true },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-      },
-      layers: {
-        where: { deletedAt: null },
-        orderBy: { sortOrder: "asc" },
-      },
-      outgoingRelations: {
-        include: { toProject: { include: { company: true } } },
-      },
-      incomingRelations: {
-        include: { fromProject: { include: { company: true } } },
       },
     },
   });
@@ -104,14 +168,51 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     orderBy: { createdAt: "desc" },
   });
 
+  const [ownKnowledge, sharedKnowledgeInbound, sharedAttachmentInbound, projectDepts, projectGroupList] = await Promise.all([
+    prisma.knowledgeAsset.findMany({
+      where: { projectId: project.id, deletedAt: null },
+      include: { author: true },
+      orderBy: { updatedAt: "desc" },
+      take: 100,
+    }),
+    prisma.projectRelationSharedKnowledge.findMany({
+      where: { relation: { toProjectId: project.id } },
+      include: {
+        relation: { include: { fromProject: { include: { company: true } } } },
+        knowledgeAsset: { include: { author: true } },
+      },
+    }),
+    prisma.projectRelationSharedAttachment.findMany({
+      where: { relation: { toProjectId: project.id } },
+      include: {
+        relation: { include: { fromProject: { include: { company: true } } } },
+        attachment: true,
+      },
+    }),
+    prisma.department.findMany({
+      where: { companyId: project.companyId },
+      orderBy: { sortOrder: "asc" },
+    }),
+    prisma.projectGroup.findMany({
+      where: { companyId: project.companyId },
+      orderBy: { sortOrder: "asc" },
+    }),
+  ]);
+
   const canManage = canManageProject(user, project);
   const canSoftDeleteProject =
     (await userHasPermission(user, "project.soft_delete")) &&
     (user.isSuperAdmin ||
       user.groupMemberships.some((m) => m.orgGroupId === project.company.orgGroupId && m.roleDefinition.key === "GROUP_ADMIN") ||
       user.companyMemberships.some((m) => m.companyId === project.companyId && m.roleDefinition.key === "COMPANY_ADMIN"));
+  const mustIncludeUserIds = [
+    ...new Set([project.ownerId, ...project.memberships.map((m) => m.userId)]),
+  ];
   const staff = await prisma.user.findMany({
-    where: { active: true, deletedAt: null },
+    where: {
+      deletedAt: null,
+      OR: [{ id: { in: mustIncludeUserIds } }, { active: true }],
+    },
     orderBy: { name: "asc" },
   });
   const projectRoles = await prisma.roleDefinition.findMany({
@@ -126,33 +227,25 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   });
 
   const locale = await getLocale();
-  const canEditMap = (await userHasPermission(user, "project.map.update")) && canEditProjectMap(user, project);
+  const session = await getAppSession();
+  const undoAvailable = session.taskUndo?.projectId === project.id;
   const canMemberManage = (await userHasPermission(user, "project.member.manage")) && canManage;
+  const canEditTasks =
+    (await userHasPermission(user, "project.workflow.update")) &&
+    canViewProject(user, project) &&
+    (canManageProject(user, project) ||
+      canEditWorkflow(user, project) ||
+      user.projectMemberships.some((m) => m.projectId === project.id));
+  const canEditKnowledge = await userHasPermission(user, "knowledge.create");
+  const canReadKnowledge = await userHasPermission(user, "knowledge.read");
 
-  const progressPct =
-    project.nodes.length > 0
-      ? projectRollupPercentFromTasks(
-          project.nodes.map((n) => ({
-            id: n.id,
-            parentNodeId: n.parentNodeId,
-            sortOrder: n.sortOrder,
-            progressPercent: n.progressPercent,
-            status: n.status,
-          })),
-        )
-      : combinedProjectProgressPercent(project.progressPercent, project.nodes);
-  const statusVis = projectStatusVisualClasses(project.status);
+  const progressPct = clampProjectProgressPercent(project.progressPercent);
   const relationCount = project.outgoingRelations.length + project.incomingRelations.length;
-  const layerLanes = [...project.layers, { id: "__ungrouped__", name: "" }];
-  const treeMeta = project.nodes.map((n) => ({
-    id: n.id,
-    parentNodeId: n.parentNodeId,
-    sortOrder: n.sortOrder,
-  }));
-  const byIdTree = new Map(treeMeta.map((r) => [r.id, r]));
-  const byParentTree = childrenByParentId(treeMeta);
-  const eligibleParents = project.nodes.filter((n) => depthFromRoot(byIdTree, n.id) < MAX_TASK_DEPTH);
-  const eligibleParentIds = new Set(eligibleParents.map((n) => n.id));
+  const knowledgeTotalCount = ownKnowledge.length + sharedKnowledgeInbound.length;
+  const filesTotalCount = projectFiles.length + sharedAttachmentInbound.length;
+  const taskRows = buildProjectTaskRows(project.nodes);
+  const daysLeft = daysLeftLine(project.deadline, locale);
+  const priorityClass = priorityTone(project.priority);
 
   const primaryBtn =
     "inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium bg-[hsl(var(--accent))] text-white hover:opacity-90";
@@ -183,142 +276,140 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         <Link href={`/projects/${project.id}/growth`} className={secondaryBtn}>
           {t(locale, "projGrowthOpen")}
         </Link>
-        <Link href={`/projects/${project.id}/workflow`}>
-          <Button type="button" variant="secondary">
-            {t(locale, "wfOpenAdvanced")}
-          </Button>
-        </Link>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-zinc-200/90 bg-[hsl(var(--card))] p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:border-[hsl(var(--border))]">
-        <p className="text-xs uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "projSummary")}</p>
-        <div className="flex flex-wrap items-start gap-4">
-          {project.company.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={project.company.logoUrl}
-              alt=""
-              width={56}
-              height={56}
-              className="h-14 w-14 shrink-0 rounded-md border border-[hsl(var(--border))] bg-white object-contain p-1 dark:bg-zinc-900"
-            />
+      <div className="flex flex-wrap items-start gap-4">
+        {project.company.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={project.company.logoUrl}
+            alt=""
+            width={56}
+            height={56}
+            className="h-14 w-14 shrink-0 rounded-md border border-[hsl(var(--border))] bg-white object-contain p-1 dark:bg-zinc-900"
+          />
+        ) : null}
+        <div className="min-w-0 flex-1 space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-[hsl(var(--foreground))]">{project.name}</h1>
+          {project.description ? (
+            <p className="text-sm text-[hsl(var(--muted))]">{project.description}</p>
           ) : null}
-          <div className="min-w-0 flex-1 space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
-            {project.description ? (
-              <p className="text-sm text-[hsl(var(--muted))]">{project.description}</p>
-            ) : null}
-            <p className="text-sm text-[hsl(var(--muted))]">
-              {project.company.name} · {tProjectStatus(locale, project.status)} · {tPriority(locale, project.priority)}
-            </p>
-            {project.deadline ? (
-              <p className="text-xs text-[hsl(var(--muted))]">
-                {countdownPhrase(project.deadline)}
-                {isOverdue(project.deadline) && project.status !== "COMPLETED" ? ` · ${t(locale, "projOverdue")}` : ""}
-              </p>
-            ) : null}
-          </div>
-          <span
-            className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusVis.pill}`}
-            title={t(locale, "commonStatus")}
-          >
-            {tProjectStatus(locale, project.status)}
-          </span>
-        </div>
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs text-[hsl(var(--muted))]">
-            <span>{t(locale, "projProgressOverall")}</span>
-            <span className="font-medium text-[hsl(var(--foreground))]">{progressPct}%</span>
-          </div>
-          <div className="h-2.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
-            <div className="h-full rounded-full bg-zinc-900 dark:bg-zinc-100" style={{ width: `${progressPct}%` }} />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-stretch gap-3 rounded-xl border border-zinc-200/90 bg-[hsl(var(--card))] px-4 py-3 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:border-[hsl(var(--border))]">
-        <div className="min-w-[140px] flex-1 space-y-1 border-r border-[hsl(var(--border))] pr-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
-            {t(locale, "projDetailsSnapshot")}
+          <p className="text-sm text-[hsl(var(--muted))]">
+            {project.company.name} · {tProjectStatus(locale, project.status)} · {tPriority(locale, project.priority)}
           </p>
-          <div className="flex flex-wrap items-center gap-2">
-            {project.company.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={project.company.logoUrl}
-                alt=""
-                width={32}
-                height={32}
-                className="h-8 w-8 rounded border border-[hsl(var(--border))] bg-white object-contain p-0.5 dark:bg-zinc-900"
-              />
-            ) : null}
-            <span className="font-medium">{project.company.name}</span>
-          </div>
-        </div>
-        <div className="flex min-w-[100px] flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase text-[hsl(var(--muted))]">{t(locale, "commonStatus")}</span>
-          <span className={`w-fit rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${statusVis.pill}`}>
-            {tProjectStatus(locale, project.status)}
-          </span>
-        </div>
-        <div className="flex min-w-[90px] flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase text-[hsl(var(--muted))]">{t(locale, "commonPriority")}</span>
-          <span className="text-xs">{tPriority(locale, project.priority)}</span>
-        </div>
-        <div className="min-w-[120px] flex-1 space-y-1">
-          <span className="text-[10px] font-semibold uppercase text-[hsl(var(--muted))]">{t(locale, "projProgressOverall")}</span>
-            <div className="flex items-center gap-2">
-            <div className="h-2 min-w-[72px] flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
-              <div className="h-2 rounded-full bg-zinc-900 dark:bg-zinc-100" style={{ width: `${progressPct}%` }} />
-            </div>
-            <span className="text-xs font-semibold">{progressPct}%</span>
-          </div>
-        </div>
-        <div className="flex min-w-[120px] flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase text-[hsl(var(--muted))]">{t(locale, "commonOwner")}</span>
-          <span className="flex items-center gap-2 text-xs">
-            <UserFace name={project.owner.name} avatarUrl={project.owner.avatarUrl} size={24} />
-            {project.owner.name}
-          </span>
-        </div>
-        <div className="min-w-[160px] flex-1 space-y-1">
-          <a href="#section-edit-members" className="text-[10px] font-semibold uppercase tracking-wide text-[hsl(var(--muted))] underline-offset-2 hover:underline">
-            {t(locale, "projMembersTitle")}
-          </a>
-          <div className="flex flex-wrap gap-1">
-            {project.memberships.slice(0, 8).map((m) => (
-              <UserFace key={m.userId} name={m.user.name} avatarUrl={m.user.avatarUrl} size={26} />
-            ))}
-            {project.memberships.length > 8 ? (
-              <span className="self-center text-xs text-[hsl(var(--muted))]">+{project.memberships.length - 8}</span>
-            ) : null}
-          </div>
-        </div>
-        <div className="flex min-w-[120px] flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase text-[hsl(var(--muted))]">{t(locale, "projDeadlineShort")}</span>
-          <span className="text-xs text-[hsl(var(--muted))]">
-            {project.deadline
-              ? `${project.deadline.toLocaleDateString()} · ${countdownPhrase(project.deadline)}`
-              : "—"}
-          </span>
+          {project.deadline ? (
+            <p className="text-xs text-[hsl(var(--muted))]">
+              {countdownPhrase(project.deadline)}
+              {isOverdue(project.deadline) && project.status !== "COMPLETED" ? ` · ${t(locale, "projOverdue")}` : ""}
+            </p>
+          ) : null}
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm">
+        <div className="relative grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="space-y-1">
+            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonStatus")}</p>
+            <div className="flex items-center gap-2">
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${
+                  project.status === "ACTIVE"
+                    ? "bg-emerald-500"
+                    : project.status === "COMPLETED"
+                      ? "bg-sky-500"
+                      : "bg-zinc-400 dark:bg-zinc-500"
+                }`}
+                aria-hidden
+              />
+              <span className="font-medium text-[hsl(var(--foreground))]">{tProjectStatus(locale, project.status)}</span>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonPriority")}</p>
+            <span className={`inline-flex rounded-lg px-2.5 py-0.5 text-xs font-medium ${priorityClass}`}>
+              {tPriority(locale, project.priority)}
+            </span>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projProgressOverall")}</p>
+            <p className="text-sm font-semibold tabular-nums text-[hsl(var(--foreground))]">{progressPct}%</p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonOwner")}</p>
+            <span className="flex items-center gap-2 font-medium text-[hsl(var(--foreground))]">
+              <UserFace name={project.owner.name} avatarUrl={project.owner.avatarUrl} size={24} />
+              {project.owner.name}
+            </span>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonCompany")}</p>
+            <p className="font-medium text-[hsl(var(--foreground))]">{project.company.name}</p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projMetricDaysLeft")}</p>
+            <p
+              className={`text-sm font-semibold tabular-nums ${
+                daysLeft.urgent ? "text-orange-600 dark:text-orange-400" : "text-[hsl(var(--foreground))]"
+              }`}
+            >
+              {daysLeft.text}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[rgba(3,2,19,0.2)] dark:bg-white/20">
+          <div className="h-full rounded-full bg-zinc-900 dark:bg-zinc-100" style={{ width: `${progressPct}%` }} />
+        </div>
+      </div>
+
+      <ProjectTasksPanel
+        projectId={project.id}
+        tasks={taskRows}
+        canEdit={canEditTasks}
+        undoAvailable={undoAvailable}
+        memberOptions={project.memberships.map((m) => ({ id: m.userId, name: m.user.name }))}
+        locale={locale}
+        copy={{
+          title: t(locale, "wfMapTitle"),
+          undo: t(locale, "projTasksUndo"),
+          undoHint: t(locale, "projTasksUndoHint"),
+          undoDisabledHint: t(locale, "projTasksUndoDisabledHint"),
+          deleteAll: t(locale, "projTasksDeleteAll"),
+          deleteTask: t(locale, "projTasksDeleteTask"),
+          addTask: t(locale, "projTasksAddTask"),
+          addSubtask: t(locale, "projTasksAddSubtask"),
+          assignedPrefix: t(locale, "projTasksAssignedPrefix"),
+          confirmDeleteAll: t(locale, "projTasksConfirmDeleteAll"),
+          empty: t(locale, "projTasksNoTasks"),
+          noSubtasksHint: t(locale, "projTasksNoSubtasksHint"),
+          newTaskPh: t(locale, "projTaskNewTitlePh"),
+          newSubPh: t(locale, "projTaskNewSubPh"),
+          deadlineOptional: t(locale, "projTaskDeadlineLabel"),
+          assignSubOptional: t(locale, "projTaskAssignSub"),
+          metaTitle: t(locale, "projTaskMetaTitle"),
+          metaLead: t(locale, "projTaskMetaLead"),
+          saveMeta: t(locale, "btnSave"),
+          dueShort: t(locale, "projTaskDueShort"),
+          descriptionLabel: t(locale, "commonDescription"),
+          editDetails: t(locale, "projTaskEditDetails"),
+          dialogClose: t(locale, "kbDialogClose"),
+        }}
+      />
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <details
           id="section-relations"
           className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm"
         >
           <summary className="cursor-pointer select-none px-3 py-3 text-sm font-medium">
             {t(locale, "projJumpRelations")}{" "}
-            <span className="text-xs font-normal text-[hsl(var(--muted))]">({relationCount})</span>
+            <span className="text-sm font-normal text-[hsl(var(--muted))]">({relationCount})</span>
           </summary>
           <div className="max-h-[min(70vh,520px)] space-y-3 overflow-y-auto border-t border-[hsl(var(--border))] p-3 text-sm">
             {canManage ? (
               <form action={addProjectRelationAction} className="grid gap-2 border-b pb-3 md:grid-cols-3">
                 <input type="hidden" name="fromProjectId" value={project.id} />
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "projRelationType")}</label>
+                  <label className="text-sm font-medium">{t(locale, "projRelationType")}</label>
                   <Select name="relationType" defaultValue="LINKED" required>
                     {RELATION_TYPES.map((relType) => (
                       <option key={relType} value={relType}>
@@ -328,7 +419,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "projTargetProject")}</label>
+                  <label className="text-sm font-medium">{t(locale, "projTargetProject")}</label>
                   <Select name="toProjectId" required>
                     <option value="">{t(locale, "commonSelectProject")}</option>
                     {relationTargetProjects.map((p) => (
@@ -339,7 +430,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "projNote")}</label>
+                  <label className="text-sm font-medium">{t(locale, "projNote")}</label>
                   <Input name="note" placeholder={t(locale, "projOptionalRelationNote")} />
                 </div>
                 <div className="md:col-span-3">
@@ -349,53 +440,162 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 </div>
               </form>
             ) : null}
-            <ul className="space-y-2 text-sm">
-              {project.outgoingRelations.map((rel) => (
-                <li key={rel.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                  <div className="font-medium">{tProjectRelationType(locale, rel.relationType)}</div>
-                  <div className="text-xs text-[hsl(var(--muted))]">
-                    {t(locale, "projThisTo")} {rel.toProject.company.name} / {rel.toProject.name}
-                  </div>
-                  {rel.note ? <p className="mt-1 text-xs text-[hsl(var(--muted))]">{rel.note}</p> : null}
-                  {canManage ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <details>
-                        <summary className="cursor-pointer text-xs text-[hsl(var(--muted))] underline underline-offset-2">
-                          {t(locale, "projEditNote")}
-                        </summary>
-                        <form action={updateProjectRelationNoteAction} className="mt-2 flex flex-wrap items-end gap-2">
+            <ul className="space-y-3 text-sm">
+              {project.outgoingRelations.map((rel) => {
+                const sharedKIds = new Set(rel.sharedKnowledge.map((s) => s.knowledgeAsset.id));
+                const sharedAIds = new Set(rel.sharedAttachments.map((s) => s.attachment.id));
+                const canRelManage = canManageProject(user, project) || canManageProject(user, rel.toProject);
+                return (
+                  <li key={rel.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
+                    <div className="text-base font-medium">{tProjectRelationType(locale, rel.relationType)}</div>
+                    <div className="text-sm text-[hsl(var(--muted))]">
+                      {t(locale, "projThisTo")}{" "}
+                      <Link className="font-medium text-[hsl(var(--foreground))] underline-offset-2 hover:underline" href={`/projects/${rel.toProject.id}`}>
+                        {rel.toProject.company.name} / {rel.toProject.name}
+                      </Link>
+                    </div>
+                    {rel.note ? <p className="mt-1 text-sm text-[hsl(var(--muted))]">{rel.note}</p> : null}
+                    {canRelManage ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <details>
+                          <summary className="cursor-pointer text-sm text-[hsl(var(--muted))] underline underline-offset-2">
+                            {t(locale, "projEditNote")}
+                          </summary>
+                          <form action={updateProjectRelationNoteAction} className="mt-2 flex flex-wrap items-end gap-2">
+                            <input type="hidden" name="relationId" value={rel.id} />
+                            <Input
+                              name="note"
+                              defaultValue={rel.note ?? ""}
+                              placeholder={t(locale, "projEditNote")}
+                              className="h-9 min-w-[220px] text-sm"
+                            />
+                            <Button type="submit" variant="secondary" className="h-9 px-2 text-sm">
+                              {t(locale, "projSaveNote")}
+                            </Button>
+                          </form>
+                        </details>
+                        <form action={removeProjectRelationAction}>
                           <input type="hidden" name="relationId" value={rel.id} />
-                          <Input
-                            name="note"
-                            defaultValue={rel.note ?? ""}
-                            placeholder={t(locale, "projEditNote")}
-                            className="h-7 min-w-[220px] text-xs"
-                          />
-                          <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
-                            {t(locale, "projSaveNote")}
+                          <Button type="submit" variant="secondary" className="h-9 px-2 text-sm">
+                            {t(locale, "btnRemove")}
                           </Button>
                         </form>
-                      </details>
-                      <form action={removeProjectRelationAction}>
-                        <input type="hidden" name="relationId" value={rel.id} />
-                        <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
-                          {t(locale, "btnRemove")}
-                        </Button>
-                      </form>
+                      </div>
+                    ) : null}
+                    {canRelManage && (ownKnowledge.length > 0 || projectFiles.length > 0) ? (
+                      <div className="mt-3 border-t border-[hsl(var(--border))] pt-2">
+                        <p className="text-sm font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
+                          {t(locale, "projShareWithPeer")}
+                        </p>
+                        <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-sm">
+                          {ownKnowledge.map((ka) => (
+                            <li key={ka.id} className="flex items-center justify-between gap-2">
+                              <span className="min-w-0 truncate">{ka.title}</span>
+                              <form action={toggleProjectRelationShareKnowledgeAction} className="shrink-0">
+                                <input type="hidden" name="relationId" value={rel.id} />
+                                <input type="hidden" name="knowledgeAssetId" value={ka.id} />
+                                <Button type="submit" variant="secondary" className="h-8 px-2 text-sm">
+                                  {sharedKIds.has(ka.id) ? t(locale, "projShareStop") : t(locale, "projShareStart")}
+                                </Button>
+                              </form>
+                            </li>
+                          ))}
+                          {projectFiles.map((f) => (
+                            <li key={f.id} className="flex items-center justify-between gap-2">
+                              <span className="min-w-0 truncate">{f.fileName}</span>
+                              <form action={toggleProjectRelationShareAttachmentAction} className="shrink-0">
+                                <input type="hidden" name="relationId" value={rel.id} />
+                                <input type="hidden" name="attachmentId" value={f.id} />
+                                <Button type="submit" variant="secondary" className="h-8 px-2 text-sm">
+                                  {sharedAIds.has(f.id) ? t(locale, "projShareStop") : t(locale, "projShareStart")}
+                                </Button>
+                              </form>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+              {project.incomingRelations.map((rel) => {
+                const sharedKIds = new Set(rel.sharedKnowledge.map((s) => s.knowledgeAsset.id));
+                const sharedAIds = new Set(rel.sharedAttachments.map((s) => s.attachment.id));
+                const canRelManage = canManageProject(user, rel.fromProject) || canManageProject(user, project);
+                return (
+                  <li key={rel.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
+                    <div className="text-base font-medium">{tProjectRelationType(locale, rel.relationType)}</div>
+                    <div className="text-sm text-[hsl(var(--muted))]">
+                      {t(locale, "projDependsFromLine")}{" "}
+                      <Link className="font-medium text-[hsl(var(--foreground))] underline-offset-2 hover:underline" href={`/projects/${rel.fromProject.id}`}>
+                        {rel.fromProject.company.name} / {rel.fromProject.name}
+                      </Link>{" "}
+                      → {t(locale, "projThisProject")}
                     </div>
-                  ) : null}
-                </li>
-              ))}
-              {project.incomingRelations.map((rel) => (
-                <li key={rel.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                  <div className="font-medium">{tProjectRelationType(locale, rel.relationType)}</div>
-                  <div className="text-xs text-[hsl(var(--muted))]">
-                    {t(locale, "projDependsFromLine")} {rel.fromProject.company.name} / {rel.fromProject.name} →{" "}
-                    {t(locale, "projThisProject")}
-                  </div>
-                  {rel.note ? <p className="mt-1 text-xs text-[hsl(var(--muted))]">{rel.note}</p> : null}
-                </li>
-              ))}
+                    {rel.note ? <p className="mt-1 text-sm text-[hsl(var(--muted))]">{rel.note}</p> : null}
+                    {canRelManage ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <details>
+                          <summary className="cursor-pointer text-sm text-[hsl(var(--muted))] underline underline-offset-2">
+                            {t(locale, "projEditNote")}
+                          </summary>
+                          <form action={updateProjectRelationNoteAction} className="mt-2 flex flex-wrap items-end gap-2">
+                            <input type="hidden" name="relationId" value={rel.id} />
+                            <Input
+                              name="note"
+                              defaultValue={rel.note ?? ""}
+                              placeholder={t(locale, "projEditNote")}
+                              className="h-9 min-w-[220px] text-sm"
+                            />
+                            <Button type="submit" variant="secondary" className="h-9 px-2 text-sm">
+                              {t(locale, "projSaveNote")}
+                            </Button>
+                          </form>
+                        </details>
+                        <form action={removeProjectRelationAction}>
+                          <input type="hidden" name="relationId" value={rel.id} />
+                          <Button type="submit" variant="secondary" className="h-9 px-2 text-sm">
+                            {t(locale, "btnRemove")}
+                          </Button>
+                        </form>
+                      </div>
+                    ) : null}
+                    {canRelManage && (ownKnowledge.length > 0 || projectFiles.length > 0) ? (
+                      <div className="mt-3 border-t border-[hsl(var(--border))] pt-2">
+                        <p className="text-sm font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
+                          {t(locale, "projShareWithPeer")}
+                        </p>
+                        <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-sm">
+                          {ownKnowledge.map((ka) => (
+                            <li key={ka.id} className="flex items-center justify-between gap-2">
+                              <span className="min-w-0 truncate">{ka.title}</span>
+                              <form action={toggleProjectRelationShareKnowledgeAction} className="shrink-0">
+                                <input type="hidden" name="relationId" value={rel.id} />
+                                <input type="hidden" name="knowledgeAssetId" value={ka.id} />
+                                <Button type="submit" variant="secondary" className="h-8 px-2 text-sm">
+                                  {sharedKIds.has(ka.id) ? t(locale, "projShareStop") : t(locale, "projShareStart")}
+                                </Button>
+                              </form>
+                            </li>
+                          ))}
+                          {projectFiles.map((f) => (
+                            <li key={f.id} className="flex items-center justify-between gap-2">
+                              <span className="min-w-0 truncate">{f.fileName}</span>
+                              <form action={toggleProjectRelationShareAttachmentAction} className="shrink-0">
+                                <input type="hidden" name="relationId" value={rel.id} />
+                                <input type="hidden" name="attachmentId" value={f.id} />
+                                <Button type="submit" variant="secondary" className="h-8 px-2 text-sm">
+                                  {sharedAIds.has(f.id) ? t(locale, "projShareStop") : t(locale, "projShareStart")}
+                                </Button>
+                              </form>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
               {!project.outgoingRelations.length && !project.incomingRelations.length ? (
                 <li className="text-sm text-[hsl(var(--muted))]">{t(locale, "projNoRelations")}</li>
               ) : null}
@@ -409,27 +609,274 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         >
           <summary className="cursor-pointer select-none px-3 py-3 text-sm font-medium">
             {t(locale, "projJumpKnowledge")}{" "}
-            <span className="text-xs font-normal text-[hsl(var(--muted))]">({project.knowledgeAssets.length})</span>
+            <span className="text-sm font-normal text-[hsl(var(--muted))]">({knowledgeTotalCount})</span>
           </summary>
-          <div className="max-h-[min(70vh,520px)] space-y-2 overflow-y-auto border-t border-[hsl(var(--border))] p-3 text-sm">
-            {project.knowledgeAssets.length ? (
+          <div className="max-h-[min(70vh,520px)] space-y-3 overflow-y-auto border-t border-[hsl(var(--border))] p-3 text-sm">
+            {canReadKnowledge ? (
+              <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(var(--border))] pb-2 text-sm">
+                <Link className="font-medium text-[hsl(var(--accent))] underline-offset-2 hover:underline" href={`/knowledge/browse?projectId=${project.id}`}>
+                  {t(locale, "projKnowledgeBrowseThisProject")}
+                </Link>
+              </div>
+            ) : null}
+
+            {canEditKnowledge ? (
+              <details className="rounded-md border border-[hsl(var(--border))] bg-black/[0.02] p-2 dark:bg-white/[0.02]">
+                <summary className="cursor-pointer text-sm font-medium">{t(locale, "projKnowledgeAddOnProject")}</summary>
+                <form action={createKnowledgeAssetAction} className="mt-2 grid gap-2">
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <input type="hidden" name="companyId" value={project.companyId} />
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonTitle")}</label>
+                    <Input name="title" required className="text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonLayer")}</label>
+                    <select name="layer" className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-sm" defaultValue="TEMPLATE_PLAYBOOK">
+                      {KNOWLEDGE_LAYERS.map((layer) => (
+                        <option key={layer} value={layer}>
+                          {tKnowledgeLayer(locale, layer)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonSummary")}</label>
+                    <Input name="summary" className="text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonContent")}</label>
+                    <textarea
+                      name="content"
+                      rows={3}
+                      className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-sm"
+                      placeholder={t(locale, "kbContentOrUrlHint")}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonSourceUrl")}</label>
+                    <Input name="sourceUrl" type="url" className="text-sm" placeholder="https://..." />
+                  </div>
+                  <Button type="submit" variant="secondary" className="h-9 text-sm">
+                    {t(locale, "btnSave")}
+                  </Button>
+                </form>
+              </details>
+            ) : null}
+
+            {knowledgeTotalCount ? (
               <ul className="space-y-2">
-                {project.knowledgeAssets.map((asset) => (
-                  <li key={asset.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                    <div className="font-medium">{asset.title}</div>
-                    <div className="text-xs text-[hsl(var(--muted))]">
-                      {tKnowledgeLayer(locale, asset.layer)} · {t(locale, "kbByAuthor")} {asset.author.name}
-                    </div>
-                    {asset.summary ? <p className="mt-1 text-xs text-[hsl(var(--muted))]">{asset.summary}</p> : null}
-                  </li>
-                ))}
+                {sharedKnowledgeInbound.map((row) => {
+                  const a = row.knowledgeAsset;
+                  const openHref = (a.sourceUrl ?? "").trim() || null;
+                  return (
+                    <li key={row.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
+                      <p className="text-sm font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
+                        {t(locale, "projKnowledgeSharedFrom")}{" "}
+                        <Link className="text-[hsl(var(--foreground))] underline-offset-2 hover:underline" href={`/projects/${row.relation.fromProject.id}`}>
+                          {row.relation.fromProject.company.name} / {row.relation.fromProject.name}
+                        </Link>
+                      </p>
+                      <div className="text-base font-semibold leading-snug">{a.title}</div>
+                      <div className="text-sm text-[hsl(var(--muted))]">
+                        {tKnowledgeLayer(locale, a.layer)} · {t(locale, "kbByAuthor")} {a.author.name}
+                      </div>
+                      {a.summary ? <p className="mt-1 line-clamp-2 text-sm text-[hsl(var(--muted))]">{a.summary}</p> : null}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <OpenDialogButton
+                          dialogId={`proj-kb-in-${row.id}`}
+                          className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                        >
+                          {t(locale, "projKnowledgeViewDetails")}
+                        </OpenDialogButton>
+                        {openHref ? (
+                          <a
+                            href={openHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                          >
+                            {t(locale, "kbOpenResource")}
+                          </a>
+                        ) : null}
+                      </div>
+                      <dialog
+                        id={`proj-kb-in-${row.id}`}
+                        className="app-modal-dialog z-50 max-h-[min(90vh,520px)] w-[min(100vw-2rem,440px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+                      >
+                        <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-3 py-2">
+                          <h3 className="text-sm font-semibold">{a.title}</h3>
+                          <CloseDialogButton
+                            dialogId={`proj-kb-in-${row.id}`}
+                            className="rounded-lg px-2 py-1 text-xs text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
+                            label={t(locale, "kbDialogClose")}
+                          />
+                        </div>
+                        <div className="max-h-[calc(90vh-80px)] space-y-2 overflow-y-auto p-3 text-xs">
+                          {a.summary ? <p className="text-[hsl(var(--muted))]">{a.summary}</p> : null}
+                          <p className="whitespace-pre-wrap text-[hsl(var(--foreground))]">{a.content}</p>
+                          {openHref ? (
+                            <a href={openHref} target="_blank" rel="noopener noreferrer" className="inline-block font-medium text-[hsl(var(--accent))] underline">
+                              {openHref}
+                            </a>
+                          ) : null}
+                        </div>
+                      </dialog>
+                    </li>
+                  );
+                })}
+                {ownKnowledge.map((asset) => {
+                  const canMutateKb = user.isSuperAdmin || user.id === asset.authorId;
+                  const openHref = (asset.sourceUrl ?? "").trim() || null;
+                  return (
+                    <li key={asset.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
+                      <div className="text-base font-semibold leading-snug">{asset.title}</div>
+                      <div className="text-sm text-[hsl(var(--muted))]">
+                        {tKnowledgeLayer(locale, asset.layer)} · {t(locale, "kbByAuthor")} {asset.author.name}
+                      </div>
+                      {asset.summary ? <p className="mt-1 line-clamp-2 text-sm text-[hsl(var(--muted))]">{asset.summary}</p> : null}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <OpenDialogButton
+                          dialogId={`proj-kb-view-${asset.id}`}
+                          className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                        >
+                          {t(locale, "projKnowledgeViewDetails")}
+                        </OpenDialogButton>
+                        {openHref ? (
+                          <a
+                            href={openHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                          >
+                            {t(locale, "kbOpenResource")}
+                          </a>
+                        ) : null}
+                        {canReadKnowledge ? (
+                          <Link
+                            href={`/knowledge/browse?projectId=${project.id}`}
+                            className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                          >
+                            {t(locale, "projKnowledgeBrowseThisProject")}
+                          </Link>
+                        ) : null}
+                        {canEditKnowledge && canMutateKb ? (
+                          <>
+                            <OpenDialogButton
+                              dialogId={`proj-kb-edit-${asset.id}`}
+                              className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                            >
+                              {t(locale, "kbEditKnowledge")}
+                            </OpenDialogButton>
+                            <form action={softDeleteKnowledgeAssetAction}>
+                              <input type="hidden" name="id" value={asset.id} />
+                              <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                                {t(locale, "btnArchive")}
+                              </Button>
+                            </form>
+                          </>
+                        ) : null}
+                      </div>
+                      <dialog
+                        id={`proj-kb-view-${asset.id}`}
+                        className="app-modal-dialog z-50 max-h-[min(90vh,520px)] w-[min(100vw-2rem,440px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+                      >
+                        <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-3 py-2">
+                          <h3 className="text-sm font-semibold">{asset.title}</h3>
+                          <CloseDialogButton
+                            dialogId={`proj-kb-view-${asset.id}`}
+                            className="rounded-lg px-2 py-1 text-xs text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
+                            label={t(locale, "kbDialogClose")}
+                          />
+                        </div>
+                        <div className="max-h-[calc(90vh-80px)] space-y-2 overflow-y-auto p-3 text-xs">
+                          {asset.summary ? <p className="text-[hsl(var(--muted))]">{asset.summary}</p> : null}
+                          <p className="whitespace-pre-wrap text-[hsl(var(--foreground))]">{asset.content}</p>
+                          {openHref ? (
+                            <a href={openHref} target="_blank" rel="noopener noreferrer" className="inline-block font-medium text-[hsl(var(--accent))] underline">
+                              {openHref}
+                            </a>
+                          ) : null}
+                        </div>
+                      </dialog>
+                      {canEditKnowledge && canMutateKb ? (
+                        <dialog
+                          id={`proj-kb-edit-${asset.id}`}
+                          className="app-modal-dialog z-50 max-h-[min(90vh,560px)] w-[min(100vw-2rem,480px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+                        >
+                          <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-3 py-2">
+                            <div>
+                              <h3 className="text-sm font-semibold">{t(locale, "kbEditKnowledge")}</h3>
+                              <p className="text-xs text-[hsl(var(--muted))]">{asset.title}</p>
+                            </div>
+                            <CloseDialogButton
+                              dialogId={`proj-kb-edit-${asset.id}`}
+                              className="rounded-lg px-2 py-1 text-xs text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
+                              label={t(locale, "kbDialogClose")}
+                            />
+                          </div>
+                          <form action={updateKnowledgeAssetAction} className="max-h-[calc(90vh-100px)] space-y-2 overflow-y-auto p-3 text-xs">
+                            <input type="hidden" name="id" value={asset.id} />
+                            <input type="hidden" name="titleEn" value={asset.titleEn ?? ""} />
+                            <input type="hidden" name="titleZh" value={asset.titleZh ?? ""} />
+                            <textarea name="content" defaultValue={asset.content} className="sr-only" readOnly rows={1} tabIndex={-1} aria-hidden />
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium uppercase text-[hsl(var(--muted))]">{t(locale, "kbEditTitle")}</label>
+                              <Input name="title" defaultValue={asset.title} required className="text-xs" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium uppercase text-[hsl(var(--muted))]">{t(locale, "kbEditSummary")}</label>
+                              <Input name="summary" defaultValue={asset.summary ?? ""} className="text-xs" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium uppercase text-[hsl(var(--muted))]">{t(locale, "commonLayer")}</label>
+                              <select
+                                name="layer"
+                                defaultValue={asset.layer}
+                                className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                              >
+                                {KNOWLEDGE_LAYERS.map((layer) => (
+                                  <option key={layer} value={layer}>
+                                    {tKnowledgeLayer(locale, layer)}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium uppercase text-[hsl(var(--muted))]">{t(locale, "commonSourceUrl")}</label>
+                              <Input name="sourceUrl" type="url" defaultValue={asset.sourceUrl ?? ""} className="text-xs" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium uppercase text-[hsl(var(--muted))]">{t(locale, "kbTagsField")}</label>
+                              <Input name="tags" defaultValue={asset.tags ?? ""} className="text-xs" placeholder={t(locale, "kbTagsPlaceholder")} />
+                            </div>
+                            <input type="hidden" name="projectId" value={project.id} />
+                            <input type="hidden" name="companyId" value={project.companyId} />
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              <Button type="submit" variant="secondary" className="h-8 text-xs">
+                                {t(locale, "kbSaveChanges")}
+                              </Button>
+                              <CloseDialogButton
+                                dialogId={`proj-kb-edit-${asset.id}`}
+                                className="rounded-md border border-[hsl(var(--border))] px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+                                label={t(locale, "kbDialogClose")}
+                              />
+                            </div>
+                          </form>
+                        </dialog>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <p className="text-sm text-[hsl(var(--muted))]">
                 {t(locale, "projKnowledgeEmpty")}{" "}
-                <Link className="underline" href="/knowledge">
-                  {t(locale, "projKnowledgeOpenLink")}
-                </Link>
+                {canReadKnowledge ? (
+                  <Link className="underline" href={`/knowledge/browse?projectId=${project.id}`}>
+                    {t(locale, "projKnowledgeOpenLink")}
+                  </Link>
+                ) : null}
               </p>
             )}
           </div>
@@ -441,58 +888,259 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         >
           <summary className="cursor-pointer select-none px-3 py-3 text-sm font-medium">
             {t(locale, "projJumpFiles")}{" "}
-            <span className="text-xs font-normal text-[hsl(var(--muted))]">({projectFiles.length})</span>
+            <span className="text-sm font-normal text-[hsl(var(--muted))]">({filesTotalCount})</span>
           </summary>
           <div className="max-h-[min(70vh,520px)] space-y-3 overflow-y-auto border-t border-[hsl(var(--border))] p-3 text-sm">
+            <p className="text-sm font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "projFilesNameUrlHeading")}</p>
+
+            {sharedAttachmentInbound.map((row) => {
+              const f = row.attachment;
+              const href =
+                f.resourceKind === "EXTERNAL_URL" && f.externalUrl?.trim()
+                  ? f.externalUrl.trim()
+                  : `/api/attachments/${f.id}`;
+              const isExternal = f.resourceKind === "EXTERNAL_URL" && !!f.externalUrl?.trim();
+              return (
+                <div key={row.id} className="rounded-md border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm">
+                  <p className="text-sm font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
+                    {t(locale, "projFilesSharedFrom")}{" "}
+                    <Link className="text-[hsl(var(--foreground))] underline-offset-2 hover:underline" href={`/projects/${row.relation.fromProject.id}`}>
+                      {row.relation.fromProject.company.name} / {row.relation.fromProject.name}
+                    </Link>
+                  </p>
+                  <div className="mt-1 grid gap-1 sm:grid-cols-[1fr_auto] sm:items-start">
+                    <div className="min-w-0">
+                      <a
+                        href={href}
+                        {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                        className="font-medium text-[hsl(var(--accent))] underline-offset-2 hover:underline"
+                      >
+                        {f.fileName}
+                      </a>
+                    </div>
+                    <div className="min-w-0 break-all text-[hsl(var(--muted))]">
+                      <a
+                        href={href}
+                        {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                        className="underline-offset-2 hover:underline"
+                      >
+                        {isExternal ? f.externalUrl : href}
+                      </a>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <OpenDialogButton
+                      dialogId={`proj-file-in-${row.id}`}
+                      className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                    >
+                      {t(locale, "projFilesViewDetails")}
+                    </OpenDialogButton>
+                  </div>
+                  <dialog
+                    id={`proj-file-in-${row.id}`}
+                    className="app-modal-dialog z-50 max-h-[min(90vh,440px)] w-[min(100vw-2rem,420px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+                  >
+                    <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-3 py-2">
+                      <h3 className="text-sm font-semibold">{f.fileName}</h3>
+                      <CloseDialogButton
+                        dialogId={`proj-file-in-${row.id}`}
+                        className="rounded-lg px-2 py-1 text-xs text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
+                        label={t(locale, "kbDialogClose")}
+                      />
+                    </div>
+                    <div className="space-y-2 p-3 text-xs">
+                      <p className="break-all text-[hsl(var(--muted))]">{isExternal ? f.externalUrl : href}</p>
+                      {f.description ? <p className="whitespace-pre-wrap text-[hsl(var(--foreground))]">{f.description}</p> : null}
+                      <a
+                        href={href}
+                        {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                        className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-3 text-xs font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                      >
+                        {t(locale, "kbOpenResource")}
+                      </a>
+                    </div>
+                  </dialog>
+                </div>
+              );
+            })}
+
             {projectFiles.length ? (
-              <AttachmentVersionTree
-                attachments={projectFiles.map((f) => ({
-                  id: f.id,
-                  previousVersionId: f.previousVersionId,
-                  fileName: f.fileName,
-                  createdAt: f.createdAt,
-                  description: f.description,
-                  resourceKind: f.resourceKind,
-                  externalUrl: f.externalUrl,
-                }))}
-                locale={locale}
-                showTrash={canManage}
-              />
-            ) : (
+              <ul className="space-y-2">
+                {projectFiles.map((f) => {
+                  const isExternal = f.resourceKind === "EXTERNAL_URL" && !!f.externalUrl?.trim();
+                  const href = isExternal ? f.externalUrl!.trim() : `/api/attachments/${f.id}`;
+                  return (
+                    <li key={f.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2 text-sm">
+                      <div className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] sm:items-start">
+                        <div className="min-w-0">
+                          <a
+                            href={href}
+                            {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                            className="font-medium text-[hsl(var(--accent))] underline-offset-2 hover:underline"
+                          >
+                            {f.fileName}
+                          </a>
+                          <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">{f.createdAt.toISOString().slice(0, 10)}</p>
+                        </div>
+                        <div className="min-w-0 break-all text-sm text-[hsl(var(--muted))]">
+                          <a
+                            href={href}
+                            {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                            className="underline-offset-2 hover:underline"
+                          >
+                            {isExternal ? f.externalUrl : href}
+                          </a>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <OpenDialogButton
+                          dialogId={`proj-file-view-${f.id}`}
+                          className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                        >
+                          {t(locale, "projFilesViewDetails")}
+                        </OpenDialogButton>
+                        {canManage && isExternal ? (
+                          <OpenDialogButton
+                            dialogId={`proj-file-edit-${f.id}`}
+                            className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                          >
+                            {t(locale, "projFilesEditLink")}
+                          </OpenDialogButton>
+                        ) : null}
+                        {canManage ? (
+                          <form action={softDeleteAttachmentAction} className="inline">
+                            <input type="hidden" name="id" value={f.id} />
+                            <Button type="submit" variant="secondary" className="h-8 px-2 text-sm">
+                              {t(locale, "attMoveTrash")}
+                            </Button>
+                          </form>
+                        ) : null}
+                      </div>
+                      <dialog
+                        id={`proj-file-view-${f.id}`}
+                        className="app-modal-dialog z-50 max-h-[min(90vh,440px)] w-[min(100vw-2rem,420px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+                      >
+                        <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-3 py-2">
+                          <h3 className="text-sm font-semibold">{f.fileName}</h3>
+                          <CloseDialogButton
+                            dialogId={`proj-file-view-${f.id}`}
+                            className="rounded-lg px-2 py-1 text-xs text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
+                            label={t(locale, "kbDialogClose")}
+                          />
+                        </div>
+                        <div className="space-y-2 p-3 text-xs">
+                          <p className="break-all text-[hsl(var(--muted))]">{isExternal ? f.externalUrl : href}</p>
+                          {f.description ? <p className="whitespace-pre-wrap text-[hsl(var(--foreground))]">{f.description}</p> : null}
+                          <a
+                            href={href}
+                            {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                            className="inline-flex h-8 items-center rounded-md border border-[hsl(var(--border))] px-3 text-xs font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                          >
+                            {t(locale, "kbOpenResource")}
+                          </a>
+                        </div>
+                      </dialog>
+                      {canManage && isExternal ? (
+                        <dialog
+                          id={`proj-file-edit-${f.id}`}
+                          className="app-modal-dialog z-50 max-h-[min(90vh,480px)] w-[min(100vw-2rem,440px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+                        >
+                          <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-3 py-2">
+                            <h3 className="text-sm font-semibold">{t(locale, "projFilesEditLink")}</h3>
+                            <CloseDialogButton
+                              dialogId={`proj-file-edit-${f.id}`}
+                              className="rounded-lg px-2 py-1 text-xs text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
+                              label={t(locale, "kbDialogClose")}
+                            />
+                          </div>
+                          <form action={updateProjectExternalLinkAction} className="space-y-2 p-3 text-xs">
+                            <input type="hidden" name="id" value={f.id} />
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium uppercase text-[hsl(var(--muted))]">{t(locale, "resLinkLabel")}</label>
+                              <Input name="fileName" defaultValue={f.fileName} required className="text-xs" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium uppercase text-[hsl(var(--muted))]">{t(locale, "resExternalUrl")}</label>
+                              <Input name="externalUrl" type="url" defaultValue={f.externalUrl ?? ""} required className="text-xs" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium uppercase text-[hsl(var(--muted))]">{t(locale, "commonDescription")}</label>
+                              <Input name="description" defaultValue={f.description ?? ""} className="text-xs" />
+                            </div>
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              <Button type="submit" variant="secondary" className="h-8 text-xs">
+                                {t(locale, "kbSaveChanges")}
+                              </Button>
+                              <CloseDialogButton
+                                dialogId={`proj-file-edit-${f.id}`}
+                                className="rounded-md border border-[hsl(var(--border))] px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+                                label={t(locale, "kbDialogClose")}
+                              />
+                            </div>
+                          </form>
+                        </dialog>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : sharedAttachmentInbound.length ? null : (
               <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
             )}
+
+            {projectFiles.length ? (
+              <details className="rounded-md border border-[hsl(var(--border))] bg-black/[0.02] p-2 text-sm dark:bg-white/[0.02]">
+                <summary className="cursor-pointer font-medium">{t(locale, "projFilesVersionHistory")}</summary>
+                <div className="mt-2">
+                  <AttachmentVersionTree
+                    attachments={projectFiles.map((file) => ({
+                      id: file.id,
+                      previousVersionId: file.previousVersionId,
+                      fileName: file.fileName,
+                      createdAt: file.createdAt,
+                      description: file.description,
+                      resourceKind: file.resourceKind,
+                      externalUrl: file.externalUrl,
+                    }))}
+                    locale={locale}
+                    showTrash={false}
+                  />
+                </div>
+              </details>
+            ) : null}
+
             {canManage ? (
               <form action={addExternalResourceLinkAction} className="grid gap-2 border-t border-[hsl(var(--border))] pt-3 md:grid-cols-2">
                 <input type="hidden" name="projectId" value={project.id} />
                 <div className="space-y-1 md:col-span-2">
-                  <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
-                  <Input name="externalUrl" type="url" required placeholder="https://drive.google.com/..." className="text-xs" />
+                  <label className="text-sm font-medium">{t(locale, "resExternalUrl")}</label>
+                  <Input name="externalUrl" type="url" required placeholder="https://drive.google.com/..." className="text-sm" />
                 </div>
                 <div className="space-y-1 md:col-span-2">
-                  <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
-                  <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
+                  <label className="text-sm font-medium">{t(locale, "resLinkLabel")}</label>
+                  <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-sm" />
                 </div>
                 <div className="space-y-1 md:col-span-2">
-                  <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
-                  <Input name="description" className="text-xs" />
+                  <label className="text-sm font-medium">{t(locale, "commonDescription")}</label>
+                  <Input name="description" className="text-sm" />
                 </div>
                 <div className="space-y-1 md:col-span-2">
-                  <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
+                  <label className="text-sm font-medium">{t(locale, "wfPrevVersion")}</label>
                   <select
                     name="previousVersionId"
-                    className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                    className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-sm"
                     defaultValue=""
                   >
                     <option value="">{t(locale, "wfNewVersionNone")}</option>
-                    {projectFiles.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.fileName}
+                    {projectFiles.map((file) => (
+                      <option key={file.id} value={file.id}>
+                        {file.fileName}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="md:col-span-2">
-                  <Button type="submit" variant="secondary" className="h-8 text-xs">
+                  <Button type="submit" variant="secondary" className="h-9 text-sm">
                     {t(locale, "resAddLink")}
                   </Button>
                 </div>
@@ -500,73 +1148,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             ) : null}
           </div>
         </details>
-
-        <Link
-          href={`/projects/${project.id}/workflow`}
-          className="flex flex-col justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-3 shadow-sm transition hover:border-[hsl(var(--accent))]/40 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
-        >
-          <span className="text-sm font-medium">{t(locale, "projJumpWorkflowCard")}</span>
-          <span className="mt-1 text-xs text-[hsl(var(--muted))]">{t(locale, "projJumpWorkflowHint")}</span>
-        </Link>
       </div>
 
-      <Card className="space-y-3 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle>{t(locale, "wfMapTitle")}</CardTitle>
-            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfMapCaption")}</p>
-          </div>
-          {canEditMap ? (
-            <p className="max-w-md text-xs text-[hsl(var(--muted))]">
-              <a href="#section-edit-project" className="font-medium text-[hsl(var(--accent))] underline">
-                {t(locale, "projMapEdit")}
-              </a>
-              {" · "}
-              {t(locale, "wfEditMapCaption")}
-            </p>
-          ) : null}
-        </div>
-        <div className="space-y-2">
-          {project.nodes.length ? (
-            layerLanes.map((layer) => {
-              const laneAll = project.nodes.filter((n) =>
-                layer.id === "__ungrouped__" ? !n.layerId : n.layerId === layer.id,
-              );
-              if (!laneAll.length) return null;
-              const lite = laneAll.map((n) => ({
-                id: n.id,
-                title: n.title,
-                parentNodeId: n.parentNodeId,
-                sortOrder: n.sortOrder,
-                status: n.status,
-                nodeType: n.nodeType,
-                progressPercent: n.progressPercent,
-                assignees: n.assignees.map((a) => ({
-                  id: a.user.id,
-                  name: a.user.name,
-                  avatarUrl: a.user.avatarUrl,
-                })),
-              }));
-              return (
-                <div key={layer.id} className="space-y-2 rounded-md border border-dashed border-[hsl(var(--border))] p-2">
-                  <div className="text-xs font-medium text-[hsl(var(--muted))]">
-                    {layer.id === "__ungrouped__" ? t(locale, "wfUngroupedLane") : layer.name}
-                  </div>
-                  <ProjectMapNestedNodes nodes={lite} locale={locale} projectId={project.id} />
-                </div>
-              );
-            })
-          ) : (
-            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "wfNoNodes")}</p>
-          )}
-        </div>
-        <div className="text-xs text-[hsl(var(--muted))]">
-          {project.nodes.length} {t(locale, "wfNodesCount")} · {project.edges.length} {t(locale, "wfDeps")}
-        </div>
-      </Card>
-
-
-      {(canManage || canEditMap) ? (
+      {canManage ? (
         <details
           id="section-edit-project"
           className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm"
@@ -575,15 +1159,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             {t(locale, "projEditProject")} · {t(locale, "projDetailsSummary")}
           </summary>
           <div className="space-y-4 border-t border-[hsl(var(--border))] p-4">
-            {canManage ? (
             <form action={updateProjectAction} className="space-y-3">
               <input type="hidden" name="projectId" value={project.id} />
               <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "commonName")}</label>
+                <label className="text-sm font-medium">{t(locale, "commonName")}</label>
                 <Input name="name" defaultValue={project.name} required />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
+                <label className="text-sm font-medium">{t(locale, "commonDescription")}</label>
                 <textarea
                   name="description"
                   rows={3}
@@ -592,7 +1175,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "commonOwner")}</label>
+                <label className="text-sm font-medium">{t(locale, "commonOwner")}</label>
                 <Select name="ownerId" defaultValue={project.ownerId}>
                   {staff.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -602,8 +1185,30 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 </Select>
               </div>
               <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-sm font-medium">{t(locale, "projFieldDepartment")}</label>
+                  <Select name="departmentId" defaultValue={project.departmentId ?? ""}>
+                    <option value="">{t(locale, "projDeptGroupNone")}</option>
+                    {projectDepts.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-sm font-medium">{t(locale, "projFieldProjectGroup")}</label>
+                  <Select name="projectGroupId" defaultValue={project.projectGroupId ?? ""}>
+                    <option value="">{t(locale, "projDeptGroupNone")}</option>
+                    {projectGroupList.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "commonPriority")}</label>
+                  <label className="text-sm font-medium">{t(locale, "commonPriority")}</label>
                   <Select name="priority" defaultValue={project.priority}>
                     {PRIORITIES.map((p) => (
                       <option key={p} value={p}>
@@ -613,7 +1218,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "commonStatus")}</label>
+                  <label className="text-sm font-medium">{t(locale, "commonStatus")}</label>
                   <Select name="status" defaultValue={project.status}>
                     {STATUSES.map((s) => (
                       <option key={s} value={s}>
@@ -623,42 +1228,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   </Select>
                 </div>
               </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">{t(locale, "projProjectDeadlineLabel")}</label>
+                <Input name="deadline" type="datetime-local" defaultValue={toDatetimeLocalValue(project.deadline)} />
+              </div>
               <Button type="submit">{t(locale, "btnSave")}</Button>
             </form>
-            ) : null}
-            {canEditMap ? (
-              <ProjectTaskStructureEditor
-                locale={locale}
-                eligibleParentIds={eligibleParentIds}
-                project={{
-                  id: project.id,
-                  layers: project.layers.map((l) => ({ id: l.id, name: l.name })),
-                  nodes: project.nodes.map((n) => ({
-                    id: n.id,
-                    title: n.title,
-                    parentNodeId: n.parentNodeId,
-                    sortOrder: n.sortOrder,
-                    status: n.status,
-                    nodeType: n.nodeType,
-                    dueAt: n.dueAt,
-                    layerId: n.layerId,
-                    assignees: n.assignees,
-                  })),
-                  edges: project.edges.map((e) => ({
-                    id: e.id,
-                    fromNodeId: e.fromNodeId,
-                    toNodeId: e.toNodeId,
-                    kind: e.kind,
-                  })),
-                  memberships: project.memberships.map((m) => ({
-                    userId: m.userId,
-                    user: { id: m.user.id, name: m.user.name },
-                  })),
-                }}
-              />
-            ) : null}
-            {canManage ? (
-              <>
+            <>
                 <div className="flex gap-2 border-t pt-4">
                   {project.status !== "ARCHIVED" ? (
                     <form action={archiveProjectAction}>
@@ -689,7 +1265,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   </form>
                 ) : null}
               </>
-            ) : null}
           </div>
         </details>
       ) : null}
@@ -706,7 +1281,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <form action={assignMultipleToProjectAction} className="mb-3 space-y-2 border-b pb-3">
               <input type="hidden" name="projectId" value={project.id} />
               <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "projAddStaffHelp")}</label>
+                <label className="text-sm font-medium">{t(locale, "projAddStaffHelp")}</label>
                 <select
                   name="memberIds"
                   multiple
@@ -723,7 +1298,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "projRoleInProject")}</label>
+                <label className="text-sm font-medium">{t(locale, "projRoleInProject")}</label>
                 <Select name="roleDefinitionId" required className="min-w-[220px]">
                   {projectRoles.map((r) => (
                     <option key={r.id} value={r.id}>

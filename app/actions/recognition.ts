@@ -80,6 +80,9 @@ export async function createRecognitionAction(formData: FormData) {
     meta: JSON.stringify({ toUserId, projectId, mode, tagCategory, secondaryLabelKey }),
   });
 
+  const { evaluateRecognitionTriggersForUser } = await import("@/lib/lifecycle-triggers");
+  await evaluateRecognitionTriggersForUser(toUserId);
+
   revalidatePath(`/projects/${projectId}`);
   revalidatePath(`/projects/${projectId}/recognition`);
   revalidatePath(`/staff/${toUserId}`);

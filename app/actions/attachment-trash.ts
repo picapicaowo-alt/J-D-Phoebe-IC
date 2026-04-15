@@ -32,10 +32,7 @@ export async function softDeleteAttachmentAction(formData: FormData) {
   revalidatePath("/knowledge/browse");
   if (att.workflowNodeId) {
     const n = await prisma.workflowNode.findFirst({ where: { id: att.workflowNodeId }, select: { projectId: true } });
-    if (n) {
-      revalidatePath(`/projects/${n.projectId}/workflow`);
-      revalidatePath(`/projects/${n.projectId}/nodes/${att.workflowNodeId}`);
-    }
+    if (n) revalidatePath(`/projects/${n.projectId}`);
   }
   if (att.projectId) revalidatePath(`/projects/${att.projectId}`);
   if (att.knowledgeAssetId) {
@@ -68,10 +65,7 @@ export async function restoreAttachmentTrashAction(formData: FormData) {
   if (att.projectId) revalidatePath(`/projects/${att.projectId}`);
   if (att.workflowNodeId) {
     const n = await prisma.workflowNode.findFirst({ where: { id: att.workflowNodeId }, select: { projectId: true } });
-    if (n) {
-      revalidatePath(`/projects/${n.projectId}/workflow`);
-      revalidatePath(`/projects/${n.projectId}/nodes/${att.workflowNodeId}`);
-    }
+    if (n) revalidatePath(`/projects/${n.projectId}`);
   }
   if (att.memberOutputId) {
     const mo = await prisma.memberOutput.findFirst({ where: { id: att.memberOutputId }, select: { userId: true } });

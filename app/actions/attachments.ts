@@ -6,7 +6,7 @@ import path from "path";
 import { revalidatePath } from "next/cache";
 import { AttachmentResourceKind } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
-import { canEditWorkflow, canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { canEditWorkflow, canManageProject, canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { assertPermission, userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
@@ -55,61 +55,6 @@ async function storeFile(
   const full = path.join(dir, diskName);
   await writeFile(full, buf);
   return { storageKey: path.join(relDir, diskName), blobUrl: null };
-}
-
-export async function uploadWorkflowAttachmentAction(formData: FormData) {
-  const user = (await requireUser()) as AccessUser;
-  await assertPermission(user, "project.workflow.update");
-
-  const nodeId = String(formData.get("workflowNodeId") ?? "").trim();
-  if (!nodeId) throw new Error("Missing workflowNodeId");
-
-  const node = await prisma.workflowNode.findFirst({
-    where: { id: nodeId, deletedAt: null },
-    include: { project: { include: { company: true } } },
-  });
-  if (!node || !canEditWorkflow(user, node.project)) throw new Error("Forbidden");
-
-  const file = formData.get("file");
-  if (!file || typeof file === "string" || !("arrayBuffer" in file)) {
-    throw new Error("Missing file");
-  }
-
-  const buf = Buffer.from(await file.arrayBuffer());
-  const fileName = sanitizeFileName(file.name || "upload");
-  const mimeType = file.type || "application/octet-stream";
-  const sizeBytes = buf.length;
-  const meta = metaFromForm(formData);
-  const prevRaw = String(formData.get("previousVersionId") ?? "").trim();
-  let previousVersionId: string | null = null;
-  if (prevRaw) {
-    const p = await prisma.attachment.findFirst({
-      where: { id: prevRaw, deletedAt: null, workflowNodeId: nodeId },
-    });
-    if (!p) throw new Error("Invalid version");
-    previousVersionId = p.id;
-  }
-
-  const { storageKey, blobUrl } = await storeFile(buf, fileName, mimeType, `workflow/${node.projectId}/${nodeId}`);
-
-  await prisma.attachment.create({
-    data: {
-      resourceKind: AttachmentResourceKind.FILE,
-      workflowNodeId: nodeId,
-      previousVersionId,
-      fileName,
-      mimeType,
-      sizeBytes,
-      storageKey,
-      blobUrl,
-      uploadedById: user.id,
-      ...meta,
-    },
-  });
-
-  revalidatePath(`/projects/${node.projectId}/workflow`);
-  revalidatePath(`/projects/${node.projectId}`);
-  revalidatePath(`/projects/${node.projectId}/nodes/${nodeId}`);
 }
 
 export async function uploadProjectAttachmentAction(formData: FormData) {
@@ -230,49 +175,13 @@ export async function addExternalResourceLinkAction(formData: FormData) {
   const meta = metaFromForm(formData);
   const prevRaw = String(formData.get("previousVersionId") ?? "").trim();
 
-  const workflowNodeId = String(formData.get("workflowNodeId") ?? "").trim() || null;
   const projectId = String(formData.get("projectId") ?? "").trim() || null;
   const knowledgeAssetId = String(formData.get("knowledgeAssetId") ?? "").trim() || null;
   const memberOutputId = String(formData.get("memberOutputId") ?? "").trim() || null;
-  const scopes = [workflowNodeId, projectId, knowledgeAssetId, memberOutputId].filter(Boolean);
+  const scopes = [projectId, knowledgeAssetId, memberOutputId].filter(Boolean);
   if (scopes.length !== 1) throw new Error("Specify exactly one attachment target.");
 
   let previousVersionId: string | null = null;
-
-  if (workflowNodeId) {
-    await assertPermission(user, "project.workflow.update");
-    const node = await prisma.workflowNode.findFirst({
-      where: { id: workflowNodeId, deletedAt: null },
-      include: { project: { include: { company: true } } },
-    });
-    if (!node || !canEditWorkflow(user, node.project)) throw new Error("Forbidden");
-    if (prevRaw) {
-      const prev = await prisma.attachment.findFirst({
-        where: { id: prevRaw, deletedAt: null, workflowNodeId },
-      });
-      if (!prev) throw new Error("Invalid version");
-      previousVersionId = prev.id;
-    }
-    await prisma.attachment.create({
-      data: {
-        resourceKind: AttachmentResourceKind.EXTERNAL_URL,
-        externalUrl: url,
-        workflowNodeId,
-        previousVersionId,
-        fileName,
-        mimeType: "text/uri-list",
-        sizeBytes: 0,
-        storageKey: null,
-        blobUrl: null,
-        uploadedById: user.id,
-        ...meta,
-      },
-    });
-    revalidatePath(`/projects/${node.projectId}/workflow`);
-    revalidatePath(`/projects/${node.projectId}`);
-    revalidatePath(`/projects/${node.projectId}/nodes/${workflowNodeId}`);
-    return;
-  }
 
   if (projectId) {
     await assertPermission(user, "project.read");
@@ -373,4 +282,28 @@ export async function addExternalResourceLinkAction(formData: FormData) {
     });
     revalidatePath(`/staff/${mo.userId}`);
   }
+}
+
+export async function updateProjectExternalLinkAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  await assertPermission(user, "project.update");
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) throw new Error("Missing id");
+  const url = mustHttpUrl(formData, "externalUrl");
+  const fileName = String(formData.get("fileName") ?? "").trim() || "Resource link";
+  const description = String(formData.get("description") ?? "").trim() || null;
+
+  const att = await prisma.attachment.findFirst({
+    where: { id, deletedAt: null, projectId: { not: null } },
+    include: { project: { include: { company: true } } },
+  });
+  if (!att?.projectId || !att.project) throw new Error("Not found");
+  if (!canManageProject(user, att.project)) throw new Error("Forbidden");
+  if (att.resourceKind !== AttachmentResourceKind.EXTERNAL_URL) throw new Error("Only external links can be edited here.");
+
+  await prisma.attachment.update({
+    where: { id },
+    data: { externalUrl: url, fileName, description },
+  });
+  revalidatePath(`/projects/${att.projectId}`);
 }

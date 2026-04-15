@@ -32,6 +32,19 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
   }
 
   const defaultCompanyId = sp.companyId && manageable.some((c) => c.id === sp.companyId) ? sp.companyId : manageable[0]!.id;
+  const manageableIds = manageable.map((c) => c.id);
+  const [departmentsForCreate, projectGroupsForCreate] = await Promise.all([
+    prisma.department.findMany({
+      where: { companyId: { in: manageableIds } },
+      include: { company: true },
+      orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
+    }),
+    prisma.projectGroup.findMany({
+      where: { companyId: { in: manageableIds } },
+      include: { company: true },
+      orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
+    }),
+  ]);
   const staff = await prisma.user.findMany({
     where: { active: true, deletedAt: null },
     orderBy: { name: "asc" },
@@ -54,6 +67,28 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
               {manageable.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">{t(locale, "projFieldDepartment")}</label>
+            <Select name="departmentId" defaultValue="">
+              <option value="">{t(locale, "projDeptGroupNone")}</option>
+              {departmentsForCreate.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.company.name} / {d.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">{t(locale, "projFieldProjectGroup")}</label>
+            <Select name="projectGroupId" defaultValue="">
+              <option value="">{t(locale, "projDeptGroupNone")}</option>
+              {projectGroupsForCreate.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.company.name} / {g.name}
                 </option>
               ))}
             </Select>
@@ -88,6 +123,10 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
               ))}
             </div>
             <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "projOwnerBecomesPmHint")}</p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">{t(locale, "projProjectDeadlineLabel")}</label>
+            <Input name="deadline" type="datetime-local" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">

@@ -16,7 +16,10 @@ export function AppNav({ items }: { items: AppNavItem[] }) {
   const pathname = usePathname() || "";
 
   return (
-    <nav className="flex flex-wrap items-center gap-1">
+    <nav
+      className="-mx-1 flex max-w-full flex-nowrap items-center gap-1 overflow-x-auto overflow-y-hidden px-1 pb-0.5 [scrollbar-width:thin]"
+      aria-label="Main"
+    >
       {items.map((item) => {
         const active = isActive(pathname, item.href);
         return (
@@ -24,10 +27,10 @@ export function AppNav({ items }: { items: AppNavItem[] }) {
             key={item.href}
             href={item.href}
             className={cn(
-              "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+              "shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
               active
-                ? "bg-zinc-900 text-white shadow-sm dark:bg-white dark:text-zinc-900"
-                : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
+                ? "bg-[hsl(var(--primary))]/12 text-[hsl(var(--primary))] ring-1 ring-[hsl(var(--primary))]/25"
+                : "text-[hsl(var(--muted))] hover:bg-black/[0.04] hover:text-[hsl(var(--foreground))] dark:hover:bg-white/[0.06]",
             )}
           >
             {item.label}

@@ -87,6 +87,9 @@ export async function createFeedbackEventAction(formData: FormData) {
     meta: JSON.stringify({ toUserId, category }),
   });
 
+  const { evaluateImprovementTriggersForUser } = await import("@/lib/lifecycle-triggers");
+  await evaluateImprovementTriggersForUser(toUserId);
+
   revalidatePath(`/staff/${toUserId}`);
   if (projectId) {
     revalidatePath(`/projects/${projectId}`);

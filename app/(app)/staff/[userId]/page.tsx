@@ -8,17 +8,25 @@ import {
   assignProjectAction,
   removeCompanyMembershipAction,
   removeProjectMembershipAction,
+  updateCompanyMembershipDepartmentAction,
+  updateCompanyMembershipSupervisorAction,
   updateStaffAction,
 } from "@/app/actions/staff";
+import {
+  completeOffboardingRunAction,
+  startOffboardingRunAction,
+  toggleOffboardingChecklistAction,
+} from "@/app/actions/lifecycle";
 import { removeUserAvatarAction, uploadUserAvatarAction } from "@/app/actions/profile-media";
 import { addExternalResourceLinkAction } from "@/app/actions/attachments";
 import { createMemberOutputWithAttachmentAction, updateMemberOutputMetaAction } from "@/app/actions/member-output";
 import { requireUser } from "@/lib/auth";
 import { canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
-import { t, tRecognitionTagCategory } from "@/lib/messages";
+import { t, tFeedbackCategory, tRecognitionTagCategory } from "@/lib/messages";
 import { tLedgerReason } from "@/lib/ledger-labels";
 import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
+import { displayFeedbackSecondary } from "@/lib/feedback-catalog";
 import { getCompanionManifest } from "@/lib/companion-manifest";
 import { sumAbilityByUser } from "@/lib/scoring";
 import { userHasPermission } from "@/lib/permissions";
@@ -39,19 +47,19 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
   const target = await prisma.user.findFirst({
     where: { id: userId, deletedAt: null },
     include: {
-      companyMemberships: { include: { company: true, roleDefinition: true } },
+      companyMemberships: { include: { company: true, roleDefinition: true, department: true, supervisor: true } },
       projectMemberships: { include: { project: { include: { company: true } }, roleDefinition: true } },
       companionProfile: true,
       performanceSnapshots: { orderBy: { createdAt: "desc" }, take: 1 },
       recognitionsReceived: {
         include: { fromUser: true, project: true },
         orderBy: { createdAt: "desc" },
-        take: 8,
+        take: 20,
       },
       feedbackReceived: {
         include: { fromUser: true, project: true },
         orderBy: { createdAt: "desc" },
-        take: 8,
+        take: 20,
       },
     },
   });
@@ -68,11 +76,32 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
     (await userHasPermission(actor, "staff.assign_company")) &&
     (isSuperAdmin(actor) || isAnyGroupAdmin || isAnyCompanyAdmin);
 
+  const supervisorCandidates = await prisma.user.findMany({
+    where: { deletedAt: null, active: true },
+    select: { id: true, name: true, email: true },
+    orderBy: { name: "asc" },
+    take: 250,
+  });
+
+  const offboardingRuns = canAssignCompanyUI
+    ? await prisma.offboardingRun.findMany({
+        where: { userId: target.id },
+        include: { company: true, checklist: true, startedBy: true },
+        orderBy: { startedAt: "desc" },
+        take: 8,
+      })
+    : [];
+
   const canAssignProjectUI =
     (await userHasPermission(actor, "staff.assign_project")) &&
     (isSuperAdmin(actor) || isAnyGroupAdmin || isAnyCompanyAdmin || isAnyPm);
 
   const companies = await prisma.company.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } });
+  const departmentsForStaffForms = await prisma.department.findMany({
+    where: { companyId: { in: companies.map((c) => c.id) } },
+    include: { company: true },
+    orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
+  });
   const projects = await prisma.project.findMany({
     where: { deletedAt: null },
     orderBy: { name: "asc" },
@@ -145,9 +174,23 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
         / {t(locale, "staffProfile")}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <UserFace name={target.name} avatarUrl={target.avatarUrl} size={56} />
-        <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
+          {target.title ? <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">{target.title}</p> : null}
+          <p className={`text-sm text-[hsl(var(--foreground))] ${target.title ? "mt-1" : "mt-0.5"}`}>{target.email}</p>
+          {target.contactEmails ? (
+            <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
+              {t(locale, "profileContactEmailsLabel")}: {target.contactEmails}
+            </p>
+          ) : null}
+          {target.phone ? (
+            <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
+              {t(locale, "profilePhoneLabel")}: {target.phone}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       {canEditProfile ? (
@@ -181,6 +224,15 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "staffTitle")}</label>
               <Input name="title" defaultValue={target.title ?? ""} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "profileContactEmailsLabel")}</label>
+              <Input name="contactEmails" defaultValue={target.contactEmails ?? ""} placeholder="a@firm.com; b@…" />
+              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileContactEmailsHelp")}</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "profilePhoneLabel")}</label>
+              <Input name="phone" defaultValue={target.phone ?? ""} />
             </div>
             {isSuperAdmin(actor) ? (
               <label className="flex items-center gap-2 text-sm">
@@ -472,20 +524,32 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
       <Card className="space-y-3 p-4">
         <CardTitle>{t(locale, "staffRecReceived")}</CardTitle>
         {target.recognitionsReceived.length ? (
-          <ul className="space-y-2 text-sm">
+          <ul className="space-y-3 text-sm">
             {target.recognitionsReceived.map((r) => (
-              <li key={r.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                <div className="font-medium">
+              <li key={r.id} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3 shadow-sm">
+                <div className="font-semibold text-[hsl(var(--foreground))]">
                   {r.secondaryLabelKey
                     ? displayRecognitionSecondary(r.tagCategory, r.secondaryLabelKey, locale)
-                    : (r.tagLabel ?? "")}
+                    : (r.tagLabel ?? tRecognitionTagCategory(locale, r.tagCategory))}
                 </div>
-                <div className="text-xs text-[hsl(var(--muted))]">
-                  {tRecognitionTagCategory(locale, r.tagCategory)} · {r.project?.name ?? t(locale, "kbUncategorizedShort")} ·{" "}
+                <div className="mt-1 text-xs leading-relaxed text-[hsl(var(--muted))]">
+                  {tRecognitionTagCategory(locale, r.tagCategory)}
+                  {" · "}
+                  {r.project ? (
+                    <Link className="font-medium text-[hsl(var(--foreground))] underline-offset-2 hover:underline" href={`/projects/${r.project.id}`}>
+                      {r.project.name}
+                    </Link>
+                  ) : (
+                    t(locale, "kbUncategorizedShort")
+                  )}
+                  {" · "}
                   {t(locale, "projRecBy")}{" "}
                   {r.fromUser?.name ?? t(locale, "staffRecFromTeammate")}
+                  {" · "}
+                  {t(locale, "staffRecWhen")}{" "}
+                  {r.createdAt.toISOString().slice(0, 10)}
                 </div>
-                {r.message ? <p className="mt-1 text-sm">{r.message}</p> : null}
+                {r.message ? <p className="mt-2 text-sm text-[hsl(var(--foreground))]">{r.message}</p> : null}
               </li>
             ))}
           </ul>
@@ -525,13 +589,32 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
       {(actor.id === target.id || (await userHasPermission(actor, "feedback.read"))) && target.feedbackReceived.length ? (
         <Card className="space-y-3 p-4">
           <CardTitle>{t(locale, "staffGrowthOnFile")}</CardTitle>
-          <ul className="space-y-2 text-sm">
+          <ul className="space-y-3 text-sm">
             {target.feedbackReceived.map((f) => (
-              <li key={f.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                <div className="text-xs text-[hsl(var(--muted))]">
-                  {f.project?.name ?? t(locale, "staffFbProjectFallback")} · {f.createdAt.toISOString().slice(0, 10)}
+              <li key={f.id} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3 shadow-sm">
+                <div className="font-semibold text-[hsl(var(--foreground))]">
+                  {displayFeedbackSecondary(f.category, f.secondaryLabelKey, locale)}
                 </div>
-                {f.message ? <p className="mt-1">{f.message}</p> : null}
+                <div className="mt-1 text-xs leading-relaxed text-[hsl(var(--muted))]">
+                  {tFeedbackCategory(locale, f.category)}
+                  {" · "}
+                  {f.project ? (
+                    <Link className="font-medium text-[hsl(var(--foreground))] underline-offset-2 hover:underline" href={`/projects/${f.project.id}`}>
+                      {f.project.name}
+                    </Link>
+                  ) : (
+                    t(locale, "staffFbProjectFallback")
+                  )}
+                  {" · "}
+                  {t(locale, "staffRecWhen")} {f.createdAt.toISOString().slice(0, 10)}
+                  {f.fromUser ? (
+                    <>
+                      {" · "}
+                      {t(locale, "projRecBy")} {f.fromUser.name}
+                    </>
+                  ) : null}
+                </div>
+                {f.message ? <p className="mt-2 text-sm text-[hsl(var(--foreground))]">{f.message}</p> : null}
               </li>
             ))}
           </ul>
@@ -551,6 +634,14 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                 </option>
               ))}
             </Select>
+            <Select name="departmentId" className="min-w-[200px]">
+              <option value="">{t(locale, "projDeptGroupNone")}</option>
+              {departmentsForStaffForms.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.company.name} / {d.name}
+                </option>
+              ))}
+            </Select>
             <Select name="roleDefinitionId" required className="min-w-[200px]">
               {companyRoles.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -558,8 +649,68 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
                 </option>
               ))}
             </Select>
+            <Select name="supervisorUserId" className="min-w-[200px]">
+              <option value="">{t(locale, "staffSupervisorNone")}</option>
+              {supervisorCandidates.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </Select>
             <Button type="submit">{t(locale, "projAssignBtn")}</Button>
           </form>
+        </Card>
+      ) : null}
+
+      {canAssignCompanyUI ? (
+        <Card className="space-y-3 p-4">
+          <CardTitle>{t(locale, "offboardingTitle")}</CardTitle>
+          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "offboardingChecklist")}</p>
+          <form action={startOffboardingRunAction} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="userId" value={target.id} />
+            <Select name="companyId" required className="min-w-[220px]">
+              <option value="">{t(locale, "staffSelectCompany")}</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+            <Button type="submit" variant="secondary">
+              {t(locale, "offboardingStart")}
+            </Button>
+          </form>
+          <ul className="space-y-3 text-xs">
+            {offboardingRuns.map((run) => (
+              <li key={run.id} className="rounded-md border border-[hsl(var(--border))] p-3">
+                <div className="font-medium text-[hsl(var(--foreground))]">
+                  {run.company.name} · {run.status} · {run.startedAt.toISOString().slice(0, 10)}
+                </div>
+                <ul className="mt-2 space-y-1">
+                  {run.checklist.map((c) => (
+                    <li key={c.id} className="flex items-center justify-between gap-2">
+                      <span className={c.completedAt ? "text-[hsl(var(--muted))] line-through" : ""}>{c.label}</span>
+                      <form action={toggleOffboardingChecklistAction}>
+                        <input type="hidden" name="itemId" value={c.id} />
+                        <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                          {c.completedAt ? "Undo" : "Done"}
+                        </Button>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+                {run.status === "IN_PROGRESS" && run.checklist.every((c) => c.completedAt) ? (
+                  <form action={completeOffboardingRunAction} className="mt-2">
+                    <input type="hidden" name="runId" value={run.id} />
+                    <Button type="submit" className="h-8 text-xs">
+                      {t(locale, "onboardingCompleted")}
+                    </Button>
+                  </form>
+                ) : null}
+              </li>
+            ))}
+            {!offboardingRuns.length ? <li className="text-[hsl(var(--muted))]">—</li> : null}
+          </ul>
         </Card>
       ) : null}
 
@@ -606,16 +757,66 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
           <CardTitle>{t(locale, "projCompanyMemberships")}</CardTitle>
           <ul className="mt-2 space-y-2 text-sm">
             {target.companyMemberships.map((m) => (
-              <li key={m.id} className="flex flex-wrap items-center justify-between gap-2">
-                <span>
-                  {m.company.name} — {m.roleDefinition.displayName}
-                </span>
+              <li key={m.id} className="space-y-2 rounded-md border border-[hsl(var(--border))] p-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    {m.company.name} — {m.roleDefinition.displayName}
+                    {m.department ? (
+                      <span className="text-[hsl(var(--muted))]">
+                        {" "}
+                        · {m.department.name}
+                      </span>
+                    ) : null}
+                  </span>
+                  {canAssignCompanyUI ? (
+                    <form action={removeCompanyMembershipAction}>
+                      <input type="hidden" name="userId" value={target.id} />
+                      <input type="hidden" name="companyId" value={m.companyId} />
+                      <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                        {t(locale, "btnRemove")}
+                      </Button>
+                    </form>
+                  ) : null}
+                </div>
                 {canAssignCompanyUI ? (
-                  <form action={removeCompanyMembershipAction}>
+                  <form action={updateCompanyMembershipDepartmentAction} className="flex flex-wrap items-end gap-2 text-xs">
                     <input type="hidden" name="userId" value={target.id} />
                     <input type="hidden" name="companyId" value={m.companyId} />
-                    <Button type="submit" variant="secondary" className="h-7 px-2 text-xs">
-                      {t(locale, "btnRemove")}
+                    <div className="min-w-[180px] flex-1 space-y-1">
+                      <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "projFieldDepartment")}</label>
+                      <Select name="departmentId" defaultValue={m.departmentId ?? ""} className="h-8 text-xs">
+                        <option value="">{t(locale, "projDeptGroupNone")}</option>
+                        {departmentsForStaffForms
+                          .filter((d) => d.companyId === m.companyId)
+                          .map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name}
+                            </option>
+                          ))}
+                      </Select>
+                    </div>
+                    <Button type="submit" variant="secondary" className="h-8 text-xs">
+                      {t(locale, "btnSave")}
+                    </Button>
+                  </form>
+                ) : null}
+                {canAssignCompanyUI ? (
+                  <form action={updateCompanyMembershipSupervisorAction} className="flex flex-wrap items-end gap-2 text-xs">
+                    <input type="hidden" name="userId" value={target.id} />
+                    <input type="hidden" name="companyId" value={m.companyId} />
+                    <div className="min-w-[200px] flex-1 space-y-1">
+                      <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "staffSupervisorLabel")}</label>
+                      <Select name="supervisorUserId" defaultValue={m.supervisorUserId ?? ""} className="h-8 text-xs">
+                        <option value="">{t(locale, "staffSupervisorNone")}</option>
+                        {supervisorCandidates.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <Button type="submit" variant="secondary" className="h-8 text-xs">
+                      {t(locale, "btnSave")}
                     </Button>
                   </form>
                 ) : null}
