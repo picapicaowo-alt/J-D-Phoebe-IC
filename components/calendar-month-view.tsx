@@ -1,5 +1,9 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CalendarMonthYearPicker } from "@/components/calendar-month-year-picker";
+import { calendarHref } from "@/lib/calendar-nav";
 
 export type CalendarMonthEvent = {
   id: string;
@@ -7,6 +11,15 @@ export type CalendarMonthEvent = {
   startsAt: Date;
   endsAt: Date;
   sourceKind: string;
+};
+
+export type CalendarMonthNavPreserve = {
+  create?: boolean;
+  slotDay?: number;
+  sourceKind?: string;
+  sourceId?: string;
+  eventId?: string;
+  defaultProjectId?: string;
 };
 
 const WEEK_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -30,6 +43,8 @@ export function CalendarMonthView({
   todayLabel,
   eventDetailHref,
   preserveQuery,
+  showCreate,
+  cancelCreateHref,
 }: {
   year: number;
   month: number;
@@ -43,8 +58,11 @@ export function CalendarMonthView({
   nextLabel: string;
   todayLabel: string;
   eventDetailHref?: (eventId: string) => string;
-  preserveQuery?: { create?: boolean; sourceKind?: string; sourceId?: string; eventId?: string; defaultProjectId?: string };
+  preserveQuery?: CalendarMonthNavPreserve;
+  showCreate: boolean;
+  cancelCreateHref: string;
 }) {
+  const router = useRouter();
   const first = new Date(year, month - 1, 1);
   const startWeekday = first.getDay();
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -67,6 +85,19 @@ export function CalendarMonthView({
   const week = locale === "zh" ? WEEK_ZH : WEEK_EN;
   const today = new Date();
 
+  const nav = preserveQuery ?? {};
+  const createForDayHref = (day: number) =>
+    calendarHref({
+      y: year,
+      m: month,
+      view: "month",
+      create: true,
+      slotDay: day,
+      sourceKind: nav.sourceKind,
+      sourceId: nav.sourceId,
+      defaultProjectId: nav.defaultProjectId,
+    });
+
   return (
     <div className="rounded-[12px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -77,13 +108,14 @@ export function CalendarMonthView({
           locale={locale}
           preserve={{
             create: preserveQuery?.create,
+            slotDay: preserveQuery?.slotDay,
             sourceKind: preserveQuery?.sourceKind,
             sourceId: preserveQuery?.sourceId,
             eventId: preserveQuery?.eventId,
             defaultProjectId: preserveQuery?.defaultProjectId,
           }}
         />
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-base">
           <Link
             href={prevHref}
             aria-label={prevLabel}
@@ -106,63 +138,79 @@ export function CalendarMonthView({
           </Link>
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-px rounded-lg bg-[hsl(var(--border))] text-center text-sm font-semibold text-[hsl(var(--muted))]">
+      <div className="grid grid-cols-7 gap-px rounded-lg bg-[hsl(var(--border))] text-center text-base font-semibold text-[hsl(var(--muted))]">
         {week.map((d) => (
           <div key={d} className="bg-[hsl(var(--card))] py-2.5">
             {d}
           </div>
         ))}
       </div>
-      <div className="mt-px grid grid-cols-7 gap-px rounded-lg bg-[hsl(var(--border))]">
+      <div
+        className="mt-px grid grid-cols-7 gap-px rounded-lg bg-[hsl(var(--border))]"
+        onContextMenuCapture={(e) => {
+          if (!showCreate) return;
+          e.preventDefault();
+          router.push(cancelCreateHref);
+        }}
+      >
         {cells.map((day, idx) => {
           const isToday = !!(day && isSameLocalDay(today, year, month, day));
           return (
             <div
               key={idx}
-              className={`min-h-[104px] bg-[hsl(var(--card))] p-1.5 text-left align-top ${
+              className={`relative min-h-[104px] bg-[hsl(var(--card))] p-1.5 text-left align-top ${
                 isToday ? "ring-2 ring-inset ring-[hsl(var(--primary))]/50" : ""
               }`}
             >
               {day ? (
-                <div className="mb-1 flex items-center justify-between gap-1">
-                  <span
-                    className={`inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-full text-xs font-semibold ${
-                      isToday ? "bg-[hsl(var(--primary))] text-white" : "text-[hsl(var(--foreground))]"
-                    }`}
-                  >
-                    {day}
-                  </span>
-                </div>
+                <>
+                  <Link
+                    href={createForDayHref(day)}
+                    className="absolute inset-0 z-0 rounded-sm hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                    aria-label={locale === "zh" ? `在 ${month} 月 ${day} 日添加日程` : `Add event on ${month}/${day}`}
+                  />
+                  <div className="pointer-events-none relative z-[1] mb-1 flex items-center justify-between gap-1">
+                    <span
+                      className={`inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-full text-sm font-semibold ${
+                        isToday ? "bg-[hsl(var(--primary))] text-white" : "text-[hsl(var(--foreground))]"
+                      }`}
+                    >
+                      {day}
+                    </span>
+                  </div>
+                  <ul className="relative z-[2] space-y-1 pointer-events-none">
+                    {(byDay.get(day) ?? []).slice(0, 5).map((ev) => {
+                      const href = eventDetailHref?.(ev.id);
+                      const cls =
+                        "block truncate rounded-md bg-[hsl(var(--primary))]/12 px-1.5 py-1 text-sm font-medium leading-snug text-[hsl(var(--foreground))] hover:bg-[hsl(var(--primary))]/20";
+                      return (
+                        <li key={ev.id} className="pointer-events-auto">
+                          {href ? (
+                            <Link href={href} className={cls} title={ev.title}>
+                              {ev.title}
+                            </Link>
+                          ) : (
+                            <span className={cls} title={ev.title}>
+                              {ev.title}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {(() => {
+                    const n = byDay.get(day)?.length ?? 0;
+                    return n > 5 ? <p className="relative z-[2] mt-1 text-sm font-medium text-[hsl(var(--muted))]">+{n - 5}</p> : null;
+                  })()}
+                </>
               ) : null}
-              <ul className="space-y-1">
-                {(day ? byDay.get(day) ?? [] : []).slice(0, 5).map((ev) => {
-                  const href = eventDetailHref?.(ev.id);
-                  const cls =
-                    "block truncate rounded-md bg-[hsl(var(--primary))]/12 px-1.5 py-1 text-xs font-medium leading-snug text-[hsl(var(--foreground))] hover:bg-[hsl(var(--primary))]/20";
-                  return (
-                    <li key={ev.id}>
-                      {href ? (
-                        <Link href={href} className={cls} title={ev.title}>
-                          {ev.title}
-                        </Link>
-                      ) : (
-                        <span className={cls} title={ev.title}>
-                          {ev.title}
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-              {(() => {
-                if (!day) return null;
-                const n = byDay.get(day)?.length ?? 0;
-                return n > 5 ? <p className="mt-1 text-xs font-medium text-[hsl(var(--muted))]">+{n - 5}</p> : null;
-              })()}
             </div>
           );
         })}
       </div>
+      {showCreate ? (
+        <p className="mt-3 text-base text-[hsl(var(--muted))]">{locale === "zh" ? "右键网格可取消新建" : "Right-click the grid to cancel new event"}</p>
+      ) : null}
     </div>
   );
 }

@@ -1,13 +1,13 @@
 "use server";
 
 import { hash } from "bcryptjs";
+import { redirect } from "next/navigation";
 import { OrgGroupStatus, CompanyStatus, Prisma } from "@prisma/client";
 import { getAppSession } from "@/lib/auth";
 import { isClerkEnabled } from "@/lib/clerk-config";
 import { prisma } from "@/lib/prisma";
 
 export type RegisterActionResult =
-  | { ok: true; redirectTo: string }
   | {
       ok: false;
       messageKey:
@@ -17,7 +17,8 @@ export type RegisterActionResult =
         | "registerInvalidEmail"
         | "homeRegisterErrorGeneric"
         | "homeRegisterClerkHint";
-    };
+    }
+  | null;
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -92,14 +93,14 @@ export async function registerAction(formData: FormData): Promise<RegisterAction
     session.userId = user.id;
     session.isLoggedIn = true;
     await session.save();
-
-    return { ok: true, redirectTo: "/onboarding/companion" };
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return { ok: false, messageKey: "registerEmailTaken" };
     }
     return { ok: false, messageKey: "homeRegisterErrorGeneric" };
   }
+
+  redirect("/onboarding/companion");
 }
 
 export async function registerFormAction(

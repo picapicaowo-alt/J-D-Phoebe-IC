@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createStaffAction } from "@/app/actions/staff";
+import { startStaffInviteAction } from "@/app/actions/staff-invite";
 import { requireUser } from "@/lib/auth";
 import type { AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
@@ -10,9 +10,16 @@ import { Input } from "@/components/ui/input";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 
-export default async function NewStaffPage() {
+export default async function NewStaffPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const user = (await requireUser()) as AccessUser;
   const locale = await getLocale();
+  const sp = await searchParams;
+  const err = String(sp.error ?? "").trim();
+
   const ok =
     (await userHasPermission(user, "staff.create")) &&
     (user.isSuperAdmin || user.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN"));
@@ -28,7 +35,25 @@ export default async function NewStaffPage() {
       </div>
       <Card className="space-y-4 p-6">
         <CardTitle>{t(locale, "staffFormAddTitle")}</CardTitle>
-        <form action={createStaffAction} className="space-y-3">
+        {err === "email_taken" ? (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">{t(locale, "staffInviteErrEmailTaken")}</p>
+        ) : null}
+        {err === "email_not_configured" ? (
+          <p className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm">{t(locale, "staffInviteErrEmailNotConfigured")}</p>
+        ) : null}
+        {err === "invite_expired" ? (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">{t(locale, "staffInviteErrExpired")}</p>
+        ) : null}
+        {err === "too_many_attempts" ? (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">{t(locale, "staffInviteErrTooManyAttempts")}</p>
+        ) : null}
+        {err === "forbidden" ? (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">{t(locale, "staffInviteErrForbidden")}</p>
+        ) : null}
+        {err === "email_send_failed" ? (
+          <p className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm">{t(locale, "staffInviteErrEmailSendFailed")}</p>
+        ) : null}
+        <form action={startStaffInviteAction} className="space-y-3">
           <div className="space-y-1">
             <label className="text-xs font-medium">{t(locale, "staffFullName")}</label>
             <Input name="name" required />
@@ -45,7 +70,7 @@ export default async function NewStaffPage() {
             <label className="text-xs font-medium">{t(locale, "staffTitle")}</label>
             <Input name="title" />
           </div>
-          <Button type="submit">{t(locale, "staffCreateAccountBtn")}</Button>
+          <Button type="submit">{t(locale, "staffInviteSendCode")}</Button>
         </form>
         <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "staffForcePasswordChange")}</p>
         <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "staffVerificationNote")}</p>

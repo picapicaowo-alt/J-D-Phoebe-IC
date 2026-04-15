@@ -1,13 +1,14 @@
 import type { AccessUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { ALL_PERMISSION_KEYS, type PermissionKey } from "@/lib/permission-keys";
+import { cache as reactCache } from "react";
 
-const cache = new Map<string, Set<string>>();
+const permissionKeyMemCache = new Map<string, Set<string>>();
 
-export async function getPermissionKeysForUser(userId: string, isSuperAdmin: boolean): Promise<Set<string>> {
+async function getPermissionKeysForUserImpl(userId: string, isSuperAdmin: boolean): Promise<Set<string>> {
   if (isSuperAdmin) return new Set(ALL_PERMISSION_KEYS);
 
-  const hit = cache.get(userId);
+  const hit = permissionKeyMemCache.get(userId);
   if (hit) return hit;
 
   const user = await prisma.user.findFirst({
@@ -27,7 +28,7 @@ export async function getPermissionKeysForUser(userId: string, isSuperAdmin: boo
   ];
   const uniqueRoleIds = [...new Set(roleIds)];
   if (!uniqueRoleIds.length) {
-    cache.set(userId, new Set());
+    permissionKeyMemCache.set(userId, new Set());
     return new Set();
   }
 
@@ -37,12 +38,15 @@ export async function getPermissionKeysForUser(userId: string, isSuperAdmin: boo
   });
 
   const set = new Set(rows.map((r) => r.permissionDefinition.key));
-  cache.set(userId, set);
+  permissionKeyMemCache.set(userId, set);
   return set;
 }
 
+/** Dedupes permission lookups within a single request (layout + pages). */
+export const getPermissionKeysForUser = reactCache(getPermissionKeysForUserImpl);
+
 export function invalidatePermissionCache(userId: string) {
-  cache.delete(userId);
+  permissionKeyMemCache.delete(userId);
 }
 
 export async function userHasPermission(user: AccessUser, key: PermissionKey) {

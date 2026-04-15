@@ -89,7 +89,7 @@ const PROJECT_CONTRIBUTOR_PERMS = [
 ];
 
 async function main() {
-  await prisma.googleCalendarCredential.deleteMany();
+  await prisma.staffInvite.deleteMany();
   await prisma.calendarAttendee.deleteMany();
   await prisma.calendarEvent.deleteMany();
   await prisma.offboardingChecklistItem.deleteMany();

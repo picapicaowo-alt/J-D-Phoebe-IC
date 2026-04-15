@@ -253,6 +253,8 @@ model Company {
   status           CompanyStatus  @default(ACTIVE)
   /// HR onboarding pack (e.g. Google Drive); shown to new members assigned to this company.
   onboardingPackageUrl       String?
+  /// Optional onboarding video URL (direct .mp4 or https page); watch progress is tracked for members.
+  onboardingVideoUrl         String?
   onboardingPackageVersion     String         @default("v1")
   onboardingDeadlineDays       Int            @default(14)
   archivedAt       DateTime?
@@ -359,7 +361,7 @@ model User {
   calendarAttendees    CalendarAttendee[]
   offboardingRunsSubject OffboardingRun[] @relation("OffboardingSubject")
   offboardingRunsStarted OffboardingRun[] @relation("OffboardingStartedBy")
-  googleCalendarCredential GoogleCalendarCredential?
+  staffInvitesCreated    StaffInvite[]
 }
 
 model Session {
@@ -373,6 +375,27 @@ model Session {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+/// Pending staff account after admin requests email OTP (consumed when user is created).
+model StaffInvite {
+  id               String    @id @default(cuid())
+  email            String
+  name             String
+  title            String?
+  passwordHash     String
+  otpHash          String
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  attempts         Int       @default(0)
+  createdByUserId  String
+  createdAt        DateTime  @default(now())
+
+  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([expiresAt])
+  @@index([createdByUserId])
 }
 
 model RoleDefinition {
@@ -860,6 +883,10 @@ model MemberOnboarding {
   overdueSupervisorNotifiedAt DateTime?
   /// User confirmed they opened the onboarding pack / primary materials (gates checklist).
   materialsOpenedAt DateTime?
+  /// Seconds of onboarding video consumed (HTML5) or dwell time for embed flows (capped server-side).
+  videoProgressSeconds Int      @default(0)
+  /// Set when watch threshold met (e.g. ≥85% of duration or embed dwell target).
+  videoCompletedAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -1024,16 +1051,3 @@ model CalendarAttendee {
   @@index([userId])
 }
 
-/// Google OAuth tokens for Calendar write-back (store refresh token server-side only).
-model GoogleCalendarCredential {
-  id                    String    @id @default(cuid())
-  userId                String    @unique
-  refreshToken          String
-  accessToken           String?
-  accessTokenExpiresAt  DateTime?
-  scope                 String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}

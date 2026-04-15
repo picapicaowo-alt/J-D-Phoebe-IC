@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { calendarHref } from "@/lib/calendar-nav";
 import { CalendarSourceKind, LifecycleTriggerKind, LifecycleTriggerScope, OffboardingStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
@@ -30,11 +31,67 @@ export async function acknowledgeMemberOnboardingMaterialsAction(formData: FormD
   const onboardingId = must(formData, "onboardingId");
   const ob = await prisma.memberOnboarding.findFirst({
     where: { id: onboardingId, userId: user.id },
+    include: { company: true },
   });
   if (!ob) throw new Error("Forbidden");
+  const videoUrl = ob.company.onboardingVideoUrl?.trim();
+  if (videoUrl && !ob.videoCompletedAt) {
+    redirect(`/onboarding/member?companyId=${ob.companyId}&onboardingErr=video`);
+  }
   await prisma.memberOnboarding.update({
     where: { id: onboardingId },
     data: { materialsOpenedAt: new Date() },
+  });
+  revalidatePath("/onboarding/member");
+}
+
+const EMBED_COMPLETION_SECONDS = 45;
+const VIDEO_COMPLETE_RATIO = 0.85;
+
+/** Client-reported progress for onboarding video (HTML5 or embed dwell). */
+export async function updateOnboardingVideoProgressAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  const onboardingId = must(formData, "onboardingId");
+  const mode = String(formData.get("mode") ?? "html5");
+  const watchedRaw = Number(formData.get("watchedSeconds") ?? "");
+  const durationRaw = Number(formData.get("durationSeconds") ?? "");
+  const dwellDeltaRaw = Number(formData.get("dwellDeltaSeconds") ?? "");
+
+  const ob = await prisma.memberOnboarding.findFirst({
+    where: { id: onboardingId, userId: user.id },
+    include: { company: true },
+  });
+  if (!ob?.company.onboardingVideoUrl?.trim()) throw new Error("Forbidden");
+
+  if (ob.videoCompletedAt) {
+    revalidatePath("/onboarding/member");
+    return;
+  }
+
+  let nextProgress = ob.videoProgressSeconds;
+  let completedAt: Date | null = null;
+
+  if (mode === "html5") {
+    const watched = Number.isFinite(watchedRaw) ? Math.max(0, Math.floor(watchedRaw)) : 0;
+    const duration = Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : 0;
+    nextProgress = Math.max(ob.videoProgressSeconds, watched);
+    if (duration > 0 && watched / duration >= VIDEO_COMPLETE_RATIO) {
+      completedAt = new Date();
+    }
+  } else if (mode === "dwell") {
+    const dwell = Number.isFinite(dwellDeltaRaw) ? Math.min(120, Math.max(0, Math.floor(dwellDeltaRaw))) : 0;
+    nextProgress = Math.min(24 * 3600, ob.videoProgressSeconds + dwell);
+    if (nextProgress >= EMBED_COMPLETION_SECONDS) {
+      completedAt = new Date();
+    }
+  }
+
+  await prisma.memberOnboarding.update({
+    where: { id: onboardingId },
+    data: {
+      videoProgressSeconds: nextProgress,
+      ...(completedAt ? { videoCompletedAt: completedAt } : {}),
+    },
   });
   revalidatePath("/onboarding/member");
 }
@@ -238,7 +295,7 @@ export async function createCalendarEventAction(formData: FormData) {
   revalidatePath("/calendar");
   if (projectId) revalidatePath(`/projects/${projectId}`);
   const d = ev.startsAt;
-  redirect(`/calendar?y=${d.getFullYear()}&m=${d.getMonth() + 1}&eventId=${ev.id}`);
+  redirect(calendarHref({ y: d.getFullYear(), m: d.getMonth() + 1, view: "month" }));
 }
 
 export async function updateCalendarEventAction(formData: FormData) {
@@ -284,6 +341,8 @@ export async function updateCalendarEventAction(formData: FormData) {
     newValue: title,
   });
   revalidatePath("/calendar");
+  const d = startsAt;
+  redirect(calendarHref({ y: d.getFullYear(), m: d.getMonth() + 1, view: "month" }));
 }
 
 export async function deleteCalendarEventAction(formData: FormData) {
@@ -302,6 +361,8 @@ export async function deleteCalendarEventAction(formData: FormData) {
     newValue: existing.title,
   });
   revalidatePath("/calendar");
+  const d = existing.startsAt;
+  redirect(calendarHref({ y: d.getFullYear(), m: d.getMonth() + 1, view: "month" }));
 }
 
 const OFFBOARDING_KEYS = [

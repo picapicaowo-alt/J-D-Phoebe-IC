@@ -1,7 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { registerFormAction, type RegisterActionResult } from "@/app/actions/register";
 import { Button } from "@/components/ui/button";
@@ -12,7 +10,7 @@ import { t, type MessageKey } from "@/lib/messages";
 type Props = { locale: Locale };
 
 function messageFor(result: RegisterActionResult | null, locale: Locale): string {
-  if (!result || result.ok) return "";
+  if (!result) return "";
   return t(locale, result.messageKey as MessageKey);
 }
 
@@ -26,18 +24,7 @@ function SubmitButton({ label }: { label: string }) {
 }
 
 export function HomeRegisterForm({ locale }: Props) {
-  const router = useRouter();
   const [state, formAction] = useFormState(registerFormAction, null);
-  const lastOk = useRef(false);
-
-  useEffect(() => {
-    if (state?.ok === true && !lastOk.current) {
-      lastOk.current = true;
-      router.push(state.redirectTo);
-      router.refresh();
-    }
-  }, [state, router]);
-
   const error = messageFor(state, locale);
 
   return (

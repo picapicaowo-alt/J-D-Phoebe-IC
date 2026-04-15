@@ -53,6 +53,7 @@ export async function updateCompanyAction(formData: FormData) {
   const introduction = String(formData.get("introduction") ?? "").trim() || null;
   const status = requireString(formData, "status") as CompanyStatus;
   const onboardingPackageUrl = String(formData.get("onboardingPackageUrl") ?? "").trim() || null;
+  const onboardingVideoUrl = String(formData.get("onboardingVideoUrl") ?? "").trim() || null;
   const onboardingPackageVersion = String(formData.get("onboardingPackageVersion") ?? "").trim() || "v1";
   const onboardingDeadlineDays = Math.max(1, Math.min(365, Number(formData.get("onboardingDeadlineDays") ?? 14) || 14));
   const prevPackageUrl = company.onboardingPackageUrl;
@@ -77,6 +78,7 @@ export async function updateCompanyAction(formData: FormData) {
       introduction,
       status,
       onboardingPackageUrl: onboardingPackageUrl,
+      onboardingVideoUrl,
       onboardingPackageVersion,
       onboardingDeadlineDays,
     },

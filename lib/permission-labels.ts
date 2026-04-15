@@ -49,7 +49,6 @@ const PERM: Record<PermissionKey, { en: string; zh: string }> = {
   "lifecycle.onboarding.hub": { en: "View onboarding hub", zh: "查看入职中心" },
   "lifecycle.hr.pipeline": { en: "HR lifecycle inbox (triggers)", zh: "HR 生命周期收件（触发提醒）" },
   "lifecycle.email.send": { en: "Send lifecycle emails (system)", zh: "发送生命周期系统邮件" },
-  "lifecycle.calendar.google": { en: "Sync calendar to Google", zh: "同步日历到 Google" },
 };
 
 export function describePermissionKey(locale: Locale, key: string): string {

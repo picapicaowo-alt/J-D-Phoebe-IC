@@ -1,6 +1,5 @@
 "use server";
 
-import { hash } from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
@@ -12,29 +11,6 @@ function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
   if (!v) throw new Error(`Missing ${key}`);
   return v;
-}
-
-export async function createStaffAction(formData: FormData) {
-  const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.create");
-  if (!isSuperAdmin(actor) && !actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN")) {
-    throw new Error("Only group-level admins can create staff accounts in this deployment.");
-  }
-
-  const email = requireString(formData, "email").toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(email)) {
-    throw new Error("Invalid email address");
-  }
-  const name = requireString(formData, "name");
-  const password = requireString(formData, "password");
-  const title = String(formData.get("title") ?? "").trim() || null;
-
-  const passwordHash = await hash(password, 10);
-  const user = await prisma.user.create({
-    data: { email, name, title, passwordHash, active: true, mustChangePassword: true },
-  });
-  await writeAudit({ actorId: actor.id, entityType: "USER", entityId: user.id, action: "CREATE", newValue: email });
-  revalidatePath("/staff");
 }
 
 export async function updateStaffAction(formData: FormData) {

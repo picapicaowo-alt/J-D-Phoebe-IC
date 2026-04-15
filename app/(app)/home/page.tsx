@@ -288,19 +288,19 @@ export default async function HomePage({
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{t(locale, "homeTitle")}</h1>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{t(locale, "homeSubtitle")}</p>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{t(locale, "homePhilosophy")}</p>
+        <p className="mt-2 text-base text-zinc-500 dark:text-zinc-400">{t(locale, "homeSubtitle")}</p>
+        <p className="mt-2 max-w-2xl text-base leading-relaxed text-zinc-500 dark:text-zinc-400">{t(locale, "homePhilosophy")}</p>
       </div>
 
       <Card className="border-zinc-200/90 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{t(locale, "homeAlertsTitle")}</CardTitle>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{t(locale, "homeAlertsLead")}</p>
+            <p className="mt-1 text-base text-zinc-600 dark:text-zinc-400">{t(locale, "homeAlertsLead")}</p>
           </div>
           <Link
             href="/me/notifications"
-            className="shrink-0 rounded-lg bg-[hsl(var(--primary))] px-3 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-95"
+            className="shrink-0 rounded-lg bg-[hsl(var(--primary))] px-3 py-2 text-base font-semibold text-white shadow-sm hover:opacity-95"
           >
             {unreadAlertCount ? `${t(locale, "homeAlertsOpen")} (${unreadAlertCount})` : t(locale, "homeAlertsOpen")}
           </Link>
@@ -308,7 +308,7 @@ export default async function HomePage({
         {recentUnreadAlerts.length ? (
           <ul className="mt-3 space-y-2 border-t border-zinc-200/80 pt-3 dark:border-zinc-800">
             {recentUnreadAlerts.map((n) => (
-              <li key={n.id} className="text-sm text-zinc-800 dark:text-zinc-200">
+              <li key={n.id} className="text-base text-zinc-800 dark:text-zinc-200">
                 {n.href ? (
                   <Link href={n.href} className="font-medium text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-50">
                     {n.title}
@@ -316,12 +316,12 @@ export default async function HomePage({
                 ) : (
                   <span className="font-medium">{n.title}</span>
                 )}
-                {n.body ? <p className="mt-0.5 text-sm leading-snug text-zinc-600 dark:text-zinc-400">{n.body}</p> : null}
+                {n.body ? <p className="mt-0.5 text-base leading-snug text-zinc-600 dark:text-zinc-400">{n.body}</p> : null}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">{t(locale, "homeAlertsEmpty")}</p>
+          <p className="mt-3 text-base text-zinc-500 dark:text-zinc-400">{t(locale, "homeAlertsEmpty")}</p>
         )}
       </Card>
 
@@ -329,36 +329,36 @@ export default async function HomePage({
         <Card className="space-y-3 border-zinc-200/90 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{snapTitle}</CardTitle>
-            <Link href="/home" className="text-sm font-medium text-zinc-600 underline underline-offset-4 dark:text-zinc-300">
+            <Link href="/home" className="text-base font-medium text-zinc-600 underline underline-offset-4 dark:text-zinc-300">
               {t(locale, "btnReset")}
             </Link>
           </div>
           {snapshot === "due" ? (
             dueRows.length ? (
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-2 text-base">
                 {dueRows.map((p) => (
                   <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-100 px-3 py-2 dark:border-zinc-800">
                     <Link href={`/projects/${p.id}`} className="font-medium text-zinc-900 hover:underline dark:text-zinc-50">
                       {p.name}
                     </Link>
-                    <span className="text-sm text-zinc-500">
+                    <span className="text-base text-zinc-500">
                       {p.company.name} · {countdownPhrase(p.deadline)}
                     </span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-zinc-500">{t(locale, "homeSnapshotEmpty")}</p>
+              <p className="text-base text-zinc-500">{t(locale, "homeSnapshotEmpty")}</p>
             )
           ) : snapshot === "blocked" || snapshot === "waiting" || snapshot === "approvals" ? (
             (() => {
               const rows = snapshot === "blocked" ? blockedRows : snapshot === "waiting" ? waitingRows : approvalRows;
               return rows.length ? (
-                <ul className="space-y-2 text-sm">
+                <ul className="space-y-2 text-base">
                   {rows.map((n) => (
                     <li key={n.id} className="rounded-lg border border-zinc-100 px-3 py-2 dark:border-zinc-800">
                       <div className="font-medium text-zinc-900 dark:text-zinc-50">{n.title}</div>
-                      <div className="mt-1 flex flex-wrap gap-x-3 text-sm text-zinc-500">
+                      <div className="mt-1 flex flex-wrap gap-x-3 text-base text-zinc-500">
                         <Link className="hover:underline" href={`/projects/${n.projectId}`}>
                           {n.project.name}
                         </Link>
@@ -368,7 +368,7 @@ export default async function HomePage({
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-zinc-500">{t(locale, "homeSnapshotEmpty")}</p>
+                <p className="text-base text-zinc-500">{t(locale, "homeSnapshotEmpty")}</p>
               );
             })()
           ) : null}
@@ -385,7 +385,7 @@ export default async function HomePage({
             </span>
             <div>
               <CardTitle className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{t(locale, "homePriorities")}</CardTitle>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{t(locale, "homePrioritiesHint")}</p>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{t(locale, "homePrioritiesHint")}</p>
             </div>
           </div>
           {priorities.length ? (
@@ -409,12 +409,12 @@ export default async function HomePage({
                               {tPriority(locale, p.priority)}
                             </span>
                           </div>
-                          <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{p.company.name}</p>
+                          <p className="mt-0.5 text-base text-zinc-500 dark:text-zinc-400">{p.company.name}</p>
                         </div>
                       </div>
                       <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${health.badgeClass}`}>{health.badge}</span>
                     </div>
-                    <div className="mt-3 grid gap-2 text-xs text-zinc-500 sm:grid-cols-2 dark:text-zinc-400">
+                    <div className="mt-3 grid gap-2 text-sm text-zinc-500 sm:grid-cols-2 dark:text-zinc-400">
                       <div>
                         {t(locale, "homeOwner")} {p.owner.name}
                       </div>
@@ -438,14 +438,14 @@ export default async function HomePage({
               })}
             </ul>
           ) : (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">{t(locale, "homeNoPriorities")}</p>
+            <p className="text-base text-zinc-500 dark:text-zinc-400">{t(locale, "homeNoPriorities")}</p>
           )}
         </Card>
 
         <div className="flex flex-col gap-4">
           <Card className="space-y-3 border-zinc-200/90 p-5">
             <CardTitle className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{t(locale, "homeExecutionSnapshot")}</CardTitle>
-            <ul className="space-y-2 text-sm">
+            <ul className="space-y-2 text-base">
               <li>
                 <Link
                   href="/home?snapshot=blocked"
@@ -527,22 +527,22 @@ export default async function HomePage({
               <CardTitle className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{t(locale, "homeGoodThingsToday")}</CardTitle>
             </div>
             {latestRec ? (
-              <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4 text-sm dark:border-violet-900/40 dark:bg-violet-950/20">
+              <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4 text-base dark:border-violet-900/40 dark:bg-violet-950/20">
                 <div className="font-medium text-zinc-900 dark:text-zinc-100">
                   {latestRec.secondaryLabelKey
                     ? displayRecognitionSecondary(latestRec.tagCategory, latestRec.secondaryLabelKey, locale)
                     : (latestRec.tagLabel ?? "")}
                 </div>
-                <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                   {tRecognitionTagCategory(locale, latestRec.tagCategory)} · {latestRec.project?.name ?? t(locale, "kbGeneralProject")}
                 </div>
-                <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{latestRec.message ?? t(locale, "homeRecognizedDefault")}</p>
-                <div className="mt-2 text-xs text-zinc-400">
+                <p className="mt-2 text-base text-zinc-700 dark:text-zinc-300">{latestRec.message ?? t(locale, "homeRecognizedDefault")}</p>
+                <div className="mt-2 text-sm text-zinc-400">
                   {t(locale, "homeFrom")} {latestRec.fromUser?.name ?? "—"}
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">{t(locale, "homeNoRecognition")}</p>
+              <p className="text-base text-zinc-500 dark:text-zinc-400">{t(locale, "homeNoRecognition")}</p>
             )}
             {companion ? (
               <div className="flex items-center gap-3 rounded-xl border border-zinc-100 p-3 dark:border-zinc-800">
@@ -554,11 +554,11 @@ export default async function HomePage({
                   ) : null;
                 })()}
                 <div className="min-w-0 space-y-2">
-                  <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                  <p className="text-base text-zinc-600 dark:text-zinc-300">
                     {t(locale, "homeCompanionLine")}: {companion.name ?? (locale === "zh" ? "小伙伴" : "Companion")} · {t(locale, "homeMood")}{" "}
                     {companion.mood} · {t(locale, "homeLevel")} {companion.level}
                   </p>
-                  <p className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-200">
+                  <p className="text-base leading-relaxed text-zinc-700 dark:text-zinc-200">
                     <span className="font-medium text-zinc-900 dark:text-zinc-100">{t(locale, "homeCompanionEncouragement")}: </span>
                     {companionPepTalkForDay(locale, user.id)}
                   </p>
@@ -570,13 +570,13 @@ export default async function HomePage({
 
         <Card className="space-y-4 border-zinc-200/90 p-5 lg:col-span-3">
           <CardTitle className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{t(locale, "scorePreview")}</CardTitle>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">{t(locale, "homeScoreHint")}</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">{t(locale, "homeScoreHint")}</p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {scoreRows.map((row) => (
               <div key={row.c} className="rounded-xl border border-zinc-100 p-4 text-center dark:border-zinc-800">
                 <div className={`text-3xl font-bold tabular-nums ${LB_COLOR[row.c]}`}>{row.cur}</div>
-                <div className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">{t(locale, LB_LABEL[row.c])}</div>
-                <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
+                <div className="mt-1 text-sm font-medium text-zinc-500 dark:text-zinc-400">{t(locale, LB_LABEL[row.c])}</div>
+                <div className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
                   {row.delta >= 0 ? "▲" : "▼"} {row.delta >= 0 ? "+" : ""}
                   {row.delta} {t(locale, "homeVsPrior")}
                 </div>
@@ -584,12 +584,12 @@ export default async function HomePage({
             ))}
           </div>
           {latestSnapshot ? (
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
               {t(locale, "homeSnapshotRef")}: E {latestSnapshot.executionScore} · C {latestSnapshot.collaborationScore} · K{" "}
               {latestSnapshot.knowledgeScore} · R {latestSnapshot.recognitionScore}
             </p>
           ) : null}
-          <Link className="inline-block text-sm font-medium text-zinc-900 underline underline-offset-4 dark:text-white" href="/leaderboard">
+          <Link className="inline-block text-base font-medium text-zinc-900 underline underline-offset-4 dark:text-white" href="/leaderboard">
             {t(locale, "homeOpenLb")}
           </Link>
         </Card>

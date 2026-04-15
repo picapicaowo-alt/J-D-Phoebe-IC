@@ -127,6 +127,11 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
                 <Input name="onboardingPackageUrl" defaultValue={company.onboardingPackageUrl ?? ""} placeholder="https://..." />
               </div>
               <div className="space-y-1">
+                <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
+                <Input name="onboardingVideoUrl" defaultValue={company.onboardingVideoUrl ?? ""} placeholder="https://…" />
+                <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
+              </div>
+              <div className="space-y-1">
                 <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>
                 <Input name="onboardingPackageVersion" defaultValue={company.onboardingPackageVersion ?? "v1"} />
               </div>

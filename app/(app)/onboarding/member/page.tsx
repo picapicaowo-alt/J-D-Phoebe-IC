@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { MemberOnboardingChecklist } from "@/components/member-onboarding-checklist";
 import { acknowledgeMemberOnboardingMaterialsAction } from "@/app/actions/lifecycle";
+import { OnboardingVideoPanel } from "@/components/onboarding-video-panel";
 
 export default async function MemberOnboardingPage({
   searchParams,
@@ -34,6 +35,8 @@ export default async function MemberOnboardingPage({
   const locale = await getLocale();
   const overdue = !ob.completedAt && ob.deadlineAt.getTime() < Date.now();
   const canSkipGate = await userHasPermission(user, "lifecycle.onboarding.skip");
+  const videoUrl = ob.company.onboardingVideoUrl?.trim() ?? "";
+  const videoGateOk = !videoUrl || Boolean(ob.videoCompletedAt);
 
   return (
     <div className="mx-auto max-w-[1280px] space-y-6">
@@ -62,6 +65,9 @@ export default async function MemberOnboardingPage({
       ) : null}
       {onboardingErr === "order" ? (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-base text-[hsl(var(--foreground))]">{t(locale, "onboardingErrOrder")}</p>
+      ) : null}
+      {onboardingErr === "video" ? (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-base text-[hsl(var(--foreground))]">{t(locale, "onboardingErrVideo")}</p>
       ) : null}
 
       <Card className="space-y-5 rounded-[12px] border border-[hsl(var(--border))] p-6">
@@ -113,7 +119,17 @@ export default async function MemberOnboardingPage({
           </div>
         </div>
 
-        {!ob.completedAt && !ob.materialsOpenedAt ? (
+        {videoUrl ? (
+          <OnboardingVideoPanel
+            onboardingId={ob.id}
+            videoUrl={videoUrl}
+            completed={Boolean(ob.videoCompletedAt)}
+            progressSeconds={ob.videoProgressSeconds}
+            locale={locale}
+          />
+        ) : null}
+
+        {!ob.completedAt && !ob.materialsOpenedAt && videoGateOk ? (
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
             <p className="font-medium text-[hsl(var(--foreground))]">{t(locale, "onboardingMaterialsAckTitle")}</p>
             <p className="mt-2 text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "onboardingMaterialsAckHelp")}</p>

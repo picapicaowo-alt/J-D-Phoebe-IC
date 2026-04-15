@@ -16,6 +16,8 @@ import { CalendarMonthYearPicker } from "@/components/calendar-month-year-picker
 import { CalendarMonthView } from "@/components/calendar-month-view";
 import { CalendarYearView } from "@/components/calendar-year-view";
 import { CalendarEventAttendeesFields } from "@/components/calendar-event-attendees";
+import { CalendarFormReveal } from "@/components/calendar-form-reveal";
+import { calendarHref, parseSlotDay, slotDefaultsForDay } from "@/lib/calendar-nav";
 
 function toDatetimeLocal(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -27,38 +29,6 @@ function clampMonth(y: number, m: number) {
   const year = Number.isFinite(y) && y >= 1970 && y <= 2100 ? y : now.getFullYear();
   const month = Number.isFinite(m) && m >= 1 && m <= 12 ? m : now.getMonth() + 1;
   return { year, month };
-}
-
-function calendarHref(opts: {
-  y?: number;
-  m?: number;
-  create?: boolean;
-  view?: "month" | "year";
-  eventId?: string;
-  clearEvent?: boolean;
-  sourceKind?: string;
-  sourceId?: string;
-  defaultProjectId?: string;
-}) {
-  const p = new URLSearchParams();
-  if (opts.view === "year") {
-    p.set("view", "year");
-    if (opts.y != null) p.set("y", String(opts.y));
-  } else if (opts.y != null && opts.m != null) {
-    p.set("y", String(opts.y));
-    p.set("m", String(opts.m));
-  }
-  if (opts.create) p.set("create", "1");
-  if (opts.sourceId) {
-    p.set("sourceKind", opts.sourceKind ?? "MANUAL");
-    p.set("sourceId", opts.sourceId);
-  }
-  if (opts.defaultProjectId) p.set("defaultProjectId", opts.defaultProjectId);
-  if (opts.clearEvent) {
-    /* omit eventId */
-  } else if (opts.eventId) p.set("eventId", opts.eventId);
-  const q = p.toString();
-  return q ? `/calendar?${q}` : "/calendar";
 }
 
 export default async function CalendarPage({
@@ -73,6 +43,7 @@ export default async function CalendarPage({
     view?: string;
     eventId?: string;
     defaultProjectId?: string;
+    slotDay?: string;
   }>;
 }) {
   const user = (await requireUser()) as AccessUser;
@@ -81,6 +52,7 @@ export default async function CalendarPage({
   const locale = await getLocale();
   const sp = await searchParams;
   const showCreate = String(sp.create ?? "") === "1";
+  const slotDay = parseSlotDay(sp.slotDay);
   const defaultProjectIdRaw = String(sp.defaultProjectId ?? "").trim();
   const sourceKind = (String(sp.sourceKind ?? "MANUAL").trim() || "MANUAL") as CalendarSourceKind;
   const sourceId = String(sp.sourceId ?? "").trim() || "";
@@ -178,8 +150,9 @@ export default async function CalendarPage({
       : null;
   const canEditEvent = !!(eventToEdit && eventToEdit.organizerUserId === user.id);
 
-  const startDefault = new Date(now.getTime() + 60 * 60000);
-  const endDefault = new Date(now.getTime() + 2 * 60 * 60000);
+  const slotDefaults = showCreate && slotDay != null ? slotDefaultsForDay(year, month, slotDay) : null;
+  const startDefault = slotDefaults?.start ?? new Date(now.getTime() + 60 * 60000);
+  const endDefault = slotDefaults?.end ?? new Date(now.getTime() + 2 * 60 * 60000);
 
   const monthTitle = new Date(year, month - 1).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
     year: "numeric",
@@ -189,9 +162,20 @@ export default async function CalendarPage({
   const next = month === 12 ? { y: year + 1, m: 1 } : { y: year, m: month + 1 };
   const src = sourceId ? { sourceKind, sourceId } : {};
   const projQ = defaultProjectId ? { defaultProjectId } : {};
-  const prevHref = calendarHref({ y: prev.y, m: prev.m, view: "month", create: showCreate, ...src, ...projQ });
-  const nextHref = calendarHref({ y: next.y, m: next.m, view: "month", create: showCreate, ...src, ...projQ });
-  const todayHref = calendarHref({ y: now.getFullYear(), m: now.getMonth() + 1, view: "month", create: showCreate, ...src, ...projQ });
+  const slotQ = showCreate && slotDay != null ? { slotDay } : {};
+  const eventQ = eventIdRaw ? { eventId: eventIdRaw } : {};
+  const prevHref = calendarHref({ y: prev.y, m: prev.m, view: "month", create: showCreate, ...src, ...projQ, ...slotQ, ...eventQ });
+  const nextHref = calendarHref({ y: next.y, m: next.m, view: "month", create: showCreate, ...src, ...projQ, ...slotQ, ...eventQ });
+  const todayHref = calendarHref({
+    y: now.getFullYear(),
+    m: now.getMonth() + 1,
+    view: "month",
+    create: showCreate,
+    ...src,
+    ...projQ,
+    ...slotQ,
+    ...eventQ,
+  });
 
   const monthEvents = monthEventsDb.map((ev) => ({
     id: ev.id,
@@ -201,19 +185,22 @@ export default async function CalendarPage({
     sourceKind: ev.sourceKind,
   }));
 
-  const eventHref = (id: string) =>
-    calendarHref({ y: year, m: month, view: "month", eventId: id, create: showCreate, ...src, ...projQ });
+  const eventHref = (id: string) => calendarHref({ y: year, m: month, view: "month", eventId: id, ...src, ...projQ });
 
-  const yearNavPrev = calendarHref({ view: "year", y: yearForYearView - 1, ...src, ...projQ });
-  const yearNavNext = calendarHref({ view: "year", y: yearForYearView + 1, ...src, ...projQ });
-  const monthLinkFromYear = (m: number) => calendarHref({ y: yearForYearView, m, view: "month", ...src, ...projQ });
+  const yearNavPrev = calendarHref({ view: "year", y: yearForYearView - 1, create: showCreate, ...src, ...projQ, ...slotQ, ...eventQ });
+  const yearNavNext = calendarHref({ view: "year", y: yearForYearView + 1, create: showCreate, ...src, ...projQ, ...slotQ, ...eventQ });
+  const monthLinkFromYear = (m: number) =>
+    calendarHref({ y: yearForYearView, m, view: "month", create: showCreate, ...src, ...projQ, ...slotQ, ...eventQ });
 
   const preserveQuery = {
     ...(showCreate ? { create: true as const } : {}),
+    ...(showCreate && slotDay != null ? { slotDay } : {}),
     ...(sourceId ? { sourceKind, sourceId } : {}),
     ...(eventIdRaw ? { eventId: eventIdRaw } : {}),
     ...(defaultProjectId ? { defaultProjectId } : {}),
   };
+
+  const cancelCreateHref = calendarHref({ y: year, m: month, view: "month", clearEvent: true, create: false, ...src, ...projQ });
 
   const yearPickerTitle = locale === "zh" ? `${yearForYearView}年` : String(yearForYearView);
 
@@ -221,19 +208,19 @@ export default async function CalendarPage({
     <div className="mx-auto max-w-[1280px] space-y-8">
       <div>
         <h1 className="font-display text-2xl font-bold tracking-[-0.03em] text-[hsl(var(--foreground))] md:text-3xl">{t(locale, "calendarPageTitle")}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[hsl(var(--muted))]">{t(locale, "calendarPageLead")}</p>
+        <p className="mt-2 max-w-2xl text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "calendarPageLead")}</p>
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2 rounded-[12px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-2">
         <Link
-          href={calendarHref({ y: year, m: month, view: "month", create: showCreate, ...src, ...projQ })}
-          className={`rounded-full px-3 py-1.5 text-sm font-medium ${view === "month" ? "bg-[hsl(var(--primary))]/12 text-[hsl(var(--primary))] ring-1 ring-[hsl(var(--primary))]/25" : "text-[hsl(var(--muted))] hover:bg-black/[0.04]"}`}
+          href={calendarHref({ y: year, m: month, view: "month", create: showCreate, ...src, ...projQ, ...slotQ, ...eventQ })}
+          className={`rounded-full px-3 py-1.5 text-base font-medium ${view === "month" ? "bg-[hsl(var(--primary))]/12 text-[hsl(var(--primary))] ring-1 ring-[hsl(var(--primary))]/25" : "text-[hsl(var(--muted))] hover:bg-black/[0.04]"}`}
         >
           {t(locale, "calendarViewMonth")}
         </Link>
         <Link
-          href={calendarHref({ view: "year", y: yearForYearView, ...src, create: showCreate, ...projQ })}
-          className={`rounded-full px-3 py-1.5 text-sm font-medium ${view === "year" ? "bg-[hsl(var(--primary))]/12 text-[hsl(var(--primary))] ring-1 ring-[hsl(var(--primary))]/25" : "text-[hsl(var(--muted))] hover:bg-black/[0.04]"}`}
+          href={calendarHref({ view: "year", y: yearForYearView, ...src, create: showCreate, ...projQ, ...slotQ, ...eventQ })}
+          className={`rounded-full px-3 py-1.5 text-base font-medium ${view === "year" ? "bg-[hsl(var(--primary))]/12 text-[hsl(var(--primary))] ring-1 ring-[hsl(var(--primary))]/25" : "text-[hsl(var(--muted))] hover:bg-black/[0.04]"}`}
         >
           {t(locale, "calendarViewYear")}
         </Link>
@@ -254,6 +241,8 @@ export default async function CalendarPage({
           todayLabel={t(locale, "calendarToday")}
           eventDetailHref={eventHref}
           preserveQuery={preserveQuery}
+          showCreate={showCreate}
+          cancelCreateHref={cancelCreateHref}
         />
       ) : (
         <div className="space-y-4">
@@ -265,7 +254,7 @@ export default async function CalendarPage({
               locale={locale}
               preserve={preserveQuery}
             />
-            <div className="flex gap-2 text-sm">
+            <div className="flex gap-2 text-base">
               <Link
                 href={yearNavPrev}
                 className="rounded-[6px] border border-[hsl(var(--border))] px-3 py-1.5 font-medium hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
@@ -273,7 +262,7 @@ export default async function CalendarPage({
                 ‹
               </Link>
               <Link
-                href={calendarHref({ y: now.getFullYear(), view: "year", ...src, ...projQ })}
+                href={calendarHref({ y: now.getFullYear(), view: "year", create: showCreate, ...src, ...projQ, ...slotQ, ...eventQ })}
                 className="rounded-[6px] border border-[hsl(var(--border))] px-3 py-1.5 font-medium hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
               >
                 {t(locale, "calendarToday")}
@@ -291,40 +280,41 @@ export default async function CalendarPage({
       )}
 
       {canEditEvent && eventToEdit ? (
-        <Card className="space-y-3 rounded-[12px] border border-[hsl(var(--border))] p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="font-display text-base font-bold">{t(locale, "calendarEditEvent")}</CardTitle>
-            <Link
-              href={calendarHref({ y: year, m: month, view: "month", clearEvent: true, create: showCreate, ...src, ...projQ })}
-              className="text-sm font-medium text-[hsl(var(--muted))] hover:underline"
-            >
-              {t(locale, "btnReset")}
-            </Link>
-          </div>
-          <form action={updateCalendarEventAction} className="grid gap-3 sm:grid-cols-2">
+        <CalendarFormReveal key={`edit-${eventToEdit.id}`}>
+          <Card className="space-y-3 rounded-[12px] border border-[hsl(var(--border))] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="font-display text-base font-bold">{t(locale, "calendarEditEvent")}</CardTitle>
+              <Link
+                href={calendarHref({ y: year, m: month, view: "month", clearEvent: true, create: showCreate, ...src, ...projQ, ...slotQ })}
+                className="text-base font-medium text-[hsl(var(--muted))] hover:underline"
+              >
+                {t(locale, "btnReset")}
+              </Link>
+            </div>
+            <form action={updateCalendarEventAction} className="grid gap-3 sm:grid-cols-2">
             <input type="hidden" name="eventId" value={eventToEdit.id} />
             <div className="space-y-1 sm:col-span-2">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarTitle")}</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">{t(locale, "calendarTitle")}</label>
               <Input name="title" required className="rounded-[6px]" defaultValue={eventToEdit.title} />
             </div>
             <div className="space-y-1 sm:col-span-2">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">Description</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">Description</label>
               <Input name="description" className="rounded-[6px]" defaultValue={eventToEdit.description ?? ""} />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarStarts")}</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">{t(locale, "calendarStarts")}</label>
               <Input name="startsAt" type="datetime-local" required className="rounded-[6px]" defaultValue={toDatetimeLocal(eventToEdit.startsAt)} />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarEnds")}</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">{t(locale, "calendarEnds")}</label>
               <Input name="endsAt" type="datetime-local" required className="rounded-[6px]" defaultValue={toDatetimeLocal(eventToEdit.endsAt)} />
             </div>
             <div className="space-y-1 sm:col-span-2">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarMeetUrl")}</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">{t(locale, "calendarMeetUrl")}</label>
               <Input name="meetUrl" className="rounded-[6px]" defaultValue={eventToEdit.meetUrl ?? ""} />
             </div>
             <div className="space-y-1 sm:col-span-2">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarProjectOptional")}</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">{t(locale, "calendarProjectOptional")}</label>
               <Select name="projectId" className="rounded-[6px]" defaultValue={eventToEdit.projectId ?? defaultProjectId}>
                 <option value="">—</option>
                 {projects.map((p) => (
@@ -346,37 +336,39 @@ export default async function CalendarPage({
               {t(locale, "calendarDeleteEvent")}
             </Button>
           </form>
-        </Card>
+          </Card>
+        </CalendarFormReveal>
       ) : null}
 
       {showCreate && !eventIdRaw ? (
-        <Card className="space-y-3 rounded-[12px] border border-[hsl(var(--border))] p-5">
-          <CardTitle className="font-display text-base font-bold">{t(locale, "calendarNewEvent")}</CardTitle>
-          <form action={createCalendarEventAction} className="grid gap-3 sm:grid-cols-2">
+        <CalendarFormReveal key={`create-${year}-${month}-${slotDay ?? "x"}`}>
+          <Card className="space-y-3 rounded-[12px] border border-[hsl(var(--border))] p-5">
+            <CardTitle className="font-display text-base font-bold">{t(locale, "calendarNewEvent")}</CardTitle>
+            <form action={createCalendarEventAction} className="grid gap-3 sm:grid-cols-2">
             <input type="hidden" name="sourceKind" value={sourceKind} />
             <input type="hidden" name="sourceId" value={sourceId} />
             <div className="space-y-1 sm:col-span-2">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarTitle")}</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">{t(locale, "calendarTitle")}</label>
               <Input name="title" required className="rounded-[6px]" defaultValue="" placeholder="1:1 / Check-in" />
             </div>
             <div className="space-y-1 sm:col-span-2">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">Description</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">Description</label>
               <Input name="description" className="rounded-[6px]" />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarStarts")}</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">{t(locale, "calendarStarts")}</label>
               <Input name="startsAt" type="datetime-local" required className="rounded-[6px]" defaultValue={toDatetimeLocal(startDefault)} />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarEnds")}</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">{t(locale, "calendarEnds")}</label>
               <Input name="endsAt" type="datetime-local" required className="rounded-[6px]" defaultValue={toDatetimeLocal(endDefault)} />
             </div>
             <div className="space-y-1 sm:col-span-2">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarMeetUrl")}</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">{t(locale, "calendarMeetUrl")}</label>
               <Input name="meetUrl" className="rounded-[6px]" placeholder="https://…" />
             </div>
             <div className="space-y-1 sm:col-span-2">
-              <label className="text-sm font-medium text-[hsl(var(--muted))]">{t(locale, "calendarProjectOptional")}</label>
+              <label className="text-base font-medium text-[hsl(var(--muted))]">{t(locale, "calendarProjectOptional")}</label>
               <Select name="projectId" className="rounded-[6px]" defaultValue={defaultProjectId}>
                 <option value="">—</option>
                 {projects.map((p) => (
@@ -403,23 +395,8 @@ export default async function CalendarPage({
               </Button>
             </div>
           </form>
-        </Card>
-      ) : !showCreate ? (
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={calendarHref({
-              y: view === "year" ? yearForYearView : year,
-              m: view === "year" ? now.getMonth() + 1 : month,
-              view: view === "year" ? "month" : "month",
-              create: true,
-              ...src,
-              ...projQ,
-            })}
-            className="inline-flex items-center justify-center rounded-[6px] bg-[hsl(var(--primary))] px-4 py-2 text-sm font-medium text-white shadow-[0_4px_12px_rgba(99,102,241,0.25)] transition hover:-translate-y-px hover:bg-[hsl(var(--primary-hover))]"
-          >
-            {t(locale, "calendarNewEvent")}
-          </Link>
-        </div>
+          </Card>
+        </CalendarFormReveal>
       ) : null}
 
       <Card className="rounded-[12px] border border-[hsl(var(--border))] p-5">
@@ -427,19 +404,19 @@ export default async function CalendarPage({
           {t(locale, "calendarPageTitle")} — {t(locale, "calendarUpcomingList")}
         </CardTitle>
         {!listEvents.length ? (
-          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "calendarEmpty")}</p>
+          <p className="text-base text-[hsl(var(--muted))]">{t(locale, "calendarEmpty")}</p>
         ) : (
           <ul className="divide-y divide-[hsl(var(--border))]">
             {listEvents.map((ev) => (
               <li key={ev.id} className="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0">
                 <div>
                   <p className="font-medium text-[hsl(var(--foreground))]">{ev.title}</p>
-                  <p className="text-sm text-[hsl(var(--muted))]">
+                  <p className="text-base text-[hsl(var(--muted))]">
                     {ev.startsAt.toISOString().slice(0, 16).replace("T", " ")} → {ev.endsAt.toISOString().slice(0, 16).replace("T", " ")} ·{" "}
                     {ev.organizer.name}
                   </p>
                   {ev.project ? (
-                    <p className="mt-1 text-sm">
+                    <p className="mt-1 text-base">
                       <Link className="text-[hsl(var(--primary))] hover:underline" href={`/projects/${ev.project.id}`}>
                         {ev.project.name}
                       </Link>
@@ -450,13 +427,13 @@ export default async function CalendarPage({
                       href={ev.meetUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="mt-1 inline-block text-sm font-medium text-[hsl(var(--primary))] hover:underline"
+                      className="mt-1 inline-block text-base font-medium text-[hsl(var(--primary))] hover:underline"
                     >
                       Meet
                     </a>
                   ) : null}
                   {ev.externalAttendeeEmails?.length ? (
-                    <p className="mt-1 text-xs text-[hsl(var(--muted))]">
+                    <p className="mt-1 text-sm text-[hsl(var(--muted))]">
                       {t(locale, "calendarExternalGuestsCount").replace("{n}", String(ev.externalAttendeeEmails.length))}
                     </p>
                   ) : null}
@@ -471,14 +448,14 @@ export default async function CalendarPage({
                           ...src,
                           ...projQ,
                         })}
-                        className="text-sm font-semibold text-[hsl(var(--primary))] hover:underline"
+                        className="text-base font-semibold text-[hsl(var(--primary))] hover:underline"
                       >
                         {t(locale, "calendarEditEvent")}
                       </Link>
                     </p>
                   ) : null}
                 </div>
-                <span className="rounded-full bg-zinc-100 px-2 py-1 text-sm font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                <span className="rounded-full bg-zinc-100 px-2 py-1 text-base font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                   {ev.sourceKind}
                 </span>
               </li>
