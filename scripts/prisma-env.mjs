@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /**
- * Loads `.env` and sets DIRECT_URL to DATABASE_URL when DIRECT_URL is unset
- * (local Docker / single-URL setups). Then runs `npx prisma …`.
+ * Loads `.env`, then optionally overrides from `PRISMA_ENV_FILE` (e.g. `.env.production.local`
+ * after `vercel env pull .env.production.local --environment production`).
+ * Keys in the override file replace existing values so you can seed the **production** DB
+ * even when `.env` already has a local `DATABASE_URL`.
+ *
+ * Then sets DIRECT_URL from DATABASE_URL when DIRECT_URL is still unset.
  */
 import { readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -12,27 +16,59 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const envPath = path.join(root, ".env");
 
+function parseLine(line) {
+  const t = line.trim();
+  if (!t || t.startsWith("#")) return null;
+  const i = t.indexOf("=");
+  if (i === -1) return null;
+  const key = t.slice(0, i).trim();
+  let val = t.slice(i + 1).trim();
+  if (
+    (val.startsWith('"') && val.endsWith('"')) ||
+    (val.startsWith("'") && val.endsWith("'"))
+  ) {
+    val = val.slice(1, -1);
+  }
+  return { key, val };
+}
+
 function loadDotEnv(file) {
   if (!existsSync(file)) return;
   const raw = readFileSync(file, "utf8");
   for (const line of raw.split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const i = t.indexOf("=");
-    if (i === -1) continue;
-    const key = t.slice(0, i).trim();
-    let val = t.slice(i + 1).trim();
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1);
-    }
-    if (process.env[key] === undefined) process.env[key] = val;
+    const p = parseLine(line);
+    if (!p) continue;
+    if (process.env[p.key] === undefined) process.env[p.key] = p.val;
+  }
+}
+
+/** Override process.env for every key present in the file (non-empty values only). */
+function loadDotEnvOverride(file) {
+  if (!existsSync(file)) return;
+  const raw = readFileSync(file, "utf8");
+  for (const line of raw.split(/\r?\n/)) {
+    const p = parseLine(line);
+    if (!p || p.val === "") continue;
+    process.env[p.key] = p.val;
   }
 }
 
 loadDotEnv(envPath);
+
+const overrideName = process.env.PRISMA_ENV_FILE?.trim();
+if (overrideName) {
+  const overridePath = path.isAbsolute(overrideName)
+    ? overrideName
+    : path.join(root, overrideName);
+  if (existsSync(overridePath)) {
+    console.error(`[prisma-env] Applying override: ${overridePath}`);
+    loadDotEnvOverride(overridePath);
+  } else {
+    console.error(`[prisma-env] PRISMA_ENV_FILE not found: ${overridePath}`);
+    process.exit(1);
+  }
+}
+
 if (!process.env.DIRECT_URL && process.env.DATABASE_URL) {
   process.env.DIRECT_URL = process.env.DATABASE_URL;
 }
