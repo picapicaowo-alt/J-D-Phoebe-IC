@@ -72,6 +72,8 @@ type Props = {
 
 const noteClassName =
   "min-h-24 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm outline-none ring-[hsl(var(--accent))] focus:ring-2";
+const createTriggerClassName =
+  "block cursor-pointer list-none rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3 text-sm font-medium text-[hsl(var(--foreground))] transition hover:bg-black/[0.03] dark:hover:bg-white/[0.03] [&::marker]:content-[''] [&::-webkit-details-marker]:hidden";
 
 function withProjectChoice(projectChoices: ProjectChoice[], project: ProjectChoice | null) {
   if (!project || projectChoices.some((choice) => choice.id === project.id)) return projectChoices;
@@ -120,73 +122,77 @@ export function StaffObservationsPanel({
       {canCreateAny ? (
         <div className="grid gap-4 rounded-xl border border-[hsl(var(--border))] bg-black/[0.02] p-4 dark:bg-white/[0.02] lg:grid-cols-2">
           {canCreateRecognition ? (
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm font-medium">{t(locale, "staffObservationAddRecognition")}</p>
+            <details className="space-y-3">
+              <summary className={createTriggerClassName}>{t(locale, "staffObservationAddRecognition")}</summary>
+              <div className="mt-3 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
                 <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "staffObservationAddRecognitionHint")}</p>
-              </div>
-              <form action={createStaffRecognitionAction} className="grid gap-2">
-                <input type="hidden" name="toUserId" value={targetUserId} />
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "projProjectContext")}</label>
-                  <Select name="projectId" required>
-                    {projectChoices.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.company.name} · {project.name}
+                <form action={createStaffRecognitionAction} className="grid gap-2">
+                  <input type="hidden" name="toUserId" value={targetUserId} />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">{t(locale, "projProjectContext")}</label>
+                    <Select name="projectId" required>
+                      {projectChoices.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.company.name} · {project.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <RecognitionSecondarySelect defaultCategory="COLLABORATION" locale={locale} />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">{t(locale, "projRecIdentity")}</label>
+                    <Select name="mode" defaultValue={RecognitionMode.PUBLIC}>
+                      <option value={RecognitionMode.PUBLIC}>{tRecognitionMode(locale, RecognitionMode.PUBLIC)}</option>
+                      <option value={RecognitionMode.SEMI_ANONYMOUS}>
+                        {tRecognitionMode(locale, RecognitionMode.SEMI_ANONYMOUS)}
                       </option>
-                    ))}
-                  </Select>
-                </div>
-                <RecognitionSecondarySelect defaultCategory="COLLABORATION" locale={locale} />
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "projRecIdentity")}</label>
-                  <Select name="mode" defaultValue={RecognitionMode.PUBLIC}>
-                    <option value={RecognitionMode.PUBLIC}>{tRecognitionMode(locale, RecognitionMode.PUBLIC)}</option>
-                    <option value={RecognitionMode.SEMI_ANONYMOUS}>
-                      {tRecognitionMode(locale, RecognitionMode.SEMI_ANONYMOUS)}
-                    </option>
-                    <option value={RecognitionMode.ANONYMOUS}>{tRecognitionMode(locale, RecognitionMode.ANONYMOUS)}</option>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "projRecComment")}</label>
-                  <textarea name="message" className={noteClassName} placeholder={t(locale, "projRecCommentPh")} />
-                </div>
-                <FormSubmitButton type="submit" variant="secondary">
-                  {t(locale, "staffObservationAddRecognition")}
-                </FormSubmitButton>
-              </form>
-            </div>
+                      <option value={RecognitionMode.ANONYMOUS}>{tRecognitionMode(locale, RecognitionMode.ANONYMOUS)}</option>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">{t(locale, "projRecComment")}</label>
+                    <textarea name="message" className={noteClassName} placeholder={t(locale, "projRecCommentPh")} />
+                  </div>
+                  <FormSubmitButton type="submit" variant="secondary">
+                    {t(locale, "staffObservationAddRecognition")}
+                  </FormSubmitButton>
+                </form>
+              </div>
+            </details>
           ) : null}
 
           {canCreateFeedback ? (
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm font-medium">{t(locale, "staffObservationAddGrowth")}</p>
+            <details className="space-y-3">
+              <summary className={createTriggerClassName}>{t(locale, "staffObservationAddGrowth")}</summary>
+              <div className="mt-3 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
                 <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "staffObservationAddGrowthHint")}</p>
+                <form action={createFeedbackEventAction} className="grid gap-2">
+                  <input type="hidden" name="toUserId" value={targetUserId} />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">{t(locale, "projProjectContext")}</label>
+                    <Select name="projectId" required>
+                      {projectChoices.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.company.name} · {project.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <FeedbackSecondarySelect defaultCategory="COMMUNICATION" locale={locale} />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">{t(locale, "projGrowthNote")}</label>
+                    <textarea
+                      name="message"
+                      className={noteClassName}
+                      placeholder={t(locale, "staffObservationGrowthPlaceholder")}
+                    />
+                  </div>
+                  <FormSubmitButton type="submit" variant="secondary">
+                    {t(locale, "staffObservationAddGrowth")}
+                  </FormSubmitButton>
+                </form>
               </div>
-              <form action={createFeedbackEventAction} className="grid gap-2">
-                <input type="hidden" name="toUserId" value={targetUserId} />
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "projProjectContext")}</label>
-                  <Select name="projectId" required>
-                    {projectChoices.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.company.name} · {project.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <FeedbackSecondarySelect defaultCategory="COMMUNICATION" locale={locale} />
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "projGrowthNote")}</label>
-                  <textarea name="message" className={noteClassName} placeholder={t(locale, "staffObservationGrowthPlaceholder")} />
-                </div>
-                <FormSubmitButton type="submit" variant="secondary">
-                  {t(locale, "staffObservationAddGrowth")}
-                </FormSubmitButton>
-              </form>
-            </div>
+            </details>
           ) : null}
         </div>
       ) : actor.id !== targetUserId && (canCreateRecognition || canCreateFeedback) ? (
