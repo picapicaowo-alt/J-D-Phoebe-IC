@@ -100,6 +100,15 @@ function invalidateUserCache(user: { id: string; clerkId?: string | null } | str
   if (cid) userByClerkIdCache.delete(cid);
 }
 
+async function loadFreshUserById(id: string) {
+  return writeUserCache(
+    await prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      select: userSelect,
+    }),
+  );
+}
+
 export function invalidateAccessUserCache(user: { id: string; clerkId?: string | null } | string, clerkId?: string | null) {
   invalidateUserCache(user, clerkId);
   revalidateTag(ACCESS_USER_CACHE_TAG, "max");
@@ -223,9 +232,9 @@ export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
     const user = await getCurrentUser();
     if (!user || !user.active) redirect("/pending-access");
     if (!user.firstSignInAt) {
-      invalidateAccessUserCache(user);
+      invalidateUserCache(user);
       await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
-      return (await loadUserById(user.id)) as AccessUser;
+      return (await loadFreshUserById(user.id)) as AccessUser;
     }
     return user as AccessUser;
   }
@@ -233,9 +242,9 @@ export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
   const user = await getCurrentUser();
   if (!user || !user.active) redirect("/login");
   if (!user.firstSignInAt) {
-    invalidateAccessUserCache(user);
+    invalidateUserCache(user);
     await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
-    return (await loadUserById(user.id)) as AccessUser;
+    return (await loadFreshUserById(user.id)) as AccessUser;
   }
   if (!opts?.skipPasswordResetGate && user.mustChangePassword) {
     redirect("/settings/change-password");
