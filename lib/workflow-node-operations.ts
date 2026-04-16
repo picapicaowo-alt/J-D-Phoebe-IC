@@ -52,6 +52,7 @@ export type WorkflowNodeOperationalShape = {
   operationalLabels: WorkflowNodeLabel[];
   waitingStartedAt?: Date | null;
   waitingOnUser?: { name: string | null } | null;
+  waitingOnUsers?: { name: string | null }[] | null;
   waitingOnExternalName?: string | null;
   waitingDetails?: string | null;
   approverUser?: { name: string | null } | null;
@@ -83,7 +84,7 @@ export function isWaitingNode(node: WorkflowNodeOperationalShape) {
 }
 
 export function isInternalWaitingNode(node: WorkflowNodeOperationalShape) {
-  return isWaitingNode(node) && (!!node.waitingOnUser || hasAnyOperationalLabel(node.operationalLabels, INTERNAL_WAITING_LABELS));
+  return isWaitingNode(node) && (!!node.waitingOnUser || !!node.waitingOnUsers?.length || hasAnyOperationalLabel(node.operationalLabels, INTERNAL_WAITING_LABELS));
 }
 
 export function isExternalWaitingNode(node: WorkflowNodeOperationalShape) {
@@ -134,8 +135,13 @@ export function isOverdueNode(node: WorkflowNodeOperationalShape, now = new Date
 }
 
 export function getWaitingOnDisplay(node: WorkflowNodeOperationalShape) {
-  const actor = node.waitingOnUser?.name
-    ? `@${node.waitingOnUser.name}`
+  const internalNames = [
+    ...(node.waitingOnUsers ?? []).map((person) => person.name?.trim() || "").filter(Boolean),
+    node.waitingOnUser?.name?.trim() || "",
+  ].filter(Boolean);
+  const uniqueInternalNames = [...new Set(internalNames)];
+  const actor = uniqueInternalNames.length
+    ? uniqueInternalNames.map((name) => `@${name}`).join(", ")
     : node.waitingOnExternalName
       ? node.waitingOnExternalName
       : null;

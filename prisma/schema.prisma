@@ -356,6 +356,7 @@ model User {
   projectMemberships       ProjectMembership[]
   nodeAssignments          WorkflowNodeAssignee[]
   waitingOnNodes           WorkflowNode[]         @relation("NodeWaitingOnUser")
+  waitingOnNodeLinks       WorkflowNodeWaitingUser[]
   approverForNodes         WorkflowNode[]         @relation("NodeApproverUser")
   ownedProjects            Project[]              @relation("ProjectOwner")
   auditEntries             AuditLogEntry[]        @relation("AuditActor")
@@ -624,6 +625,7 @@ model WorkflowNode {
   parent       WorkflowNode?          @relation("NodeTree", fields: [parentNodeId], references: [id], onDelete: SetNull)
   children     WorkflowNode[]         @relation("NodeTree")
   waitingOnUser User?                 @relation("NodeWaitingOnUser", fields: [waitingOnUserId], references: [id], onDelete: SetNull)
+  waitingOnUsers WorkflowNodeWaitingUser[]
   approverUser User?                  @relation("NodeApproverUser", fields: [approverUserId], references: [id], onDelete: SetNull)
   assignees    WorkflowNodeAssignee[]
   edgesOut     WorkflowEdge[]         @relation("EdgeFrom")
@@ -640,6 +642,19 @@ model WorkflowNode {
   @@index([parentNodeId])
   @@index([waitingOnUserId])
   @@index([approverUserId])
+}
+
+model WorkflowNodeWaitingUser {
+  id             String   @id @default(cuid())
+  workflowNodeId String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  node WorkflowNode @relation(fields: [workflowNodeId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowNodeId, userId])
+  @@index([userId])
 }
 
 model WorkflowNodeAssignee {

@@ -41,6 +41,8 @@ export type ProjectTaskRow = {
   description: string | null;
   operationalLabels: WorkflowNodeLabel[];
   waitingStartedAt: string | null;
+  waitingOnUserIds: string[];
+  waitingOnUserNames: string[];
   waitingOnUserId: string | null;
   waitingOnUserName: string | null;
   waitingOnExternalName: string | null;
@@ -99,6 +101,9 @@ export type ProjectTasksCopy = {
   labelGroupApproval: string;
   labelGroupRisk: string;
   mentionPlaceholder: string;
+  peoplePickerPlaceholder: string;
+  peoplePickerSearchPlaceholder: string;
+  peoplePickerEmpty: string;
   externalPlaceholder: string;
   waitingDetailsPlaceholder: string;
   nextActionPlaceholder: string;
@@ -243,7 +248,7 @@ function statusTone(status: WorkflowNodeStatus) {
 }
 
 function hasWaitingOperationalData(task: TaskOperationalFormState) {
-  return !!(task.waitingStartedAt || task.waitingOnUserMention || task.waitingOnExternalName || task.waitingDetails);
+  return !!(task.waitingStartedAt || task.waitingOnUserIds.length || task.waitingOnExternalName || task.waitingDetails);
 }
 
 function hasApprovalOperationalData(task: Pick<TaskOperationalFormState, "approverId" | "approvalRequestedAt" | "approvalCompletedAt">) {
@@ -260,6 +265,7 @@ function TaskOperationalSummary({ task, copy }: { task: ProjectTaskRow; copy: Pr
     dueAt: task.dueAt ? new Date(task.dueAt) : null,
     operationalLabels: task.operationalLabels,
     waitingStartedAt: task.waitingStartedAt ? new Date(task.waitingStartedAt) : null,
+    waitingOnUsers: task.waitingOnUserNames.map((name) => ({ name })),
     waitingOnUser: task.waitingOnUserName ? { name: task.waitingOnUserName } : null,
     waitingOnExternalName: task.waitingOnExternalName,
     waitingDetails: task.waitingDetails,
@@ -273,7 +279,7 @@ function TaskOperationalSummary({ task, copy }: { task: ProjectTaskRow; copy: Pr
       status: task.status,
       operationalLabels: task.operationalLabels,
       waitingStartedAt: task.waitingStartedAt,
-      waitingOnUserMention: task.waitingOnUserName ? `@${task.waitingOnUserName}` : null,
+      waitingOnUserIds: task.waitingOnUserIds,
       waitingOnExternalName: task.waitingOnExternalName,
       waitingDetails: task.waitingDetails,
       approverId: task.approverId,
@@ -442,7 +448,7 @@ type TaskOperationalFormState = {
   status: WorkflowNodeStatus;
   operationalLabels: WorkflowNodeLabel[];
   waitingStartedAt: string | null;
-  waitingOnUserMention: string | null;
+  waitingOnUserIds: string[];
   waitingOnExternalName: string | null;
   waitingDetails: string | null;
   approverId: string | null;
@@ -491,6 +497,112 @@ function LabelCheckboxGroup({
           <span>{option.label}</span>
         </label>
       ))}
+    </div>
+  );
+}
+
+function MultiPersonPicker({
+  name,
+  options,
+  selectedIds,
+  onChange,
+  placeholder,
+  searchPlaceholder,
+  emptyLabel,
+}: {
+  name: string;
+  options: { id: string; name: string }[];
+  selectedIds: string[];
+  onChange: (nextIds: string[]) => void;
+  placeholder: string;
+  searchPlaceholder: string;
+  emptyLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selectedPeople = options.filter((option) => selectedIds.includes(option.id));
+  const filteredOptions = options.filter((option) => option.name.toLowerCase().includes(query.trim().toLowerCase()));
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="space-y-2">
+      {selectedIds.map((id) => (
+        <input key={id} type="hidden" name={name} value={id} />
+      ))}
+      <button
+        type="button"
+        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-left outline-none ring-[hsl(var(--accent))] transition focus:ring-2"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+          {selectedPeople.length ? (
+            selectedPeople.map((person) => (
+              <span
+                key={person.id}
+                className="inline-flex max-w-full items-center rounded-full bg-[hsl(var(--accent))]/12 px-2 py-1 text-xs font-medium text-[hsl(var(--foreground))]"
+              >
+                @{person.name}
+              </span>
+            ))
+          ) : (
+            <span className="text-sm text-[hsl(var(--muted))]">{placeholder}</span>
+          )}
+        </span>
+        <ChevronDown className={`shrink-0 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open ? (
+        <div className="space-y-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2">
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.preventDefault();
+            }}
+            placeholder={searchPlaceholder}
+            className="text-sm"
+          />
+          <div className="max-h-48 space-y-1 overflow-y-auto">
+            {filteredOptions.length ? (
+              filteredOptions.map((option) => {
+                const checked = selectedIds.includes(option.id);
+                return (
+                  <label
+                    key={option.id}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        if (event.currentTarget.checked) {
+                          onChange([...selectedIds, option.id]);
+                          return;
+                        }
+                        onChange(selectedIds.filter((id) => id !== option.id));
+                      }}
+                    />
+                    <span>{option.name}</span>
+                  </label>
+                );
+              })
+            ) : (
+              <p className="px-2 py-3 text-sm text-[hsl(var(--muted))]">{emptyLabel}</p>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -612,12 +724,13 @@ function NodeLabelsDialog({
   const router = useRouter();
   const [, startLabelsTransition] = useTransition();
   const [selectedLabels, setSelectedLabels] = useState<WorkflowNodeLabel[]>(node.operationalLabels);
+  const [selectedWaitingUserIds, setSelectedWaitingUserIds] = useState<string[]>(node.waitingOnUserIds);
   const [activeCategory, setActiveCategory] = useState<TaskLabelCategory>(() => getDefaultLabelCategory(node));
   const syncKey = [
     node.id,
     node.operationalLabels.join(","),
     node.waitingStartedAt ?? "",
-    node.waitingOnUserMention ?? "",
+    node.waitingOnUserIds.join(","),
     node.waitingOnExternalName ?? "",
     node.waitingDetails ?? "",
     node.approverId ?? "",
@@ -629,6 +742,7 @@ function NodeLabelsDialog({
 
   useEffect(() => {
     setSelectedLabels(node.operationalLabels);
+    setSelectedWaitingUserIds(node.waitingOnUserIds);
     setActiveCategory(getDefaultLabelCategory(node));
   }, [syncKey]);
 
@@ -639,9 +753,12 @@ function NodeLabelsDialog({
     });
   }
 
-  const waitingDetailsVisible = selectedLabels.some((label) => WAITING_LABELS.includes(label)) || hasWaitingOperationalData(node);
+  const waitingDetailsVisible =
+    activeCategory === "waiting" || selectedLabels.some((label) => WAITING_LABELS.includes(label)) || selectedWaitingUserIds.length > 0 || hasWaitingOperationalData(node);
   const approvalDetailsVisible =
-    selectedLabels.some((label) => PENDING_APPROVAL_LABELS.includes(label) || APPROVAL_OUTCOME_LABELS.includes(label)) || hasApprovalOperationalData(node);
+    activeCategory === "approval" ||
+    selectedLabels.some((label) => PENDING_APPROVAL_LABELS.includes(label) || APPROVAL_OUTCOME_LABELS.includes(label)) ||
+    hasApprovalOperationalData(node);
   const riskDetailsVisible = selectedLabels.some((label) => EXECUTION_RISK_LABELS.includes(label)) || hasRiskOperationalData(node);
   const categories: { key: TaskLabelCategory; label: string }[] = [
     { key: "waiting", label: copy.labelGroupWaiting },
@@ -702,12 +819,6 @@ function NodeLabelsDialog({
             })}
           </div>
         </div>
-        <datalist id={`waiting-mention-${node.id}`}>
-          {memberOptions.map((m) => (
-            <option key={m.id} value={`@${m.name}`} />
-          ))}
-        </datalist>
-
         <section className={activeCategory === "waiting" ? "space-y-3" : "hidden"}>
           <div className="space-y-1">
             <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.labelsLabel}</label>
@@ -725,12 +836,14 @@ function NodeLabelsDialog({
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingOnInternalLabel}</label>
-              <Input
-                name="waitingOnUserMention"
-                list={`waiting-mention-${node.id}`}
-                defaultValue={node.waitingOnUserMention ?? ""}
-                placeholder={copy.mentionPlaceholder}
-                className="text-sm"
+              <MultiPersonPicker
+                name="waitingOnUserIds"
+                options={memberOptions}
+                selectedIds={selectedWaitingUserIds}
+                onChange={setSelectedWaitingUserIds}
+                placeholder={copy.peoplePickerPlaceholder}
+                searchPlaceholder={copy.peoplePickerSearchPlaceholder}
+                emptyLabel={copy.peoplePickerEmpty}
               />
             </div>
             <div className="space-y-1 md:col-span-2">
@@ -1006,6 +1119,8 @@ export function ProjectTasksPanel({
                       description: null,
                       operationalLabels: [],
                       waitingStartedAt: null,
+                      waitingOnUserIds: [],
+                      waitingOnUserNames: [],
                       waitingOnUserId: null,
                       waitingOnUserName: null,
                       waitingOnExternalName: null,
@@ -1202,7 +1317,7 @@ export function ProjectTasksPanel({
                         status: task.status,
                         operationalLabels: task.operationalLabels,
                         waitingStartedAt: task.waitingStartedAt,
-                        waitingOnUserMention: task.waitingOnUserName ? `@${task.waitingOnUserName}` : null,
+                        waitingOnUserIds: task.waitingOnUserIds,
                         waitingOnExternalName: task.waitingOnExternalName,
                         waitingDetails: task.waitingDetails,
                         approverId: task.approverId,
@@ -1342,7 +1457,7 @@ export function ProjectTasksPanel({
                                   status: sub.status,
                                   operationalLabels: sub.operationalLabels,
                                   waitingStartedAt: sub.waitingStartedAt,
-                                  waitingOnUserMention: sub.waitingOnUserName ? `@${sub.waitingOnUserName}` : null,
+                                  waitingOnUserIds: sub.waitingOnUserIds,
                                   waitingOnExternalName: sub.waitingOnExternalName,
                                   waitingDetails: sub.waitingDetails,
                                   approverId: sub.approverId,
@@ -1389,6 +1504,8 @@ export function ProjectTasksPanel({
                                 description: null,
                                 operationalLabels: [],
                                 waitingStartedAt: null,
+                                waitingOnUserIds: [],
+                                waitingOnUserNames: [],
                                 waitingOnUserId: null,
                                 waitingOnUserName: null,
                                 waitingOnExternalName: null,

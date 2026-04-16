@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { WorkflowNodeStatus, WorkflowNodeType } from "@prisma/client";
+import { Prisma, WorkflowNodeLabel, WorkflowNodeStatus, WorkflowNodeType } from "@prisma/client";
 import { getAppSession, requireUser } from "@/lib/auth";
 import { canEditWorkflow, canManageProject, canViewProject, type AccessUser } from "@/lib/access";
 import { assertPermission } from "@/lib/permissions";
@@ -15,6 +15,40 @@ import {
   hasAnyOperationalLabel,
   normalizeOperationalLabels,
 } from "@/lib/workflow-node-operations";
+
+type DbClient = Prisma.TransactionClient | typeof prisma;
+
+type WorkflowNodeNotificationSnapshot = {
+  id: string;
+  title: string;
+  projectId: string;
+  nodeType: WorkflowNodeType;
+  status: WorkflowNodeStatus;
+  operationalLabels: WorkflowNodeLabel[];
+  waitingStartedAt: Date | null;
+  waitingOnUserId: string | null;
+  waitingOnUsers: { userId: string }[];
+  waitingOnExternalName: string | null;
+  waitingDetails: string | null;
+  approverUserId: string | null;
+  approvalRequestedAt: Date | null;
+  approvalCompletedAt: Date | null;
+};
+
+type ParsedOperationalInput = {
+  status: WorkflowNodeStatus;
+  operationalLabels: WorkflowNodeLabel[];
+  waitingStartedAt: Date | null;
+  waitingOnUserIds: string[];
+  waitingOnUserId: string | null;
+  waitingOnExternalName: string | null;
+  waitingDetails: string | null;
+  approvalRequestedAt: Date | null;
+  approvalCompletedAt: Date | null;
+  approverUserId: string | null;
+  nextAction: string | null;
+  isProjectBottleneck: boolean;
+};
 
 /** Run rollup + second revalidate after the response is sent so mutations return fast (avoids Vercel / PgBouncer timeouts). */
 function scheduleTaskRollupRevalidate(projectId: string) {
@@ -29,6 +63,23 @@ function scheduleTaskRollupRevalidate(projectId: string) {
     }
   });
 }
+
+const workflowNodeNotificationSelect = {
+  id: true,
+  title: true,
+  projectId: true,
+  nodeType: true,
+  status: true,
+  operationalLabels: true,
+  waitingStartedAt: true,
+  waitingOnUserId: true,
+  waitingOnUsers: { select: { userId: true } },
+  waitingOnExternalName: true,
+  waitingDetails: true,
+  approverUserId: true,
+  approvalRequestedAt: true,
+  approvalCompletedAt: true,
+} as const;
 
 function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -50,12 +101,16 @@ function parseNodeStatus(formData: FormData, key = "status") {
 }
 
 async function resolveMentionedUserId(projectId: string, mentionRaw: string | null) {
+  return resolveMentionedUserIdWithDb(prisma, projectId, mentionRaw);
+}
+
+async function resolveMentionedUserIdWithDb(db: DbClient, projectId: string, mentionRaw: string | null) {
   const mention = mentionRaw?.trim();
   if (!mention) return null;
   const normalized = mention.replace(/^@+/, "").trim().toLowerCase();
   if (!normalized) return null;
 
-  const memberships = await prisma.projectMembership.findMany({
+  const memberships = await db.projectMembership.findMany({
     where: { projectId },
     select: { userId: true, user: { select: { id: true, name: true, email: true } } },
   });
@@ -69,30 +124,149 @@ async function resolveMentionedUserId(projectId: string, mentionRaw: string | nu
   return match?.userId ?? null;
 }
 
-async function parseOperationalInput(formData: FormData, projectId: string, opts?: { nodeType?: WorkflowNodeType }) {
+async function filterProjectMemberIds(db: DbClient, projectId: string, rawUserIds: string[]) {
+  const uniqueUserIds = [...new Set(rawUserIds.map((value) => value.trim()).filter(Boolean))];
+  if (!uniqueUserIds.length) return [] as string[];
+
+  const memberships = await db.projectMembership.findMany({
+    where: { projectId, userId: { in: uniqueUserIds } },
+    select: { userId: true },
+  });
+  const allowedUserIds = new Set(memberships.map((membership) => membership.userId));
+  return uniqueUserIds.filter((userId) => allowedUserIds.has(userId));
+}
+
+function isWorkflowNodeDone(status: WorkflowNodeStatus) {
+  return status === WorkflowNodeStatus.DONE || status === WorkflowNodeStatus.SKIPPED;
+}
+
+function isWaitingNotificationState(
+  state: Pick<
+    WorkflowNodeNotificationSnapshot,
+    "status" | "operationalLabels" | "waitingStartedAt" | "waitingOnUserId" | "waitingOnUsers" | "waitingOnExternalName" | "waitingDetails"
+  >,
+) {
+  return (
+    state.status === WorkflowNodeStatus.WAITING ||
+    hasAnyOperationalLabel(state.operationalLabels, WAITING_LABELS) ||
+    !!state.waitingStartedAt ||
+    !!state.waitingOnUserId ||
+    !!state.waitingOnUsers.length ||
+    !!state.waitingOnExternalName ||
+    !!state.waitingDetails
+  );
+}
+
+function isPendingApprovalNotificationState(
+  state: Pick<
+    WorkflowNodeNotificationSnapshot,
+    "nodeType" | "status" | "operationalLabels" | "approverUserId" | "approvalRequestedAt" | "approvalCompletedAt"
+  >,
+) {
+  return (
+    hasAnyOperationalLabel(state.operationalLabels, PENDING_APPROVAL_LABELS) ||
+    (state.nodeType === WorkflowNodeType.APPROVAL && !isWorkflowNodeDone(state.status) && state.status !== WorkflowNodeStatus.APPROVED) ||
+    ((!state.approvalCompletedAt && state.status !== WorkflowNodeStatus.APPROVED) && (!!state.approverUserId || !!state.approvalRequestedAt))
+  );
+}
+
+function collectWaitingRecipientIds(state: Pick<WorkflowNodeNotificationSnapshot, "waitingOnUserId" | "waitingOnUsers">) {
+  return [...new Set([...state.waitingOnUsers.map((link) => link.userId), state.waitingOnUserId].filter(Boolean) as string[])];
+}
+
+async function createTaskOperationalNotifications(args: {
+  tx: Prisma.TransactionClient;
+  actorUserId: string;
+  projectName: string;
+  nodeId: string;
+  nodeTitle: string;
+  previousState: WorkflowNodeNotificationSnapshot | null;
+  nextState: WorkflowNodeNotificationSnapshot;
+}) {
+  const { tx, actorUserId, projectName, nodeId, nodeTitle, previousState, nextState } = args;
+  const href = `/projects/${nextState.projectId}?task=${nodeId}#task-${nodeId}`;
+
+  const previousWaitingActive = previousState ? isWaitingNotificationState(previousState) : false;
+  const nextWaitingActive = isWaitingNotificationState(nextState);
+  const previousWaitingRecipients = previousState ? new Set(collectWaitingRecipientIds(previousState)) : new Set<string>();
+  const waitingRecipientsToNotify = nextWaitingActive
+    ? collectWaitingRecipientIds(nextState).filter((userId) => userId !== actorUserId && (!previousWaitingActive || !previousWaitingRecipients.has(userId)))
+    : [];
+
+  if (waitingRecipientsToNotify.length) {
+    await tx.inAppNotification.createMany({
+      data: waitingRecipientsToNotify.map((userId) => ({
+        userId,
+        kind: "TASK_WAITING_RESPONSE",
+        title: "Response needed on a project task",
+        body: `${projectName} · ${nodeTitle}`,
+        href,
+        metadata: { projectId: nextState.projectId, nodeId, category: "waiting" },
+      })),
+    });
+  }
+
+  const previousApprovalActive = previousState ? isPendingApprovalNotificationState(previousState) : false;
+  const nextApprovalActive = isPendingApprovalNotificationState(nextState);
+  const approvalRecipientChanged = previousState?.approverUserId !== nextState.approverUserId;
+  const approvalRecipientToNotify =
+    nextApprovalActive && nextState.approverUserId && nextState.approverUserId !== actorUserId && (!previousApprovalActive || approvalRecipientChanged)
+      ? nextState.approverUserId
+      : null;
+
+  if (approvalRecipientToNotify) {
+    await tx.inAppNotification.create({
+      data: {
+        userId: approvalRecipientToNotify,
+        kind: "TASK_PENDING_APPROVAL",
+        title: "Approval requested on a project task",
+        body: `${projectName} · ${nodeTitle}`,
+        href,
+        metadata: { projectId: nextState.projectId, nodeId, category: "approval" },
+      },
+    });
+  }
+}
+
+async function parseOperationalInput(formData: FormData, projectId: string, opts?: { nodeType?: WorkflowNodeType }, db: DbClient = prisma): Promise<ParsedOperationalInput> {
   const status = parseNodeStatus(formData);
   const operationalLabels = normalizeOperationalLabels(formData.getAll("operationalLabels").map((value) => String(value).trim()));
-  const hasWaitingState = status === "WAITING" || hasAnyOperationalLabel(operationalLabels, WAITING_LABELS);
+  const waitingStartedInput = parseOptionalDate(formData, "waitingStartedAt");
+  const waitingOnUserMention = String(formData.get("waitingOnUserMention") ?? "").trim() || null;
+  const waitingOnExternalNameInput = String(formData.get("waitingOnExternalName") ?? "").trim() || null;
+  const waitingDetailsInput = String(formData.get("waitingDetails") ?? "").trim() || null;
+  const rawWaitingOnUserIds = formData.getAll("waitingOnUserIds").map((value) => String(value));
+  const hasWaitingIntent =
+    !!waitingStartedInput || !!waitingOnUserMention || !!waitingOnExternalNameInput || !!waitingDetailsInput || rawWaitingOnUserIds.some((value) => value.trim());
+  const hasWaitingState = status === "WAITING" || hasAnyOperationalLabel(operationalLabels, WAITING_LABELS) || hasWaitingIntent;
   const hasApprovalState =
     opts?.nodeType === "APPROVAL" ||
     hasAnyOperationalLabel(operationalLabels, PENDING_APPROVAL_LABELS) ||
-    hasAnyOperationalLabel(operationalLabels, APPROVAL_OUTCOME_LABELS);
+    hasAnyOperationalLabel(operationalLabels, APPROVAL_OUTCOME_LABELS) ||
+    !!String(formData.get("approverUserId") ?? "").trim() ||
+    !!parseOptionalDate(formData, "approvalRequestedAt") ||
+    !!parseOptionalDate(formData, "approvalCompletedAt");
 
   const waitingStartedAt = hasWaitingState ? parseOptionalDate(formData, "waitingStartedAt") ?? new Date() : null;
-  const waitingOnUserMention = hasWaitingState ? String(formData.get("waitingOnUserMention") ?? "").trim() || null : null;
-  const waitingOnUserId = hasWaitingState ? await resolveMentionedUserId(projectId, waitingOnUserMention) : null;
-  const waitingOnExternalName = hasWaitingState ? String(formData.get("waitingOnExternalName") ?? "").trim() || null : null;
-  const waitingDetails = hasWaitingState ? String(formData.get("waitingDetails") ?? "").trim() || null : null;
+  const waitingOnUserIds = hasWaitingState ? await filterProjectMemberIds(db, projectId, rawWaitingOnUserIds) : [];
+  const fallbackWaitingOnUserId =
+    hasWaitingState && waitingOnUserMention ? await resolveMentionedUserIdWithDb(db, projectId, waitingOnUserMention) : null;
+  const normalizedWaitingOnUserIds = [...new Set([...waitingOnUserIds, fallbackWaitingOnUserId].filter(Boolean) as string[])];
+  const waitingOnExternalName = hasWaitingState ? waitingOnExternalNameInput : null;
+  const waitingDetails = hasWaitingState ? waitingDetailsInput : null;
 
   const approvalRequestedAt = hasApprovalState ? parseOptionalDate(formData, "approvalRequestedAt") ?? new Date() : null;
   const approvalCompletedAt = hasApprovalState ? parseOptionalDate(formData, "approvalCompletedAt") : null;
-  const approverUserId = hasApprovalState ? String(formData.get("approverUserId") ?? "").trim() || null : null;
+  const [approverUserId] = hasApprovalState
+    ? await filterProjectMemberIds(db, projectId, [String(formData.get("approverUserId") ?? "").trim()])
+    : [];
 
   return {
     status,
     operationalLabels,
     waitingStartedAt,
-    waitingOnUserId,
+    waitingOnUserIds: normalizedWaitingOnUserIds,
+    waitingOnUserId: normalizedWaitingOnUserIds[0] ?? null,
     waitingOnExternalName,
     waitingDetails,
     approvalRequestedAt,
@@ -135,7 +309,7 @@ export async function addProjectTaskAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   await assertPermission(user, "project.workflow.update");
   const projectId = requireString(formData, "projectId");
-  await requireProjectForTasks(user, projectId);
+  const project = await requireProjectForTasks(user, projectId);
   const title = requireString(formData, "title");
   const assigneeId = String(formData.get("assigneeId") ?? "").trim() || null;
   const dueAt = parseOptionalDate(formData, "dueAt");
@@ -148,37 +322,53 @@ export async function addProjectTaskAction(formData: FormData) {
   });
   const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
 
-  const node = await prisma.workflowNode.create({
-    data: {
-      projectId,
-      layerId,
-      parentNodeId: null,
-      nodeType: WorkflowNodeType.TASK,
-      title,
-      status: operationalInput.status,
-      progressPercent: 0,
-      sortOrder,
-      dueAt,
-      operationalLabels: operationalInput.operationalLabels,
-      waitingStartedAt: operationalInput.waitingStartedAt,
-      waitingOnUserId: operationalInput.waitingOnUserId,
-      waitingOnExternalName: operationalInput.waitingOnExternalName,
-      waitingDetails: operationalInput.waitingDetails,
-      approverUserId: operationalInput.approverUserId,
-      approvalRequestedAt: operationalInput.approvalRequestedAt,
-      approvalCompletedAt: operationalInput.approvalCompletedAt,
-      nextAction: operationalInput.nextAction,
-      isProjectBottleneck: operationalInput.isProjectBottleneck,
-    },
-  });
-
-  if (assigneeId) {
-    await prisma.workflowNodeAssignee.upsert({
-      where: { workflowNodeId_userId: { workflowNodeId: node.id, userId: assigneeId } },
-      create: { workflowNodeId: node.id, userId: assigneeId, responsibility: null },
-      update: {},
+  await prisma.$transaction(async (tx) => {
+    const node = await tx.workflowNode.create({
+      data: {
+        projectId,
+        layerId,
+        parentNodeId: null,
+        nodeType: WorkflowNodeType.TASK,
+        title,
+        status: operationalInput.status,
+        progressPercent: 0,
+        sortOrder,
+        dueAt,
+        operationalLabels: operationalInput.operationalLabels,
+        waitingStartedAt: operationalInput.waitingStartedAt,
+        waitingOnUserId: operationalInput.waitingOnUserId,
+        waitingOnExternalName: operationalInput.waitingOnExternalName,
+        waitingDetails: operationalInput.waitingDetails,
+        waitingOnUsers: {
+          create: operationalInput.waitingOnUserIds.map((userId) => ({ userId })),
+        },
+        approverUserId: operationalInput.approverUserId,
+        approvalRequestedAt: operationalInput.approvalRequestedAt,
+        approvalCompletedAt: operationalInput.approvalCompletedAt,
+        nextAction: operationalInput.nextAction,
+        isProjectBottleneck: operationalInput.isProjectBottleneck,
+      },
+      select: workflowNodeNotificationSelect,
     });
-  }
+
+    if (assigneeId) {
+      await tx.workflowNodeAssignee.upsert({
+        where: { workflowNodeId_userId: { workflowNodeId: node.id, userId: assigneeId } },
+        create: { workflowNodeId: node.id, userId: assigneeId, responsibility: null },
+        update: {},
+      });
+    }
+
+    await createTaskOperationalNotifications({
+      tx,
+      actorUserId: user.id,
+      projectName: project.name,
+      nodeId: node.id,
+      nodeTitle: node.title,
+      previousState: null,
+      nextState: node,
+    });
+  });
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
@@ -190,7 +380,7 @@ export async function addProjectSubtaskAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   await assertPermission(user, "project.workflow.update");
   const projectId = requireString(formData, "projectId");
-  await requireProjectForTasks(user, projectId);
+  const project = await requireProjectForTasks(user, projectId);
   const parentNodeId = requireString(formData, "parentNodeId");
   const title = requireString(formData, "title");
   const assigneeId = String(formData.get("assigneeId") ?? "").trim() || null;
@@ -209,37 +399,53 @@ export async function addProjectSubtaskAction(formData: FormData) {
   });
   const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
 
-  const sub = await prisma.workflowNode.create({
-    data: {
-      projectId,
-      layerId: parent.layerId,
-      parentNodeId,
-      nodeType: WorkflowNodeType.TASK,
-      title,
-      status: operationalInput.status,
-      progressPercent: 0,
-      sortOrder,
-      dueAt,
-      operationalLabels: operationalInput.operationalLabels,
-      waitingStartedAt: operationalInput.waitingStartedAt,
-      waitingOnUserId: operationalInput.waitingOnUserId,
-      waitingOnExternalName: operationalInput.waitingOnExternalName,
-      waitingDetails: operationalInput.waitingDetails,
-      approverUserId: operationalInput.approverUserId,
-      approvalRequestedAt: operationalInput.approvalRequestedAt,
-      approvalCompletedAt: operationalInput.approvalCompletedAt,
-      nextAction: operationalInput.nextAction,
-      isProjectBottleneck: operationalInput.isProjectBottleneck,
-    },
-  });
-
-  if (assigneeId) {
-    await prisma.workflowNodeAssignee.upsert({
-      where: { workflowNodeId_userId: { workflowNodeId: sub.id, userId: assigneeId } },
-      create: { workflowNodeId: sub.id, userId: assigneeId, responsibility: null },
-      update: {},
+  await prisma.$transaction(async (tx) => {
+    const sub = await tx.workflowNode.create({
+      data: {
+        projectId,
+        layerId: parent.layerId,
+        parentNodeId,
+        nodeType: WorkflowNodeType.TASK,
+        title,
+        status: operationalInput.status,
+        progressPercent: 0,
+        sortOrder,
+        dueAt,
+        operationalLabels: operationalInput.operationalLabels,
+        waitingStartedAt: operationalInput.waitingStartedAt,
+        waitingOnUserId: operationalInput.waitingOnUserId,
+        waitingOnExternalName: operationalInput.waitingOnExternalName,
+        waitingDetails: operationalInput.waitingDetails,
+        waitingOnUsers: {
+          create: operationalInput.waitingOnUserIds.map((userId) => ({ userId })),
+        },
+        approverUserId: operationalInput.approverUserId,
+        approvalRequestedAt: operationalInput.approvalRequestedAt,
+        approvalCompletedAt: operationalInput.approvalCompletedAt,
+        nextAction: operationalInput.nextAction,
+        isProjectBottleneck: operationalInput.isProjectBottleneck,
+      },
+      select: workflowNodeNotificationSelect,
     });
-  }
+
+    if (assigneeId) {
+      await tx.workflowNodeAssignee.upsert({
+        where: { workflowNodeId_userId: { workflowNodeId: sub.id, userId: assigneeId } },
+        create: { workflowNodeId: sub.id, userId: assigneeId, responsibility: null },
+        update: {},
+      });
+    }
+
+    await createTaskOperationalNotifications({
+      tx,
+      actorUserId: user.id,
+      projectName: project.name,
+      nodeId: sub.id,
+      nodeTitle: sub.title,
+      previousState: null,
+      nextState: sub,
+    });
+  });
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
@@ -251,12 +457,12 @@ export async function updateWorkflowNodeMetaAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   await assertPermission(user, "project.workflow.update");
   const projectId = requireString(formData, "projectId");
-  await requireProjectForTasks(user, projectId);
+  const project = await requireProjectForTasks(user, projectId);
   const nodeId = requireString(formData, "nodeId");
 
   const node = await prisma.workflowNode.findFirst({
     where: { id: nodeId, projectId, deletedAt: null },
-    select: { id: true, nodeType: true },
+    select: { ...workflowNodeNotificationSelect, description: true, dueAt: true },
   });
   if (!node) throw new Error("Not found");
 
@@ -265,31 +471,48 @@ export async function updateWorkflowNodeMetaAction(formData: FormData) {
   const assigneeId = String(formData.get("assigneeId") ?? "").trim();
   const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: node.nodeType });
 
-  await prisma.workflowNode.update({
-    where: { id: nodeId },
-    data: {
-      description,
-      dueAt,
-      status: operationalInput.status,
-      operationalLabels: operationalInput.operationalLabels,
-      waitingStartedAt: operationalInput.waitingStartedAt,
-      waitingOnUserId: operationalInput.waitingOnUserId,
-      waitingOnExternalName: operationalInput.waitingOnExternalName,
-      waitingDetails: operationalInput.waitingDetails,
-      approverUserId: operationalInput.approverUserId,
-      approvalRequestedAt: operationalInput.approvalRequestedAt,
-      approvalCompletedAt: operationalInput.approvalCompletedAt,
-      nextAction: operationalInput.nextAction,
-      isProjectBottleneck: operationalInput.isProjectBottleneck,
-    },
-  });
-
-  await prisma.workflowNodeAssignee.deleteMany({ where: { workflowNodeId: nodeId } });
-  if (assigneeId) {
-    await prisma.workflowNodeAssignee.create({
-      data: { workflowNodeId: nodeId, userId: assigneeId, responsibility: null },
+  await prisma.$transaction(async (tx) => {
+    const updatedNode = await tx.workflowNode.update({
+      where: { id: nodeId },
+      data: {
+        description,
+        dueAt,
+        status: operationalInput.status,
+        operationalLabels: operationalInput.operationalLabels,
+        waitingStartedAt: operationalInput.waitingStartedAt,
+        waitingOnUserId: operationalInput.waitingOnUserId,
+        waitingOnExternalName: operationalInput.waitingOnExternalName,
+        waitingDetails: operationalInput.waitingDetails,
+        waitingOnUsers: {
+          deleteMany: {},
+          create: operationalInput.waitingOnUserIds.map((userId) => ({ userId })),
+        },
+        approverUserId: operationalInput.approverUserId,
+        approvalRequestedAt: operationalInput.approvalRequestedAt,
+        approvalCompletedAt: operationalInput.approvalCompletedAt,
+        nextAction: operationalInput.nextAction,
+        isProjectBottleneck: operationalInput.isProjectBottleneck,
+      },
+      select: workflowNodeNotificationSelect,
     });
-  }
+
+    await tx.workflowNodeAssignee.deleteMany({ where: { workflowNodeId: nodeId } });
+    if (assigneeId) {
+      await tx.workflowNodeAssignee.create({
+        data: { workflowNodeId: nodeId, userId: assigneeId, responsibility: null },
+      });
+    }
+
+    await createTaskOperationalNotifications({
+      tx,
+      actorUserId: user.id,
+      projectName: project.name,
+      nodeId: updatedNode.id,
+      nodeTitle: updatedNode.title,
+      previousState: node,
+      nextState: updatedNode,
+    });
+  });
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
@@ -301,12 +524,12 @@ export async function updateWorkflowNodeDetailsAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   await assertPermission(user, "project.workflow.update");
   const projectId = requireString(formData, "projectId");
-  await requireProjectForTasks(user, projectId);
+  const project = await requireProjectForTasks(user, projectId);
   const nodeId = requireString(formData, "nodeId");
 
   const node = await prisma.workflowNode.findFirst({
     where: { id: nodeId, projectId, deletedAt: null },
-    select: { id: true },
+    select: { ...workflowNodeNotificationSelect, description: true, dueAt: true },
   });
   if (!node) throw new Error("Not found");
 
@@ -315,21 +538,34 @@ export async function updateWorkflowNodeDetailsAction(formData: FormData) {
   const assigneeId = String(formData.get("assigneeId") ?? "").trim();
   const status = parseNodeStatus(formData);
 
-  await prisma.workflowNode.update({
-    where: { id: nodeId },
-    data: {
-      description,
-      dueAt,
-      status,
-    },
-  });
-
-  await prisma.workflowNodeAssignee.deleteMany({ where: { workflowNodeId: nodeId } });
-  if (assigneeId) {
-    await prisma.workflowNodeAssignee.create({
-      data: { workflowNodeId: nodeId, userId: assigneeId, responsibility: null },
+  await prisma.$transaction(async (tx) => {
+    const updatedNode = await tx.workflowNode.update({
+      where: { id: nodeId },
+      data: {
+        description,
+        dueAt,
+        status,
+      },
+      select: workflowNodeNotificationSelect,
     });
-  }
+
+    await tx.workflowNodeAssignee.deleteMany({ where: { workflowNodeId: nodeId } });
+    if (assigneeId) {
+      await tx.workflowNodeAssignee.create({
+        data: { workflowNodeId: nodeId, userId: assigneeId, responsibility: null },
+      });
+    }
+
+    await createTaskOperationalNotifications({
+      tx,
+      actorUserId: user.id,
+      projectName: project.name,
+      nodeId: updatedNode.id,
+      nodeTitle: updatedNode.title,
+      previousState: node,
+      nextState: updatedNode,
+    });
+  });
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
@@ -341,31 +577,48 @@ export async function updateWorkflowNodeOperationalAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   await assertPermission(user, "project.workflow.update");
   const projectId = requireString(formData, "projectId");
-  await requireProjectForTasks(user, projectId);
+  const project = await requireProjectForTasks(user, projectId);
   const nodeId = requireString(formData, "nodeId");
 
   const node = await prisma.workflowNode.findFirst({
     where: { id: nodeId, projectId, deletedAt: null },
-    select: { id: true, nodeType: true },
+    select: workflowNodeNotificationSelect,
   });
   if (!node) throw new Error("Not found");
 
-  const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: node.nodeType });
+  await prisma.$transaction(async (tx) => {
+    const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: node.nodeType }, tx);
 
-  await prisma.workflowNode.update({
-    where: { id: nodeId },
-    data: {
-      operationalLabels: operationalInput.operationalLabels,
-      waitingStartedAt: operationalInput.waitingStartedAt,
-      waitingOnUserId: operationalInput.waitingOnUserId,
-      waitingOnExternalName: operationalInput.waitingOnExternalName,
-      waitingDetails: operationalInput.waitingDetails,
-      approverUserId: operationalInput.approverUserId,
-      approvalRequestedAt: operationalInput.approvalRequestedAt,
-      approvalCompletedAt: operationalInput.approvalCompletedAt,
-      nextAction: operationalInput.nextAction,
-      isProjectBottleneck: operationalInput.isProjectBottleneck,
-    },
+    const updatedNode = await tx.workflowNode.update({
+      where: { id: nodeId },
+      data: {
+        operationalLabels: operationalInput.operationalLabels,
+        waitingStartedAt: operationalInput.waitingStartedAt,
+        waitingOnUserId: operationalInput.waitingOnUserId,
+        waitingOnExternalName: operationalInput.waitingOnExternalName,
+        waitingDetails: operationalInput.waitingDetails,
+        waitingOnUsers: {
+          deleteMany: {},
+          create: operationalInput.waitingOnUserIds.map((userId) => ({ userId })),
+        },
+        approverUserId: operationalInput.approverUserId,
+        approvalRequestedAt: operationalInput.approvalRequestedAt,
+        approvalCompletedAt: operationalInput.approvalCompletedAt,
+        nextAction: operationalInput.nextAction,
+        isProjectBottleneck: operationalInput.isProjectBottleneck,
+      },
+      select: workflowNodeNotificationSelect,
+    });
+
+    await createTaskOperationalNotifications({
+      tx,
+      actorUserId: user.id,
+      projectName: project.name,
+      nodeId: updatedNode.id,
+      nodeTitle: updatedNode.title,
+      previousState: node,
+      nextState: updatedNode,
+    });
   });
 
   revalidatePath(`/projects/${projectId}`);

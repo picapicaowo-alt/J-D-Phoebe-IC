@@ -113,6 +113,7 @@ type TaskNodeRow = {
   description: string | null;
   operationalLabels: WorkflowNodeLabel[];
   waitingStartedAt: Date | null;
+  waitingOnUsers: { user: { id: string; name: string } }[];
   waitingOnUserId: string | null;
   waitingOnExternalName: string | null;
   waitingDetails: string | null;
@@ -138,6 +139,14 @@ function buildProjectTaskRows(nodes: TaskNodeRow[]): ProjectTaskRow[] {
   }
   function walk(parentId: string | null): ProjectTaskRow[] {
     return (byParent.get(parentId) ?? []).map((n) => ({
+      waitingOnUserIds: [...new Set([n.waitingOnUserId, ...n.waitingOnUsers.map((link) => link.user.id)].filter(Boolean) as string[])],
+      waitingOnUserNames: [
+        ...new Set(
+          [n.waitingOnUser?.name, ...n.waitingOnUsers.map((link) => link.user.name)]
+            .map((name) => name?.trim() || "")
+            .filter(Boolean),
+        ),
+      ],
       id: n.id,
       title: n.title,
       progressPercent: n.progressPercent,
@@ -217,6 +226,7 @@ function TaskSpotlightCard({
     dueAt: task.dueAt ? new Date(task.dueAt) : null,
     operationalLabels: task.operationalLabels,
     waitingStartedAt: task.waitingStartedAt ? new Date(task.waitingStartedAt) : null,
+    waitingOnUsers: task.waitingOnUserNames.map((name) => ({ name })),
     waitingOnUser: task.waitingOnUserName ? { name: task.waitingOnUserName } : null,
     waitingOnExternalName: task.waitingOnExternalName,
     waitingDetails: task.waitingDetails,
@@ -439,6 +449,7 @@ export default async function ProjectDetailPage({
           operationalLabels: true,
           waitingStartedAt: true,
           waitingOnUserId: true,
+          waitingOnUsers: { orderBy: { createdAt: "asc" }, select: { user: { select: { id: true, name: true } } } },
           waitingOnExternalName: true,
           waitingDetails: true,
           approverUserId: true,
@@ -821,6 +832,9 @@ export default async function ProjectDetailPage({
             labelGroupApproval: t(locale, "projTaskLabelGroupApproval"),
             labelGroupRisk: t(locale, "projTaskLabelGroupRisk"),
             mentionPlaceholder: t(locale, "projTaskMentionPlaceholder"),
+            peoplePickerPlaceholder: t(locale, "projTaskPeoplePickerPlaceholder"),
+            peoplePickerSearchPlaceholder: t(locale, "projTaskPeoplePickerSearchPlaceholder"),
+            peoplePickerEmpty: t(locale, "projTaskPeoplePickerEmpty"),
             externalPlaceholder: t(locale, "projTaskExternalPlaceholder"),
             waitingDetailsPlaceholder: t(locale, "projTaskWaitingDetailsPlaceholder"),
             nextActionPlaceholder: t(locale, "projTaskNextActionPlaceholder"),
