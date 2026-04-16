@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FeedbackCategory } from "@prisma/client";
 import { FEEDBACK_SECONDARY_LABELS } from "@/lib/feedback-catalog";
 
@@ -8,12 +8,29 @@ const CATEGORIES = Object.keys(FEEDBACK_SECONDARY_LABELS) as FeedbackCategory[];
 
 type Props = {
   defaultCategory?: FeedbackCategory;
+  defaultSecondaryKey?: string;
   locale?: "en" | "zh";
 };
 
-export function FeedbackSecondarySelect({ defaultCategory = "COMMUNICATION", locale = "en" }: Props) {
+export function FeedbackSecondarySelect({
+  defaultCategory = "COMMUNICATION",
+  defaultSecondaryKey,
+  locale = "en",
+}: Props) {
   const [cat, setCat] = useState<FeedbackCategory>(defaultCategory);
   const options = useMemo(() => FEEDBACK_SECONDARY_LABELS[cat] ?? [], [cat]);
+  const [secondaryKey, setSecondaryKey] = useState(() => {
+    const initialOptions = FEEDBACK_SECONDARY_LABELS[defaultCategory] ?? [];
+    return initialOptions.some((option) => option.key === defaultSecondaryKey)
+      ? defaultSecondaryKey!
+      : (initialOptions[0]?.key ?? "");
+  });
+
+  useEffect(() => {
+    setSecondaryKey((current) =>
+      options.some((option) => option.key === current) ? current : (options[0]?.key ?? ""),
+    );
+  }, [options]);
 
   return (
     <div className="grid gap-2 md:grid-cols-2">
@@ -37,7 +54,8 @@ export function FeedbackSecondarySelect({ defaultCategory = "COMMUNICATION", loc
         <label className="text-xs font-medium">Structured label</label>
         <select
           name="secondaryLabelKey"
-          key={cat}
+          value={secondaryKey}
+          onChange={(e) => setSecondaryKey(e.target.value)}
           className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm"
           required
         >

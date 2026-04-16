@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createFeedbackEventAction } from "@/app/actions/feedback";
 import { updateCompanionAction } from "@/app/actions/companion";
 import { softDeleteUserAction } from "@/app/actions/trash";
 import {
@@ -19,12 +18,10 @@ import {
 } from "@/app/actions/lifecycle";
 import { removeUserAvatarAction, uploadUserAvatarAction } from "@/app/actions/profile-media";
 import { requireUser } from "@/lib/auth";
-import { canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { canManageProject, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
-import { t, tFeedbackCategory, tRecognitionTagCategory } from "@/lib/messages";
+import { t } from "@/lib/messages";
 import { tLedgerReason } from "@/lib/ledger-labels";
-import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
-import { displayFeedbackSecondary } from "@/lib/feedback-catalog";
 import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/companion-manifest";
 import { sumAbilityByUser } from "@/lib/scoring";
 import { userHasPermission } from "@/lib/permissions";
@@ -34,8 +31,8 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AbilityRadar } from "@/components/ability-radar";
+import { StaffObservationsPanel } from "@/components/staff-observations-panel";
 import { UserFace } from "@/components/user-face";
-import { FeedbackSecondarySelect } from "@/components/feedback-secondary-select";
 
 export default async function StaffDetailPage({
   params,
@@ -58,12 +55,12 @@ export default async function StaffDetailPage({
       companionProfile: true,
       performanceSnapshots: { orderBy: { createdAt: "desc" }, take: 1 },
       recognitionsReceived: {
-        include: { fromUser: true, project: true },
+        include: { fromUser: true, project: { include: { company: true } } },
         orderBy: { createdAt: "desc" },
         take: 20,
       },
       feedbackReceived: {
-        include: { fromUser: true, project: true },
+        include: { fromUser: true, project: { include: { company: true } } },
         orderBy: { createdAt: "desc" },
         take: 20,
       },
@@ -154,14 +151,20 @@ export default async function StaffDetailPage({
   const strengths = sorted.slice(0, 3);
   const growth = [...sorted].reverse().slice(0, 3);
 
+  const canRecognizeHere =
+    (await userHasPermission(actor, "recognition.create")) &&
+    (isSuperAdmin(actor) || isAnyGroupAdmin || isAnyCompanyAdmin || isAnyPm);
   const canFeedbackHere =
     (await userHasPermission(actor, "feedback.submit")) &&
     (isSuperAdmin(actor) || isAnyGroupAdmin || isAnyCompanyAdmin || isAnyPm);
-  const feedbackProjects = await prisma.project.findMany({
+  const canViewFeedback = canFeedbackHere || actor.id === target.id || (await userHasPermission(actor, "feedback.read"));
+  const observationProjects = await prisma.project.findMany({
     where: { deletedAt: null, memberships: { some: { userId: target.id } } },
     include: { company: true },
+    orderBy: { name: "asc" },
   });
-  const feedbackProjectChoices = feedbackProjects.filter((p) => canViewProject(actor, p));
+  const observationProjectChoices = observationProjects.filter((p) => canManageProject(actor, p));
+  const canManageFeedbackWithoutProject = isSuperAdmin(actor) || isAnyGroupAdmin;
 
   const ledgerEvidence = await prisma.scoreLedgerEntry.findMany({
     where: { userId: target.id },
@@ -356,107 +359,18 @@ export default async function StaffDetailPage({
         </Card>
       </section>
 
-      <Card className="space-y-3 p-4">
-        <CardTitle>{t(locale, "staffRecReceived")}</CardTitle>
-        {target.recognitionsReceived.length ? (
-          <ul className="space-y-3 text-sm">
-            {target.recognitionsReceived.map((r) => (
-              <li key={r.id} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3 shadow-sm">
-                <div className="font-semibold text-[hsl(var(--foreground))]">
-                  {r.secondaryLabelKey
-                    ? displayRecognitionSecondary(r.tagCategory, r.secondaryLabelKey, locale)
-                    : (r.tagLabel ?? tRecognitionTagCategory(locale, r.tagCategory))}
-                </div>
-                <div className="mt-1 text-xs leading-relaxed text-[hsl(var(--muted))]">
-                  {tRecognitionTagCategory(locale, r.tagCategory)}
-                  {" · "}
-                  {r.project ? (
-                    <Link className="font-medium text-[hsl(var(--foreground))] underline-offset-2 hover:underline" href={`/projects/${r.project.id}`}>
-                      {r.project.name}
-                    </Link>
-                  ) : (
-                    t(locale, "kbUncategorizedShort")
-                  )}
-                  {" · "}
-                  {t(locale, "projRecBy")}{" "}
-                  {r.fromUser?.name ?? t(locale, "staffRecFromTeammate")}
-                  {" · "}
-                  {t(locale, "staffRecWhen")}{" "}
-                  {r.createdAt.toISOString().slice(0, 10)}
-                </div>
-                {r.message ? <p className="mt-2 text-sm text-[hsl(var(--foreground))]">{r.message}</p> : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffRecEmpty")}</p>
-        )}
-      </Card>
-
-      {canFeedbackHere && actor.id !== target.id && feedbackProjectChoices.length ? (
-        <Card className="space-y-3 p-4">
-          <CardTitle>{t(locale, "staffGrowthAboutMember")}</CardTitle>
-          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "projGrowthHint")}</p>
-          <form action={createFeedbackEventAction} className="grid gap-2 md:grid-cols-2">
-            <input type="hidden" name="toUserId" value={target.id} />
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "projProjectContext")}</label>
-              <Select name="projectId" required>
-                {feedbackProjectChoices.map((p) => (
-                  <option key={p.id} value={p.id}>{p.company.name} · {p.name}</option>
-                ))}
-              </Select>
-            </div>
-            <div className="md:col-span-2">
-              <FeedbackSecondarySelect locale={locale} />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "projGrowthNote")}</label>
-              <Input name="message" />
-            </div>
-            <div className="md:col-span-2">
-              <FormSubmitButton type="submit" variant="secondary">
-                {t(locale, "projSaveObservation")}
-              </FormSubmitButton>
-            </div>
-          </form>
-        </Card>
-      ) : null}
-
-      {(actor.id === target.id || (await userHasPermission(actor, "feedback.read"))) && target.feedbackReceived.length ? (
-        <Card className="space-y-3 p-4">
-          <CardTitle>{t(locale, "staffGrowthOnFile")}</CardTitle>
-          <ul className="space-y-3 text-sm">
-            {target.feedbackReceived.map((f) => (
-              <li key={f.id} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3 shadow-sm">
-                <div className="font-semibold text-[hsl(var(--foreground))]">
-                  {displayFeedbackSecondary(f.category, f.secondaryLabelKey, locale)}
-                </div>
-                <div className="mt-1 text-xs leading-relaxed text-[hsl(var(--muted))]">
-                  {tFeedbackCategory(locale, f.category)}
-                  {" · "}
-                  {f.project ? (
-                    <Link className="font-medium text-[hsl(var(--foreground))] underline-offset-2 hover:underline" href={`/projects/${f.project.id}`}>
-                      {f.project.name}
-                    </Link>
-                  ) : (
-                    t(locale, "staffFbProjectFallback")
-                  )}
-                  {" · "}
-                  {t(locale, "staffRecWhen")} {f.createdAt.toISOString().slice(0, 10)}
-                  {f.fromUser ? (
-                    <>
-                      {" · "}
-                      {t(locale, "projRecBy")} {f.fromUser.name}
-                    </>
-                  ) : null}
-                </div>
-                {f.message ? <p className="mt-2 text-sm text-[hsl(var(--foreground))]">{f.message}</p> : null}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ) : null}
+      <StaffObservationsPanel
+        actor={actor}
+        locale={locale}
+        targetUserId={target.id}
+        projectChoices={observationProjectChoices}
+        recognitions={target.recognitionsReceived}
+        feedback={target.feedbackReceived}
+        canCreateRecognition={canRecognizeHere}
+        canCreateFeedback={canFeedbackHere}
+        canViewFeedback={canViewFeedback}
+        canManageFeedbackWithoutProject={canManageFeedbackWithoutProject}
+      />
 
       {canAssignCompanyUI ? (
         <Card className="space-y-3 p-4">
