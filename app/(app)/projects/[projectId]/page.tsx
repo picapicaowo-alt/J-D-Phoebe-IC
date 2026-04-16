@@ -35,6 +35,7 @@ import { AttachmentVersionTree } from "@/components/attachment-version-tree";
 import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
 import { UserFace } from "@/components/user-face";
 import { DetailsHashOpener } from "@/components/details-hash-opener";
+import { ProjectDetailActionTabs, ProjectDetailBreadcrumbs } from "@/components/project-detail-nav";
 import { type ProjectTaskRow } from "@/components/project-tasks-panel";
 import {
   formatWorkflowNodeLabel,
@@ -350,7 +351,7 @@ export default async function ProjectDetailPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ task?: string }>;
+  searchParams: Promise<{ task?: string; section?: string }>;
 }) {
   const [user, { projectId }, sp] = await Promise.all([requireUser() as Promise<AccessUser>, params, searchParams]);
   const localePromise = getLocale();
@@ -591,6 +592,7 @@ export default async function ProjectDetailPage({
   const filesTotalCount = projectFiles.length + sharedAttachmentInbound.length;
   const taskRows = buildProjectTaskRows(project.nodes);
   const focusedTask = findTaskById(taskRows, String(sp.task ?? "").trim() || null);
+  const currentSection = String(sp.section ?? "").trim() || null;
   const daysLeft = daysLeftLine(project.deadline, locale);
   const priorityClass = priorityTone(project.priority);
 
@@ -602,31 +604,25 @@ export default async function ProjectDetailPage({
   return (
     <div className="space-y-6">
       <DetailsHashOpener />
-      <div className="text-xs text-[hsl(var(--muted))]">
-        <Link href="/home">{t(locale, "navHome")}</Link> / <Link href="/projects">{t(locale, "projBreadcrumbProjects")}</Link> / {project.name}
-      </div>
+      <ProjectDetailBreadcrumbs
+        homeLabel={t(locale, "navHome")}
+        projectsLabel={t(locale, "projBreadcrumbProjects")}
+        projectName={project.name}
+      />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Link href="/home" className={secondaryBtn}>
-          {t(locale, "navHome")}
-        </Link>
-        {canManage ? (
-          <a href="#section-edit-project" className={primaryBtn}>
-            {t(locale, "projEditProject")}
-          </a>
-        ) : null}
-        {canMemberManage ? (
-          <a href="#section-edit-members" className={canManage ? secondaryBtn : primaryBtn}>
-            {t(locale, "projEditMembers")}
-          </a>
-        ) : null}
-        <Link href={`/projects/${project.id}/recognition`} className={secondaryBtn}>
-          {t(locale, "projRecognitionOpen")}
-        </Link>
-        <Link href={`/projects/${project.id}/growth`} className={secondaryBtn}>
-          {t(locale, "projGrowthOpen")}
-        </Link>
-      </div>
+      <ProjectDetailActionTabs
+        secondaryBtnClassName={secondaryBtn}
+        primaryBtnClassName={primaryBtn}
+        homeLabel={t(locale, "navHome")}
+        projectId={project.id}
+        recognitionLabel={t(locale, "projRecognitionOpen")}
+        growthLabel={t(locale, "projGrowthOpen")}
+        editProjectLabel={t(locale, "projEditProject")}
+        showEditProject={canManage}
+        editMembersLabel={t(locale, "projEditMembers")}
+        showEditMembers={canMemberManage}
+        currentSection={currentSection}
+      />
 
       <div className="flex flex-wrap items-start gap-4">
         {project.company.logoUrl ? (
@@ -1594,6 +1590,7 @@ export default async function ProjectDetailPage({
       {canManage ? (
         <details
           id="section-edit-project"
+          open={currentSection === "edit-project"}
           className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm"
         >
           <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium">
@@ -1712,6 +1709,7 @@ export default async function ProjectDetailPage({
 
       <details
         id="section-edit-members"
+        open={currentSection === "edit-members"}
         className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm"
       >
         <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium">

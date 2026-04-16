@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { closeAllOpenDialogs } from "@/components/dialog-launcher";
 import { cn } from "@/lib/utils";
@@ -11,6 +10,13 @@ function isActive(pathname: string, href: string) {
   if (href === "/home") return pathname === "/home" || pathname === "/";
   if (pathname === href) return true;
   return pathname.startsWith(`${href}/`);
+}
+
+function prepareForNavigation() {
+  closeAllOpenDialogs();
+  if (typeof document === "undefined") return;
+  const active = document.activeElement;
+  if (active instanceof HTMLElement) active.blur();
 }
 
 export function AppNav({ items }: { items: AppNavItem[] }) {
@@ -24,10 +30,11 @@ export function AppNav({ items }: { items: AppNavItem[] }) {
       {items.map((item) => {
         const active = isActive(pathname, item.href);
         return (
-          <Link
+          <a
             key={item.href}
             href={item.href}
-            onClick={() => closeAllOpenDialogs()}
+            onPointerDown={() => prepareForNavigation()}
+            onClick={() => prepareForNavigation()}
             className={cn(
               "shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
               active
@@ -36,7 +43,7 @@ export function AppNav({ items }: { items: AppNavItem[] }) {
             )}
           >
             {item.label}
-          </Link>
+          </a>
         );
       })}
     </nav>

@@ -853,9 +853,13 @@ export function ProjectTasksPanel({
 }) {
   const router = useRouter();
   const [isOtherPending, startOtherTransition] = useTransition();
+  const [, startRefreshTransition] = useTransition();
   const [, startToggleTransition] = useTransition();
   const [optimisticTasks, runOptimistic] = useOptimistic(tasks, applyTasksOptimistic);
-  const isBusy = isOtherPending;
+  const [submittingKeys, setSubmittingKeys] = useState<Record<string, boolean>>({});
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newSubtaskTitles, setNewSubtaskTitles] = useState<Record<string, string>>({});
+  const isBusy = isOtherPending || Object.values(submittingKeys).some(Boolean);
 
   const notifyChange = useCallback(
     (nextTasks: ProjectTaskRow[]) => {
@@ -876,6 +880,46 @@ export function ProjectTasksPanel({
     return o;
   });
 
+  useEffect(() => {
+    setOpen((current) => {
+      const next = { ...current };
+      for (const task of tasks) {
+        if (task.children.length && next[task.id] === undefined) next[task.id] = true;
+      }
+      return next;
+    });
+  }, [tasks]);
+
+  const setSubmitting = useCallback((key: string, pending: boolean) => {
+    setSubmittingKeys((current) => {
+      if (pending) return { ...current, [key]: true };
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  const refreshRoute = useCallback(() => {
+    startRefreshTransition(() => {
+      router.refresh();
+    });
+  }, [router, startRefreshTransition]);
+
+  const runTrackedMutation = useCallback(
+    async (key: string, action: () => Promise<void>) => {
+      setSubmitting(key, true);
+      try {
+        await action();
+      } finally {
+        setSubmitting(key, false);
+        refreshRoute();
+      }
+    },
+    [refreshRoute, setSubmitting],
+  );
+
+  const isSubmitting = useCallback((key: string) => !!submittingKeys[key], [submittingKeys]);
+
   return (
     <div
       className={`rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm transition-opacity duration-150 ${
@@ -894,13 +938,18 @@ export function ProjectTasksPanel({
                 e.preventDefault();
                 const fd = new FormData(e.currentTarget);
                 startOtherTransition(() => {
-                  void undoLastProjectTaskDeletionAction(fd).finally(() => router.refresh());
+                  void runTrackedMutation("undo", () => undoLastProjectTaskDeletionAction(fd));
                 });
               }}
               title={undoAvailable ? copy.undoHint : copy.undoDisabledHint}
             >
               <input type="hidden" name="projectId" value={projectId} />
-              <FormSubmitButton type="submit" variant="secondary" className="h-8 gap-2 px-2.5" disabled={!undoAvailable || isBusy}>
+              <FormSubmitButton
+                type="submit"
+                variant="secondary"
+                className="h-8 gap-2 px-2.5"
+                disabled={!undoAvailable || isSubmitting("undo")}
+              >
                 <IconUndo />
                 {copy.undo}
               </FormSubmitButton>
@@ -915,12 +964,17 @@ export function ProjectTasksPanel({
                 const fd = new FormData(e.currentTarget);
                 startOtherTransition(() => {
                   runOptimistic({ type: "clear-all" });
-                  void deleteAllProjectTasksAction(fd).finally(() => router.refresh());
+                  void runTrackedMutation("clear-all", () => deleteAllProjectTasksAction(fd));
                 });
               }}
             >
               <input type="hidden" name="projectId" value={projectId} />
-              <FormSubmitButton type="submit" variant="secondary" className="h-8 gap-2 text-rose-600 dark:text-rose-400" disabled={isBusy}>
+              <FormSubmitButton
+                type="submit"
+                variant="secondary"
+                className="h-8 gap-2 text-rose-600 dark:text-rose-400"
+                disabled={isSubmitting("clear-all")}
+              >
                 <IconTrash />
                 {copy.deleteAll}
               </FormSubmitButton>
@@ -932,6 +986,7 @@ export function ProjectTasksPanel({
                 const fd = new FormData(form);
                 const title = String(fd.get("title") ?? "").trim();
                 if (!title) return;
+                const mutationKey = "add-root";
                 const assigneeId = String(fd.get("assigneeId") ?? "").trim();
                 const assigneeName = assigneeId ? (memberOptions.find((m) => m.id === assigneeId)?.name ?? null) : null;
                 const dueRaw = String(fd.get("dueAt") ?? "").trim();
@@ -964,15 +1019,23 @@ export function ProjectTasksPanel({
                       children: [],
                     },
                   });
-                  void addProjectTaskAction(fd).finally(() => router.refresh());
+                  void runTrackedMutation(mutationKey, () => addProjectTaskAction(fd));
                 });
                 form.reset();
+                setNewTaskTitle("");
               }}
               className="space-y-2"
             >
               <input type="hidden" name="projectId" value={projectId} />
               <div className="flex flex-wrap items-center gap-2">
-                <Input name="title" required placeholder={copy.newTaskPh} className="h-8 w-40 text-sm md:w-52" />
+                <Input
+                  name="title"
+                  required
+                  placeholder={copy.newTaskPh}
+                  className="h-8 w-40 text-sm md:w-52"
+                  value={newTaskTitle}
+                  onChange={(event) => setNewTaskTitle(event.currentTarget.value)}
+                />
                 <Select name="status" className="h-8 max-w-[160px] text-xs" defaultValue="NOT_STARTED">
                   {copy.statusOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -992,7 +1055,12 @@ export function ProjectTasksPanel({
                   {copy.deadlineOptional}
                   <Input name="dueAt" type="datetime-local" className="h-8 text-xs" />
                 </label>
-                <FormSubmitButton type="submit" variant="secondary" className="h-8 gap-1.5 px-3" disabled={isBusy}>
+                <FormSubmitButton
+                  type="submit"
+                  variant="secondary"
+                  className="h-8 gap-1.5 px-3"
+                  disabled={!newTaskTitle.trim() || isSubmitting("add-root")}
+                >
                   <IconPlus />
                   {copy.addTask}
                 </FormSubmitButton>
@@ -1022,7 +1090,7 @@ export function ProjectTasksPanel({
                         const fd = new FormData(e.currentTarget);
                         startToggleTransition(() => {
                           runOptimistic({ type: "toggle", nodeId: task.id });
-                          void toggleProjectTaskLeafAction(fd).finally(() => router.refresh());
+                          void runTrackedMutation(`toggle:${task.id}`, () => toggleProjectTaskLeafAction(fd));
                         });
                       }}
                       className="shrink-0"
@@ -1098,7 +1166,7 @@ export function ProjectTasksPanel({
                           const fd = new FormData(e.currentTarget);
                           startToggleTransition(() => {
                             runOptimistic({ type: "delete", nodeId: task.id });
-                            void deleteProjectTaskAction(fd).finally(() => router.refresh());
+                            void runTrackedMutation(`delete:${task.id}`, () => deleteProjectTaskAction(fd));
                           });
                         }}
                       >
@@ -1166,7 +1234,7 @@ export function ProjectTasksPanel({
                                   const fd = new FormData(e.currentTarget);
                                   startToggleTransition(() => {
                                     runOptimistic({ type: "toggle", nodeId: sub.id });
-                                    void toggleProjectTaskLeafAction(fd).finally(() => router.refresh());
+                                    void runTrackedMutation(`toggle:${sub.id}`, () => toggleProjectTaskLeafAction(fd));
                                   });
                                 }}
                                 className="shrink-0"
@@ -1238,7 +1306,7 @@ export function ProjectTasksPanel({
                                     const fd = new FormData(e.currentTarget);
                                     startToggleTransition(() => {
                                       runOptimistic({ type: "delete", nodeId: sub.id });
-                                      void deleteProjectTaskAction(fd).finally(() => router.refresh());
+                                      void runTrackedMutation(`delete:${sub.id}`, () => deleteProjectTaskAction(fd));
                                     });
                                   }}
                                 >
@@ -1299,12 +1367,14 @@ export function ProjectTasksPanel({
                           const fd = new FormData(form);
                           const title = String(fd.get("title") ?? "").trim();
                           if (!title) return;
+                          const mutationKey = `add-sub:${task.id}`;
                           const assigneeId = String(fd.get("assigneeId") ?? "").trim();
                           const assigneeName = assigneeId ? (memberOptions.find((m) => m.id === assigneeId)?.name ?? null) : null;
                           const dueRaw = String(fd.get("dueAt") ?? "").trim();
                           const dueAt = dueRaw ? new Date(dueRaw).toISOString() : null;
                           const status = (String(fd.get("status") ?? "").trim() || "NOT_STARTED") as WorkflowNodeStatus;
                           startOtherTransition(() => {
+                            setOpen((current) => ({ ...current, [task.id]: true }));
                             runOptimistic({
                               type: "add-sub",
                               parentId: task.id,
@@ -1332,16 +1402,29 @@ export function ProjectTasksPanel({
                                 children: [],
                               },
                             });
-                            void addProjectSubtaskAction(fd).finally(() => router.refresh());
+                            void runTrackedMutation(mutationKey, () => addProjectSubtaskAction(fd));
                           });
                           form.reset();
+                          setNewSubtaskTitles((current) => ({ ...current, [task.id]: "" }));
                         }}
                         className="space-y-2 pt-1 sm:ml-16 lg:ml-24"
                       >
                         <input type="hidden" name="projectId" value={projectId} />
                         <input type="hidden" name="parentNodeId" value={task.id} />
                         <div className="flex flex-wrap items-center gap-2">
-                          <Input name="title" required placeholder={copy.newSubPh} className="h-8 max-w-[200px] flex-1 text-sm" />
+                          <Input
+                            name="title"
+                            required
+                            placeholder={copy.newSubPh}
+                            className="h-8 max-w-[200px] flex-1 text-sm"
+                            value={newSubtaskTitles[task.id] ?? ""}
+                            onChange={(event) =>
+                              setNewSubtaskTitles((current) => ({
+                                ...current,
+                                [task.id]: event.currentTarget.value,
+                              }))
+                            }
+                          />
                           <Select name="status" className="h-8 max-w-[160px] text-xs" defaultValue="NOT_STARTED">
                             {copy.statusOptions.map((option) => (
                               <option key={option.value} value={option.value}>
@@ -1361,7 +1444,12 @@ export function ProjectTasksPanel({
                             {copy.deadlineOptional}
                             <Input name="dueAt" type="datetime-local" className="h-8 text-xs" />
                           </label>
-                          <FormSubmitButton type="submit" variant="secondary" className="h-8" disabled={isBusy}>
+                          <FormSubmitButton
+                            type="submit"
+                            variant="secondary"
+                            className="h-8"
+                            disabled={!((newSubtaskTitles[task.id] ?? "").trim()) || isSubmitting(`add-sub:${task.id}`)}
+                          >
                             {copy.addSubtask}
                           </FormSubmitButton>
                         </div>

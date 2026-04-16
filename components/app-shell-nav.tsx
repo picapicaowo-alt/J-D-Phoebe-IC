@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { closeAllOpenDialogs } from "@/components/dialog-launcher";
@@ -10,7 +9,6 @@ export type ShellNavLink = { href: string; label: string; description?: string }
 export type ShellNavDropdown = { id: string; label: string; items: ShellNavLink[] };
 
 const shouldPrefetchRoutes = process.env.NODE_ENV === "production";
-const linkPrefetch = false;
 
 function isActive(pathname: string, href: string) {
   if (href === "/home") return pathname === "/home" || pathname === "/";
@@ -20,6 +18,13 @@ function isActive(pathname: string, href: string) {
 
 function dropdownActive(pathname: string, items: ShellNavLink[]) {
   return items.some((i) => isActive(pathname, i.href));
+}
+
+function prepareForNavigation() {
+  closeAllOpenDialogs();
+  if (typeof document === "undefined") return;
+  const active = document.activeElement;
+  if (active instanceof HTMLElement) active.blur();
 }
 
 function NavLink({
@@ -35,12 +40,12 @@ function NavLink({
 }) {
   const active = isActive(pathname, href);
   return (
-    <Link
+    <a
       href={href}
-      prefetch={linkPrefetch}
       onFocus={() => warmRoute(href)}
       onPointerEnter={() => warmRoute(href)}
-      onClick={() => closeAllOpenDialogs()}
+      onPointerDown={() => prepareForNavigation()}
+      onClick={() => prepareForNavigation()}
       className={cn(
         "shrink-0 rounded-full px-3 py-1.5 text-base font-medium transition-colors",
         active
@@ -49,7 +54,7 @@ function NavLink({
       )}
     >
       {label}
-    </Link>
+    </a>
   );
 }
 
@@ -154,15 +159,15 @@ function NavDropdown({
             role="menu"
           >
             {dd.items.map((item) => (
-              <Link
+              <a
                 key={item.href}
                 href={item.href}
-                prefetch={linkPrefetch}
                 role="menuitem"
                 onFocus={() => warmRoute(item.href)}
                 onPointerEnter={() => warmRoute(item.href)}
+                onPointerDown={() => prepareForNavigation()}
                 onClick={() => {
-                  closeAllOpenDialogs();
+                  prepareForNavigation();
                   cancelClose();
                   setOpenId(null);
                 }}
@@ -175,7 +180,7 @@ function NavDropdown({
                   {item.label}
                 </div>
                 {item.description ? <p className="mt-0.5 text-sm leading-snug text-[hsl(var(--muted))]">{item.description}</p> : null}
-              </Link>
+              </a>
             ))}
           </div>
         </div>
