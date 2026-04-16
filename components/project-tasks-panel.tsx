@@ -1,6 +1,7 @@
 "use client";
 
-import { useOptimistic, useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { WorkflowNodeStatus } from "@prisma/client";
 import {
@@ -214,6 +215,66 @@ function IconMore() {
       <circle cx="8" cy="8" r="1.5" />
       <circle cx="8" cy="13" r="1.5" />
     </svg>
+  );
+}
+
+function DropdownMenu({
+  children,
+  buttonContent,
+  buttonAriaLabel,
+}: {
+  children: React.ReactNode;
+  buttonContent: React.ReactNode;
+  buttonAriaLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) && !btnRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  function handleOpen() {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + window.scrollY + 4, left: rect.right + window.scrollX });
+    }
+    setOpen((v) => !v);
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className="flex h-8 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10"
+        aria-label={buttonAriaLabel ?? "More options"}
+        onClick={handleOpen}
+      >
+        {buttonContent}
+      </button>
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: "absolute", top: pos.top, left: pos.left, transform: "translateX(-100%)", zIndex: 9999 }}
+            className="min-w-[180px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 shadow-md"
+            onClick={() => setOpen(false)}
+          >
+            {children}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
@@ -526,35 +587,30 @@ export function ProjectTasksPanel({
                     <ProgressTrack pct={task.progressPercent} thick />
                   </div>
                   {canEdit ? (
-                    <details className="relative shrink-0">
-                      <summary className="flex h-8 w-9 cursor-pointer list-none items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 [&::-webkit-details-marker]:hidden">
-                        <IconMore />
-                      </summary>
-                      <div className="absolute right-0 z-10 mt-1 min-w-[180px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 shadow-md">
-                        <OpenDialogButton
-                          dialogId={taskDialogId}
-                          className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                        >
-                          {copy.editDetails}
-                        </OpenDialogButton>
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            const fd = new FormData(e.currentTarget);
-                            startToggleTransition(() => {
-                              runOptimistic({ type: "delete", nodeId: task.id });
-                              void deleteProjectTaskAction(fd).finally(() => router.refresh());
-                            });
-                          }}
-                        >
-                          <input type="hidden" name="projectId" value={projectId} />
-                          <input type="hidden" name="nodeId" value={task.id} />
-                          <FormSubmitButton type="submit" variant="ghost" className="h-8 w-full justify-start text-sm text-rose-600">
-                            {copy.deleteTask}
-                          </FormSubmitButton>
-                        </form>
-                      </div>
-                    </details>
+                    <DropdownMenu buttonContent={<IconMore />}>
+                      <OpenDialogButton
+                        dialogId={taskDialogId}
+                        className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                      >
+                        {copy.editDetails}
+                      </OpenDialogButton>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const fd = new FormData(e.currentTarget);
+                          startToggleTransition(() => {
+                            runOptimistic({ type: "delete", nodeId: task.id });
+                            void deleteProjectTaskAction(fd).finally(() => router.refresh());
+                          });
+                        }}
+                      >
+                        <input type="hidden" name="projectId" value={projectId} />
+                        <input type="hidden" name="nodeId" value={task.id} />
+                        <FormSubmitButton type="submit" variant="ghost" className="h-8 w-full justify-start text-sm text-rose-600">
+                          {copy.deleteTask}
+                        </FormSubmitButton>
+                      </form>
+                    </DropdownMenu>
                   ) : null}
                 </div>
                 {canEdit ? (
@@ -640,35 +696,30 @@ export function ProjectTasksPanel({
                               <ProgressTrack pct={sub.progressPercent} />
                             </div>
                             {canEdit ? (
-                              <details className="relative shrink-0">
-                                <summary className="flex h-8 w-9 cursor-pointer list-none items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 [&::-webkit-details-marker]:hidden">
-                                  <IconMore />
-                                </summary>
-                                <div className="absolute right-0 z-10 mt-1 min-w-[160px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 shadow-md">
-                                  <OpenDialogButton
-                                    dialogId={subDialogId}
-                                    className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                                  >
-                                    {copy.editDetails}
-                                  </OpenDialogButton>
-                                  <form
-                                    onSubmit={(e) => {
-                                      e.preventDefault();
-                                      const fd = new FormData(e.currentTarget);
-                                      startToggleTransition(() => {
-                                        runOptimistic({ type: "delete", nodeId: sub.id });
-                                        void deleteProjectTaskAction(fd).finally(() => router.refresh());
-                                      });
-                                    }}
-                                  >
-                                    <input type="hidden" name="projectId" value={projectId} />
-                                    <input type="hidden" name="nodeId" value={sub.id} />
-                                    <FormSubmitButton type="submit" variant="ghost" className="h-8 w-8 shrink-0 p-0 text-[hsl(var(--muted))] hover:text-rose-600">
-                                      <IconTrash />
-                                    </FormSubmitButton>
-                                  </form>
-                                </div>
-                              </details>
+                              <DropdownMenu buttonContent={<IconMore />}>
+                                <OpenDialogButton
+                                  dialogId={subDialogId}
+                                  className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                                >
+                                  {copy.editDetails}
+                                </OpenDialogButton>
+                                <form
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    const fd = new FormData(e.currentTarget);
+                                    startToggleTransition(() => {
+                                      runOptimistic({ type: "delete", nodeId: sub.id });
+                                      void deleteProjectTaskAction(fd).finally(() => router.refresh());
+                                    });
+                                  }}
+                                >
+                                  <input type="hidden" name="projectId" value={projectId} />
+                                  <input type="hidden" name="nodeId" value={sub.id} />
+                                  <FormSubmitButton type="submit" variant="ghost" className="h-8 w-full justify-start text-sm text-rose-600">
+                                    {copy.deleteTask}
+                                  </FormSubmitButton>
+                                </form>
+                              </DropdownMenu>
                             ) : null}
                           </div>
                           {canEdit ? (
