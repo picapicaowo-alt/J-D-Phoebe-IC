@@ -456,188 +456,50 @@ type TaskOperationalFormState = {
   isProjectBottleneck: boolean;
 };
 
-function TaskOperationalFields({
-  copy,
-  memberOptions,
-  node,
-  showStatus = true,
-  mentionListId,
-}: {
-  copy: ProjectTasksCopy;
-  memberOptions: { id: string; name: string }[];
-  node: TaskOperationalFormState;
-  showStatus?: boolean;
-  mentionListId: string;
-}) {
-  const waitingLabelOptions = copy.labelOptions.filter((option) => WAITING_LABELS.includes(option.value));
-  const approvalLabelOptions = copy.labelOptions.filter(
-    (option) => PENDING_APPROVAL_LABELS.includes(option.value) || ["APPROVED", "NEEDS_REVISION", "REJECTED"].includes(option.value),
-  );
-  const riskLabelOptions = copy.labelOptions.filter((option) => EXECUTION_RISK_LABELS.includes(option.value));
+type TaskLabelCategory = "waiting" | "approval" | "risk";
 
+function getDefaultLabelCategory(node: TaskOperationalFormState): TaskLabelCategory {
+  if (node.operationalLabels.some((label) => WAITING_LABELS.includes(label)) || hasWaitingOperationalData(node)) {
+    return "waiting";
+  }
+  if (
+    node.operationalLabels.some((label) => PENDING_APPROVAL_LABELS.includes(label) || APPROVAL_OUTCOME_LABELS.includes(label)) ||
+    hasApprovalOperationalData(node)
+  ) {
+    return "approval";
+  }
+  return "risk";
+}
+
+function LabelCheckboxGroup({
+  options,
+  selectedLabels,
+  onToggle,
+}: {
+  options: ProjectTasksCopy["labelOptions"];
+  selectedLabels: WorkflowNodeLabel[];
+  onToggle: (label: WorkflowNodeLabel, checked: boolean) => void;
+}) {
   return (
-    <div className="space-y-3 rounded-lg border border-[hsl(var(--border))] bg-black/5 p-3 dark:bg-white/5">
-      {showStatus ? (
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.statusLabel}</label>
-          <Select name="status" className="h-10 text-sm" defaultValue={node.status}>
-            {copy.statusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-      ) : null}
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.labelsLabel}</label>
-        <div className="space-y-3">
-          <div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[hsl(var(--muted))]">{copy.labelGroupWaiting}</p>
-            <div className="grid gap-2 md:grid-cols-2">
-              {waitingLabelOptions.map((option) => (
-                <label key={option.value} className="flex items-start gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm">
-                  <input
-                    type="checkbox"
-                    name="operationalLabels"
-                    value={option.value}
-                    defaultChecked={node.operationalLabels.includes(option.value)}
-                    className="mt-0.5"
-                  />
-                  <span>{option.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[hsl(var(--muted))]">{copy.labelGroupApproval}</p>
-            <div className="grid gap-2 md:grid-cols-2">
-              {approvalLabelOptions.map((option) => (
-                <label key={option.value} className="flex items-start gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm">
-                  <input
-                    type="checkbox"
-                    name="operationalLabels"
-                    value={option.value}
-                    defaultChecked={node.operationalLabels.includes(option.value)}
-                    className="mt-0.5"
-                  />
-                  <span>{option.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[hsl(var(--muted))]">{copy.labelGroupRisk}</p>
-            <div className="grid gap-2 md:grid-cols-2">
-              {riskLabelOptions.map((option) => (
-                <label key={option.value} className="flex items-start gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm">
-                  <input
-                    type="checkbox"
-                    name="operationalLabels"
-                    value={option.value}
-                    defaultChecked={node.operationalLabels.includes(option.value)}
-                    className="mt-0.5"
-                  />
-                  <span>{option.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-      <datalist id={mentionListId}>
-        {memberOptions.map((m) => (
-          <option key={m.id} value={`@${m.name}`} />
-        ))}
-      </datalist>
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingStartedLabel}</label>
-          <Input
-            name="waitingStartedAt"
-            type="datetime-local"
-            defaultValue={isoToDatetimeLocalValue(node.waitingStartedAt)}
-            className="text-sm"
+    <div className="grid gap-2 md:grid-cols-2">
+      {options.map((option) => (
+        <label key={option.value} className="flex items-start gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm">
+          <input
+            type="checkbox"
+            name="operationalLabels"
+            value={option.value}
+            checked={selectedLabels.includes(option.value)}
+            onChange={(event) => onToggle(option.value, event.currentTarget.checked)}
+            className="mt-0.5"
           />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingOnInternalLabel}</label>
-          <Input
-            name="waitingOnUserMention"
-            list={mentionListId}
-            defaultValue={node.waitingOnUserMention ?? ""}
-            placeholder={copy.mentionPlaceholder}
-            className="text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingOnExternalLabel}</label>
-          <Input
-            name="waitingOnExternalName"
-            defaultValue={node.waitingOnExternalName ?? ""}
-            placeholder={copy.externalPlaceholder}
-            className="text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approverLabel}</label>
-          <Select name="approverUserId" className="h-10 text-sm" defaultValue={node.approverId ?? ""}>
-            <option value="">—</option>
-            {memberOptions.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approvalRequestedLabel}</label>
-          <Input
-            name="approvalRequestedAt"
-            type="datetime-local"
-            defaultValue={isoToDatetimeLocalValue(node.approvalRequestedAt)}
-            className="text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approvalCompletedLabel}</label>
-          <Input
-            name="approvalCompletedAt"
-            type="datetime-local"
-            defaultValue={isoToDatetimeLocalValue(node.approvalCompletedAt)}
-            className="text-sm"
-          />
-        </div>
-      </div>
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingDetailsLabel}</label>
-        <textarea
-          name="waitingDetails"
-          rows={2}
-          defaultValue={node.waitingDetails ?? ""}
-          placeholder={copy.waitingDetailsPlaceholder}
-          className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm outline-none ring-[hsl(var(--accent))] focus:ring-2"
-        />
-      </div>
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.nextActionLabel}</label>
-        <textarea
-          name="nextAction"
-          rows={2}
-          defaultValue={node.nextAction ?? ""}
-          placeholder={copy.nextActionPlaceholder}
-          className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm outline-none ring-[hsl(var(--accent))] focus:ring-2"
-        />
-      </div>
-      <label className="flex items-center gap-2 text-sm text-[hsl(var(--foreground))]">
-        <input type="checkbox" name="isProjectBottleneck" defaultChecked={node.isProjectBottleneck} />
-        {copy.bottleneckLabel}
-      </label>
+          <span>{option.label}</span>
+        </label>
+      ))}
     </div>
   );
 }
 
-function NodeMetaDialog({
+function NodeDetailsDialog({
   dialogId,
   projectId,
   node,
@@ -646,12 +508,13 @@ function NodeMetaDialog({
 }: {
   dialogId: string;
   projectId: string;
-  node: { id: string; description: string | null; dueAt: string | null; assigneeId: string | null } & TaskOperationalFormState;
+  node: { id: string; description: string | null; dueAt: string | null; assigneeId: string | null; status: WorkflowNodeStatus };
   memberOptions: { id: string; name: string }[];
   copy: ProjectTasksCopy;
 }) {
   const router = useRouter();
   const [, startMetaTransition] = useTransition();
+
   return (
     <dialog
       id={dialogId}
@@ -674,7 +537,7 @@ function NodeMetaDialog({
           e.preventDefault();
           const fd = new FormData(e.currentTarget);
           startMetaTransition(() => {
-            void updateWorkflowNodeMetaAction(fd).finally(() => {
+            void updateWorkflowNodeDetailsAction(fd).finally(() => {
               router.refresh();
               (document.getElementById(dialogId) as HTMLDialogElement | null)?.close();
             });
@@ -683,6 +546,16 @@ function NodeMetaDialog({
       >
         <input type="hidden" name="projectId" value={projectId} />
         <input type="hidden" name="nodeId" value={node.id} />
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.statusLabel}</label>
+          <Select name="status" className="h-10 text-sm" defaultValue={node.status}>
+            {copy.statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.descriptionLabel}</label>
           <textarea
@@ -707,12 +580,247 @@ function NodeMetaDialog({
             ))}
           </Select>
         </div>
-        <TaskOperationalFields
-          copy={copy}
-          memberOptions={memberOptions}
-          node={node}
-          mentionListId={`waiting-mention-${node.id}`}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <FormSubmitButton type="submit" className="min-w-[120px]">
+            {copy.saveMeta}
+          </FormSubmitButton>
+          <CloseDialogButton
+            dialogId={dialogId}
+            className="rounded-lg border border-[hsl(var(--border))] px-4 py-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+            label={copy.dialogClose}
+          />
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+function NodeLabelsDialog({
+  dialogId,
+  projectId,
+  node,
+  memberOptions,
+  copy,
+}: {
+  dialogId: string;
+  projectId: string;
+  node: { id: string } & TaskOperationalFormState;
+  memberOptions: { id: string; name: string }[];
+  copy: ProjectTasksCopy;
+}) {
+  const waitingLabelOptions = copy.labelOptions.filter((option) => WAITING_LABELS.includes(option.value));
+  const approvalLabelOptions = copy.labelOptions.filter(
+    (option) => PENDING_APPROVAL_LABELS.includes(option.value) || APPROVAL_OUTCOME_LABELS.includes(option.value),
+  );
+  const riskLabelOptions = copy.labelOptions.filter((option) => EXECUTION_RISK_LABELS.includes(option.value));
+  const router = useRouter();
+  const [, startLabelsTransition] = useTransition();
+  const [selectedLabels, setSelectedLabels] = useState<WorkflowNodeLabel[]>(node.operationalLabels);
+  const [activeCategory, setActiveCategory] = useState<TaskLabelCategory>(() => getDefaultLabelCategory(node));
+  const syncKey = [
+    node.id,
+    node.operationalLabels.join(","),
+    node.waitingStartedAt ?? "",
+    node.waitingOnUserMention ?? "",
+    node.waitingOnExternalName ?? "",
+    node.waitingDetails ?? "",
+    node.approverId ?? "",
+    node.approvalRequestedAt ?? "",
+    node.approvalCompletedAt ?? "",
+    node.nextAction ?? "",
+    node.isProjectBottleneck ? "1" : "0",
+  ].join("|");
+
+  useEffect(() => {
+    setSelectedLabels(node.operationalLabels);
+    setActiveCategory(getDefaultLabelCategory(node));
+  }, [syncKey]);
+
+  function handleLabelToggle(label: WorkflowNodeLabel, checked: boolean) {
+    setSelectedLabels((current) => {
+      if (checked) return [...current, label];
+      return current.filter((value) => value !== label);
+    });
+  }
+
+  const waitingDetailsVisible = selectedLabels.some((label) => WAITING_LABELS.includes(label)) || hasWaitingOperationalData(node);
+  const approvalDetailsVisible =
+    selectedLabels.some((label) => PENDING_APPROVAL_LABELS.includes(label) || APPROVAL_OUTCOME_LABELS.includes(label)) || hasApprovalOperationalData(node);
+  const riskDetailsVisible = selectedLabels.some((label) => EXECUTION_RISK_LABELS.includes(label)) || hasRiskOperationalData(node);
+  const categories: { key: TaskLabelCategory; label: string }[] = [
+    { key: "waiting", label: copy.labelGroupWaiting },
+    { key: "approval", label: copy.labelGroupApproval },
+    { key: "risk", label: copy.labelGroupRisk },
+  ];
+
+  return (
+    <dialog
+      id={dialogId}
+      className="app-modal-dialog z-50 max-h-[min(90vh,720px)] w-[min(100vw-2rem,720px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+    >
+      <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-4 py-3">
+        <div>
+          <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">{copy.labelsTitle}</h3>
+          <p className="text-xs text-[hsl(var(--muted))]">{copy.labelsLead}</p>
+        </div>
+        <CloseDialogButton
+          dialogId={dialogId}
+          className="rounded-lg px-2 py-1 text-xs text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
+          label={copy.dialogClose}
         />
+      </div>
+      <form
+        className="max-h-[calc(90vh-100px)] space-y-4 overflow-y-auto p-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
+          startLabelsTransition(() => {
+            void updateWorkflowNodeOperationalAction(fd).finally(() => {
+              router.refresh();
+              (document.getElementById(dialogId) as HTMLDialogElement | null)?.close();
+            });
+          });
+        }}
+      >
+        <input type="hidden" name="projectId" value={projectId} />
+        <input type="hidden" name="nodeId" value={node.id} />
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.categoryLabel}</label>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {categories.map((category) => {
+              const active = activeCategory === category.key;
+              return (
+                <button
+                  key={category.key}
+                  type="button"
+                  className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                    active
+                      ? "border-[hsl(var(--foreground))] bg-[hsl(var(--foreground))] text-[hsl(var(--card))]"
+                      : "border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10"
+                  }`}
+                  onClick={() => setActiveCategory(category.key)}
+                >
+                  {category.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <datalist id={`waiting-mention-${node.id}`}>
+          {memberOptions.map((m) => (
+            <option key={m.id} value={`@${m.name}`} />
+          ))}
+        </datalist>
+
+        <section className={activeCategory === "waiting" ? "space-y-3" : "hidden"}>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.labelsLabel}</label>
+            <LabelCheckboxGroup options={waitingLabelOptions} selectedLabels={selectedLabels} onToggle={handleLabelToggle} />
+          </div>
+          <div className={waitingDetailsVisible ? "grid gap-3 md:grid-cols-2" : "hidden"}>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingStartedLabel}</label>
+              <Input
+                name="waitingStartedAt"
+                type="datetime-local"
+                defaultValue={isoToDatetimeLocalValue(node.waitingStartedAt)}
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingOnInternalLabel}</label>
+              <Input
+                name="waitingOnUserMention"
+                list={`waiting-mention-${node.id}`}
+                defaultValue={node.waitingOnUserMention ?? ""}
+                placeholder={copy.mentionPlaceholder}
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingOnExternalLabel}</label>
+              <Input
+                name="waitingOnExternalName"
+                defaultValue={node.waitingOnExternalName ?? ""}
+                placeholder={copy.externalPlaceholder}
+                className="text-sm"
+              />
+            </div>
+          </div>
+          <div className={waitingDetailsVisible ? "space-y-1" : "hidden"}>
+            <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingDetailsLabel}</label>
+            <textarea
+              name="waitingDetails"
+              rows={3}
+              defaultValue={node.waitingDetails ?? ""}
+              placeholder={copy.waitingDetailsPlaceholder}
+              className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm outline-none ring-[hsl(var(--accent))] focus:ring-2"
+            />
+          </div>
+        </section>
+
+        <section className={activeCategory === "approval" ? "space-y-3" : "hidden"}>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.labelsLabel}</label>
+            <LabelCheckboxGroup options={approvalLabelOptions} selectedLabels={selectedLabels} onToggle={handleLabelToggle} />
+          </div>
+          <div className={approvalDetailsVisible ? "grid gap-3 md:grid-cols-2" : "hidden"}>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approverLabel}</label>
+              <Select name="approverUserId" className="h-10 text-sm" defaultValue={node.approverId ?? ""}>
+                <option value="">—</option>
+                {memberOptions.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approvalRequestedLabel}</label>
+              <Input
+                name="approvalRequestedAt"
+                type="datetime-local"
+                defaultValue={isoToDatetimeLocalValue(node.approvalRequestedAt)}
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approvalCompletedLabel}</label>
+              <Input
+                name="approvalCompletedAt"
+                type="datetime-local"
+                defaultValue={isoToDatetimeLocalValue(node.approvalCompletedAt)}
+                className="text-sm"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className={activeCategory === "risk" ? "space-y-3" : "hidden"}>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.labelsLabel}</label>
+            <LabelCheckboxGroup options={riskLabelOptions} selectedLabels={selectedLabels} onToggle={handleLabelToggle} />
+          </div>
+          <div className={riskDetailsVisible || activeCategory === "risk" ? "space-y-3" : "hidden"}>
+            <label className="flex items-center gap-2 text-sm text-[hsl(var(--foreground))]">
+              <input type="checkbox" name="isProjectBottleneck" defaultChecked={node.isProjectBottleneck} />
+              {copy.bottleneckLabel}
+            </label>
+          </div>
+        </section>
+
+        <div className={activeCategory === "waiting" ? "hidden" : "space-y-1"}>
+          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.nextActionLabel}</label>
+          <textarea
+            name="nextAction"
+            rows={3}
+            defaultValue={node.nextAction ?? ""}
+            placeholder={copy.nextActionPlaceholder}
+            className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm outline-none ring-[hsl(var(--accent))] focus:ring-2"
+          />
+        </div>
+
         <div className="flex flex-wrap gap-2 pt-1">
           <FormSubmitButton type="submit" className="min-w-[120px]">
             {copy.saveMeta}

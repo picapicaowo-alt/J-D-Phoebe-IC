@@ -20,12 +20,12 @@ export function HomeDashboardStreams({ user, snapshot }: { user: AccessUser; sna
         <HomeSnapshotSection user={user} snapshot={snapshot} />
       </Suspense>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid items-stretch gap-4 lg:grid-cols-3">
         <Suspense fallback={<HomePrioritiesFallback />}>
           <HomePrioritiesSection user={user} />
         </Suspense>
 
-        <div className="flex flex-col gap-4 lg:h-[calc(100vh-13rem)]">
+        <div className="flex flex-col gap-4">
           <Suspense fallback={<HomeExecutionSnapshotFallback />}>
             <HomeExecutionSnapshotSection user={user} />
           </Suspense>
