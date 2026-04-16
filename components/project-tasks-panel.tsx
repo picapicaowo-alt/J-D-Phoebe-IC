@@ -940,13 +940,7 @@ export function ProjectTasksPanel({
                 const assigneeName = assigneeId ? (memberOptions.find((m) => m.id === assigneeId)?.name ?? null) : null;
                 const dueRaw = String(fd.get("dueAt") ?? "").trim();
                 const dueAt = dueRaw ? new Date(dueRaw).toISOString() : null;
-                const waitingStartedRaw = String(fd.get("waitingStartedAt") ?? "").trim();
-                const approvalRequestedRaw = String(fd.get("approvalRequestedAt") ?? "").trim();
-                const approvalCompletedRaw = String(fd.get("approvalCompletedAt") ?? "").trim();
                 const status = (String(fd.get("status") ?? "").trim() || "NOT_STARTED") as WorkflowNodeStatus;
-                const operationalLabels = fd.getAll("operationalLabels").map((value) => String(value).trim()) as WorkflowNodeLabel[];
-                const waitingOnUserMention = String(fd.get("waitingOnUserMention") ?? "").trim() || null;
-                const approverId = String(fd.get("approverUserId") ?? "").trim() || null;
                 startOtherTransition(() => {
                   runOptimistic({
                     type: "add-root",
@@ -959,18 +953,18 @@ export function ProjectTasksPanel({
                       assigneeId: assigneeId || null,
                       dueAt,
                       description: null,
-                      operationalLabels,
-                      waitingStartedAt: waitingStartedRaw ? new Date(waitingStartedRaw).toISOString() : null,
+                      operationalLabels: [],
+                      waitingStartedAt: null,
                       waitingOnUserId: null,
-                      waitingOnUserName: waitingOnUserMention ? waitingOnUserMention.replace(/^@+/, "").trim() || null : null,
-                      waitingOnExternalName: String(fd.get("waitingOnExternalName") ?? "").trim() || null,
-                      waitingDetails: String(fd.get("waitingDetails") ?? "").trim() || null,
-                      approverId,
-                      approverName: approverId ? (memberOptions.find((m) => m.id === approverId)?.name ?? null) : null,
-                      approvalRequestedAt: approvalRequestedRaw ? new Date(approvalRequestedRaw).toISOString() : null,
-                      approvalCompletedAt: approvalCompletedRaw ? new Date(approvalCompletedRaw).toISOString() : null,
-                      nextAction: String(fd.get("nextAction") ?? "").trim() || null,
-                      isProjectBottleneck: String(fd.get("isProjectBottleneck") ?? "").trim() === "on",
+                      waitingOnUserName: null,
+                      waitingOnExternalName: null,
+                      waitingDetails: null,
+                      approverId: null,
+                      approverName: null,
+                      approvalRequestedAt: null,
+                      approvalCompletedAt: null,
+                      nextAction: null,
+                      isProjectBottleneck: false,
                       children: [],
                     },
                   });
@@ -1007,25 +1001,6 @@ export function ProjectTasksPanel({
                   {copy.addTask}
                 </FormSubmitButton>
               </div>
-              <TaskOperationalFields
-                copy={copy}
-                memberOptions={memberOptions}
-                showStatus={false}
-                mentionListId="waiting-mention-new-root"
-                node={{
-                  status: "NOT_STARTED",
-                  operationalLabels: [],
-                  waitingStartedAt: null,
-                  waitingOnUserMention: null,
-                  waitingOnExternalName: null,
-                  waitingDetails: null,
-                  approverId: null,
-                  approvalRequestedAt: null,
-                  approvalCompletedAt: null,
-                  nextAction: null,
-                  isProjectBottleneck: false,
-                }}
-              />
             </form>
           </div>
         ) : null}
@@ -1038,7 +1013,8 @@ export function ProjectTasksPanel({
           optimisticTasks.map((task) => {
             const expanded = open[task.id] ?? false;
             const hasKids = task.children.length > 0;
-            const taskDialogId = `task-meta-${task.id}`;
+            const taskDetailsDialogId = `task-details-${task.id}`;
+            const taskLabelsDialogId = `task-labels-${task.id}`;
             const taskDone = isComplete(task.status);
             return (
               <div key={task.id} id={`task-${task.id}`} className="rounded-[10px] border border-[hsl(var(--border))] p-px">
@@ -1100,7 +1076,7 @@ export function ProjectTasksPanel({
                         {copy.dueShort}: {fmtShortDate(task.dueAt, locale)}
                       </p>
                     ) : null}
-                    <TaskOperationalSummary task={task} locale={locale} />
+                    <TaskOperationalSummary task={task} copy={copy} />
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <span className="text-sm font-semibold tabular-nums text-[hsl(var(--foreground))]">{task.progressPercent}%</span>
@@ -1109,10 +1085,16 @@ export function ProjectTasksPanel({
                   {canEdit ? (
                     <DropdownMenu buttonContent={<IconMore />}>
                       <OpenDialogButton
-                        dialogId={taskDialogId}
+                        dialogId={taskDetailsDialogId}
                         className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
                       >
                         {copy.editDetails}
+                      </OpenDialogButton>
+                      <OpenDialogButton
+                        dialogId={taskLabelsDialogId}
+                        className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                      >
+                        {copy.editLabels}
                       </OpenDialogButton>
                       <form
                         onSubmit={(e) => {
@@ -1134,29 +1116,41 @@ export function ProjectTasksPanel({
                   ) : null}
                 </div>
                 {canEdit ? (
-                  <NodeMetaDialog
-                    dialogId={taskDialogId}
-                    projectId={projectId}
-                    node={{
-                      id: task.id,
-                      description: task.description,
-                      dueAt: task.dueAt,
-                      assigneeId: task.assigneeId,
-                      status: task.status,
-                      operationalLabels: task.operationalLabels,
-                      waitingStartedAt: task.waitingStartedAt,
-                      waitingOnUserMention: task.waitingOnUserName ? `@${task.waitingOnUserName}` : null,
-                      waitingOnExternalName: task.waitingOnExternalName,
-                      waitingDetails: task.waitingDetails,
-                      approverId: task.approverId,
-                      approvalRequestedAt: task.approvalRequestedAt,
-                      approvalCompletedAt: task.approvalCompletedAt,
-                      nextAction: task.nextAction,
-                      isProjectBottleneck: task.isProjectBottleneck,
-                    }}
-                    memberOptions={memberOptions}
-                    copy={copy}
-                  />
+                  <>
+                    <NodeDetailsDialog
+                      dialogId={taskDetailsDialogId}
+                      projectId={projectId}
+                      node={{
+                        id: task.id,
+                        description: task.description,
+                        dueAt: task.dueAt,
+                        assigneeId: task.assigneeId,
+                        status: task.status,
+                      }}
+                      memberOptions={memberOptions}
+                      copy={copy}
+                    />
+                    <NodeLabelsDialog
+                      dialogId={taskLabelsDialogId}
+                      projectId={projectId}
+                      node={{
+                        id: task.id,
+                        status: task.status,
+                        operationalLabels: task.operationalLabels,
+                        waitingStartedAt: task.waitingStartedAt,
+                        waitingOnUserMention: task.waitingOnUserName ? `@${task.waitingOnUserName}` : null,
+                        waitingOnExternalName: task.waitingOnExternalName,
+                        waitingDetails: task.waitingDetails,
+                        approverId: task.approverId,
+                        approvalRequestedAt: task.approvalRequestedAt,
+                        approvalCompletedAt: task.approvalCompletedAt,
+                        nextAction: task.nextAction,
+                        isProjectBottleneck: task.isProjectBottleneck,
+                      }}
+                      memberOptions={memberOptions}
+                      copy={copy}
+                    />
+                  </>
                 ) : null}
 
                 {expanded ? (
