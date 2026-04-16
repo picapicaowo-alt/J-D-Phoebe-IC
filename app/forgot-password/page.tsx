@@ -11,13 +11,14 @@ import { t } from "@/lib/messages";
 export default async function ForgotPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sent?: string }>;
+  searchParams: Promise<{ sent?: string; error?: string }>;
 }) {
   if (isClerkEnabled()) redirect("/sign-in");
 
   const locale = await getLocale();
   const sp = await searchParams;
   const sent = String(sp.sent ?? "") === "1";
+  const err = String(sp.error ?? "").trim();
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-16">
@@ -32,6 +33,16 @@ export default async function ForgotPasswordPage({
         {sent ? (
           <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
             {t(locale, "passwordForgotSent")}
+          </p>
+        ) : null}
+        {err === "email_unavailable" ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {t(locale, "passwordForgotErrUnavailable")}
+          </p>
+        ) : null}
+        {err === "send_failed" ? (
+          <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            {t(locale, "passwordForgotErrSendFailed")}
           </p>
         ) : null}
         <form action={requestPasswordResetAction} className="space-y-3">

@@ -3,7 +3,7 @@
 import { compare, hash } from "bcryptjs";
 import { redirect } from "next/navigation";
 import { getAppSession, requireUser } from "@/lib/auth";
-import { sendTransactionalEmail } from "@/lib/email";
+import { getEmailDeliveryMode, sendTransactionalEmail } from "@/lib/email";
 import { createPasswordResetToken, getAppBaseUrl, parsePasswordResetToken, verifyPasswordResetToken } from "@/lib/password-reset";
 import { prisma } from "@/lib/prisma";
 
@@ -56,6 +56,11 @@ export async function requestPasswordResetAction(formData: FormData) {
   const email = String(formData.get("email") ?? "")
     .trim()
     .toLowerCase();
+  const deliveryMode = getEmailDeliveryMode();
+
+  if (deliveryMode === "none") {
+    redirect("/forgot-password?error=email_unavailable");
+  }
 
   const user = email
     ? await prisma.user.findFirst({
@@ -88,8 +93,12 @@ export async function requestPasswordResetAction(formData: FormData) {
       html: `<p>We received a request to reset your password.</p><p><a href="${resetUrl}">Choose a new password</a></p><p>This link expires in 30 minutes. If you did not request a reset, you can ignore this email.</p>`,
     });
 
-    if (!sent.ok && process.env.NODE_ENV !== "production") {
-      console.warn(`[password-reset] reset link for ${user.email}: ${resetUrl}`);
+    if (!sent.ok) {
+      console.error(`[password-reset] failed for ${user.email}: ${sent.error}`);
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`[password-reset] reset link for ${user.email}: ${resetUrl}`);
+      }
+      redirect("/forgot-password?error=send_failed");
     }
   }
 

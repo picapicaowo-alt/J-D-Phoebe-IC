@@ -161,9 +161,9 @@ export async function evaluateImprovementTriggersForUser(subjectUserId: string) 
         data: {
           userId: subjectUserId,
           kind: "IMPROVEMENT_THRESHOLD",
-          title: "Improvement follow-up",
-          body: "Observation count reached the configured threshold. Review with your supervisor or HR.",
-          href: `/settings/lifecycle?focus=${fire.id}`,
+          title: "Improvement threshold reached",
+          body: "Please schedule a follow-up meeting with your supervisor or HR.",
+          href: `/calendar?create=1&sourceKind=IMPROVEMENT_TRIGGER&sourceId=${fire.id}`,
         },
       });
       for (const sid of await supervisorIdsForSubject(subjectUserId)) {
@@ -171,9 +171,9 @@ export async function evaluateImprovementTriggersForUser(subjectUserId: string) 
           data: {
             userId: sid,
             kind: "IMPROVEMENT_THRESHOLD_SUPERVISOR",
-            title: "Improvement threshold",
-            body: `Member needs a check-in · window ${rule.windowDays}d`,
-            href: `/staff/${subjectUserId}`,
+            title: "Schedule staff check-in",
+            body: `Improvement threshold fired in ${rule.windowDays}d window. Please arrange a follow-up meeting.`,
+            href: `/calendar?create=1&sourceKind=IMPROVEMENT_TRIGGER&sourceId=${fire.id}`,
           },
         });
       }
@@ -182,9 +182,9 @@ export async function evaluateImprovementTriggersForUser(subjectUserId: string) 
           data: {
             userId: hid,
             kind: "IMPROVEMENT_THRESHOLD_HR",
-            title: "Improvement threshold — HR follow-up",
-            body: `Subject ${subjectUserId} · rule ${rule.id}`,
-            href: `/staff/${subjectUserId}`,
+            title: "HR follow-up meeting needed",
+            body: `Improvement threshold fired for ${subjectUserId}. Please invite this staff member for a meeting.`,
+            href: `/calendar?create=1&sourceKind=IMPROVEMENT_TRIGGER&sourceId=${fire.id}`,
           },
         });
       }
@@ -247,7 +247,7 @@ export async function evaluateRecognitionTriggersForUser(subjectUserId: string) 
           userId: subjectUserId,
           kind: "RECOGNITION_THRESHOLD",
           title: "Recognition milestone",
-          body: "Leadership or HR may reach out for positive follow-up.",
+          body: "Please schedule a recognition follow-up meeting with HR or leadership.",
           href: `/calendar?create=1&sourceKind=RECOGNITION_TRIGGER&sourceId=${fire.id}`,
         },
       });
@@ -256,9 +256,9 @@ export async function evaluateRecognitionTriggersForUser(subjectUserId: string) 
           data: {
             userId: hid,
             kind: "RECOGNITION_THRESHOLD_ADMIN",
-            title: "Recognition threshold",
-            body: `Positive follow-up suggested · subject ${subjectUserId}`,
-            href: `/staff/${subjectUserId}`,
+            title: "Recognition follow-up meeting",
+            body: `Recognition threshold fired for ${subjectUserId}. Please invite this staff member for a conversation.`,
+            href: `/calendar?create=1&sourceKind=RECOGNITION_TRIGGER&sourceId=${fire.id}`,
           },
         });
       }
