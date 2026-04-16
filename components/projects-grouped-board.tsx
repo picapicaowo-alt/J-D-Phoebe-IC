@@ -30,6 +30,7 @@ type Copy = {
   ownerPrefix: string;
   metaRelations: string;
   metaKnowledge: string;
+  selectAriaLabel: string;
 };
 
 type ProjectMove = { projectId: string; projectGroupId: string | null };
@@ -51,17 +52,22 @@ export function ProjectsGroupedBoard({
   groups,
   projects,
   movableProjectIds,
+  selectableProjectIds,
+  checkboxName,
   copy,
 }: {
   groups: ProjectGroupRow[];
   projects: GroupedProjectCard[];
   movableProjectIds: string[];
+  selectableProjectIds: string[];
+  checkboxName: string;
   copy: Copy;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const prefetchedHrefsRef = useRef(new Set<string>());
   const movable = useMemo(() => new Set(movableProjectIds), [movableProjectIds]);
+  const selectable = useMemo(() => new Set(selectableProjectIds), [selectableProjectIds]);
   const [optimisticProjects, moveOptimistic] = useOptimistic(projects, applyProjectMove);
 
   const sortedGroups = useMemo(
@@ -132,6 +138,7 @@ export function ProjectsGroupedBoard({
 
   const renderCard = (p: GroupedProjectCard) => {
     const draggable = movable.has(p.id);
+    const selectableProject = selectable.has(p.id);
     return (
       <div
         key={p.id}
@@ -143,6 +150,18 @@ export function ProjectsGroupedBoard({
           draggable ? "cursor-grab active:cursor-grabbing" : ""
         }`}
       >
+        <div className="shrink-0 pt-0.5">
+          <label className="inline-flex items-center">
+            <input
+              type="checkbox"
+              name={checkboxName}
+              value={p.id}
+              disabled={!selectableProject}
+              aria-label={`${copy.selectAriaLabel}: ${p.name}`}
+              className="h-4 w-4 rounded border-[hsl(var(--border))] text-[hsl(var(--accent))] focus:ring-[hsl(var(--accent))]"
+            />
+          </label>
+        </div>
         <div className="min-w-0 flex-1">
           <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
             {p.name}

@@ -13,6 +13,13 @@ function requireString(formData: FormData, key: string) {
   return v;
 }
 
+function getStringArray(formData: FormData, key: string) {
+  return formData
+    .getAll(key)
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+}
+
 export async function softDeleteUserAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
   await assertPermission(actor, "staff.soft_delete");
@@ -138,6 +145,38 @@ export async function softDeleteProjectAction(formData: FormData) {
     data: { deletedAt: new Date() },
   });
   await writeAudit({ actorId: user.id, entityType: "PROJECT", entityId: projectId, action: "SOFT_DELETE" });
+  revalidatePath("/projects");
+  revalidatePath("/calendar");
+  revalidatePath("/trash");
+}
+
+export async function softDeleteProjectsBulkAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  await assertPermission(user, "project.soft_delete");
+  const projectIds = [...new Set(getStringArray(formData, "projectIds"))];
+  if (!projectIds.length) return;
+
+  const projects = await prisma.project.findMany({
+    where: { id: { in: projectIds }, deletedAt: null },
+    include: { company: true },
+  });
+  if (projects.length !== projectIds.length) throw new Error("Some projects were not found.");
+
+  for (const project of projects) {
+    if (!isSuperAdmin(user) && !isGroupAdmin(user, project.company.orgGroupId) && !isCompanyAdmin(user, project.companyId)) {
+      throw new Error("Forbidden");
+    }
+  }
+
+  await prisma.project.updateMany({
+    where: { id: { in: projectIds }, deletedAt: null },
+    data: { deletedAt: new Date() },
+  });
+  await Promise.all(
+    projectIds.map((projectId) =>
+      writeAudit({ actorId: user.id, entityType: "PROJECT", entityId: projectId, action: "SOFT_DELETE" }),
+    ),
+  );
   revalidatePath("/projects");
   revalidatePath("/calendar");
   revalidatePath("/trash");

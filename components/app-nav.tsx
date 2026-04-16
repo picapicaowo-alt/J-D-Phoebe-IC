@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { closeAllOpenDialogs } from "@/components/dialog-launcher";
 import { cn } from "@/lib/utils";
 
 export type AppNavItem = { href: string; label: string };
@@ -26,6 +27,7 @@ export function AppNav({ items }: { items: AppNavItem[] }) {
           <Link
             key={item.href}
             href={item.href}
+            onClick={() => closeAllOpenDialogs()}
             className={cn(
               "shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
               active

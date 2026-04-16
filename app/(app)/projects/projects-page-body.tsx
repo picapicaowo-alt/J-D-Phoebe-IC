@@ -8,6 +8,9 @@ import {
   canManageProject,
   canViewProject,
   companyVisibilityWhere,
+  isCompanyAdmin,
+  isGroupAdmin,
+  isSuperAdmin,
   projectVisibilityWhere,
   type AccessUser,
 } from "@/lib/access";
@@ -27,6 +30,7 @@ import {
 } from "@/app/actions/project-group";
 import { ProjectsGroupedBoard, type GroupedProjectCard, type ProjectGroupRow } from "@/components/projects-grouped-board";
 import { RoutePrefetcher } from "@/components/route-prefetcher";
+import { softDeleteProjectsBulkAction } from "@/app/actions/trash";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const STATUSES: ProjectStatus[] = [
@@ -79,13 +83,14 @@ export async function ProjectsPageBody({
   const priorityRaw = typeof sp.priority === "string" ? sp.priority.trim() : "";
   const due = typeof sp.due === "string" ? sp.due.trim() : "";
 
-  const [companyOptions, canCreate] = await Promise.all([
+  const [companyOptions, canCreate, canSoftDeletePermission] = await Promise.all([
     prisma.company.findMany({
       where: { deletedAt: null, ...companyVisibilityWhere(user) },
       orderBy: { name: "asc" },
       select: { id: true, name: true, orgGroupId: true },
     }),
     userHasPermission(user, "project.create"),
+    userHasPermission(user, "project.soft_delete"),
   ]);
   const companyId =
     companyIdRaw && companyOptions.some((c) => c.id === companyIdRaw) ? companyIdRaw : "";
@@ -166,6 +171,12 @@ export async function ProjectsPageBody({
         canManageCompanyProjects(user, { id: p.companyId, orgGroupId: p.company.orgGroupId }),
     )
     .map((p) => p.id);
+  const selectableProjectIds =
+    canSoftDeletePermission
+      ? visible
+          .filter((p) => isSuperAdmin(user) || isGroupAdmin(user, p.company.orgGroupId) || isCompanyAdmin(user, p.companyId))
+          .map((p) => p.id)
+      : [];
 
   const boardCards: GroupedProjectCard[] = visible.map((p) => ({
     id: p.id,
@@ -317,68 +328,111 @@ export async function ProjectsPageBody({
               </ul>
             </Card>
           ) : null}
-          <ProjectsGroupedBoard
-            groups={projectGroups}
-            projects={boardCards}
-            movableProjectIds={movableProjectIds}
-            copy={{
-              ungroupedTitle: t(locale, "projectsUngroupedSection"),
-              dragHint: t(locale, "projectsDragBetweenGroups"),
-              detail: t(locale, "projectsLinkDetail"),
-              ownerPrefix: t(locale, "projectsOwnerPrefix"),
-              metaRelations: t(locale, "projectsMetaRelations"),
-              metaKnowledge: t(locale, "projectsMetaKnowledge"),
-            }}
-          />
+          <form action={softDeleteProjectsBulkAction} className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "projectsBulkTrashHint")}</p>
+              <FormSubmitButton
+                type="submit"
+                variant="secondary"
+                className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100"
+                pendingLabel="…"
+                disabled={!selectableProjectIds.length}
+              >
+                {t(locale, "projectsBulkTrashButton")}
+              </FormSubmitButton>
+            </div>
+            <ProjectsGroupedBoard
+              groups={projectGroups}
+              projects={boardCards}
+              movableProjectIds={movableProjectIds}
+              selectableProjectIds={selectableProjectIds}
+              checkboxName="projectIds"
+              copy={{
+                ungroupedTitle: t(locale, "projectsUngroupedSection"),
+                dragHint: t(locale, "projectsDragBetweenGroups"),
+                detail: t(locale, "projectsLinkDetail"),
+                ownerPrefix: t(locale, "projectsOwnerPrefix"),
+                metaRelations: t(locale, "projectsMetaRelations"),
+                metaKnowledge: t(locale, "projectsMetaKnowledge"),
+                selectAriaLabel: t(locale, "projectsSelectAria"),
+              }}
+            />
+          </form>
         </div>
       ) : (
         <div className="grid gap-3">
           {visible.length ? (
-            visible.map((p) => (
-              <Card key={p.id} className="flex flex-wrap items-center justify-between gap-4 p-4">
-                <div>
-                  <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
-                    {p.name}
-                  </Link>
-                  <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
-                    {p.company.name} · {t(locale, "projectsOwnerPrefix")} {p.owner.name}
-                    {p.department ? (
-                      <>
-                        {" · "}
-                        {p.department.name}
-                      </>
-                    ) : null}
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-sm leading-6 text-[hsl(var(--foreground))]">
-                    <span>{tProjectStatus(locale, p.status)}</span>
-                    <span>·</span>
-                    <span>{tPriority(locale, p.priority)}</span>
-                    <span>·</span>
-                    <span>
-                      {t(locale, "projectsMetaRelations")}{" "}
-                      {p._count.outgoingRelations + p._count.incomingRelations}
-                    </span>
-                    <span>·</span>
-                    <span>
-                      {t(locale, "projectsMetaKnowledge")} {p._count.knowledgeAssets}
-                    </span>
-                    {p.deadline ? (
-                      <>
+            <form action={softDeleteProjectsBulkAction} className="grid gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "projectsBulkTrashHint")}</p>
+                <FormSubmitButton
+                  type="submit"
+                  variant="secondary"
+                  className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100"
+                  pendingLabel="…"
+                  disabled={!selectableProjectIds.length}
+                >
+                  {t(locale, "projectsBulkTrashButton")}
+                </FormSubmitButton>
+              </div>
+              {visible.map((p) => (
+                <Card key={p.id} className="flex flex-wrap items-center justify-between gap-4 p-4">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <label className="inline-flex shrink-0 items-center pt-1">
+                      <input
+                        type="checkbox"
+                        name="projectIds"
+                        value={p.id}
+                        disabled={!selectableProjectIds.includes(p.id)}
+                        aria-label={`${t(locale, "projectsSelectAria")}: ${p.name}`}
+                        className="h-4 w-4 rounded border-[hsl(var(--border))] text-[hsl(var(--accent))] focus:ring-[hsl(var(--accent))]"
+                      />
+                    </label>
+                    <div>
+                      <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
+                        {p.name}
+                      </Link>
+                      <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
+                        {p.company.name} · {t(locale, "projectsOwnerPrefix")} {p.owner.name}
+                        {p.department ? (
+                          <>
+                            {" · "}
+                            {p.department.name}
+                          </>
+                        ) : null}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-sm leading-6 text-[hsl(var(--foreground))]">
+                        <span>{tProjectStatus(locale, p.status)}</span>
                         <span>·</span>
-                        <span className={isOverdue(p.deadline) && p.status !== "COMPLETED" ? "text-rose-600" : ""}>
-                          {countdownPhrase(p.deadline)}
+                        <span>{tPriority(locale, p.priority)}</span>
+                        <span>·</span>
+                        <span>
+                          {t(locale, "projectsMetaRelations")}{" "}
+                          {p._count.outgoingRelations + p._count.incomingRelations}
                         </span>
-                      </>
-                    ) : null}
+                        <span>·</span>
+                        <span>
+                          {t(locale, "projectsMetaKnowledge")} {p._count.knowledgeAssets}
+                        </span>
+                        {p.deadline ? (
+                          <>
+                            <span>·</span>
+                            <span className={isOverdue(p.deadline) && p.status !== "COMPLETED" ? "text-rose-600" : ""}>
+                              {countdownPhrase(p.deadline)}
+                            </span>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="flex gap-2 text-sm">
-                  <Link className="text-[hsl(var(--accent))] hover:underline" href={`/projects/${p.id}`}>
-                    {t(locale, "projectsLinkDetail")}
-                  </Link>
-                </div>
-              </Card>
-            ))
+                  <div className="flex gap-2 text-sm">
+                    <Link className="text-[hsl(var(--accent))] hover:underline" href={`/projects/${p.id}`}>
+                      {t(locale, "projectsLinkDetail")}
+                    </Link>
+                  </div>
+                </Card>
+              ))}
+            </form>
           ) : (
             <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "projectsFilteredEmpty")}</p>
           )}

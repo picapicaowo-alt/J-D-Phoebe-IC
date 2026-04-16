@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
+import { closeAllOpenDialogs } from "@/components/dialog-launcher";
 import { cn } from "@/lib/utils";
 
 export type ShellNavLink = { href: string; label: string; description?: string };
@@ -39,6 +40,7 @@ function NavLink({
       prefetch={linkPrefetch}
       onFocus={() => warmRoute(href)}
       onPointerEnter={() => warmRoute(href)}
+      onClick={() => closeAllOpenDialogs()}
       className={cn(
         "shrink-0 rounded-full px-3 py-1.5 text-base font-medium transition-colors",
         active
@@ -160,6 +162,7 @@ function NavDropdown({
                 onFocus={() => warmRoute(item.href)}
                 onPointerEnter={() => warmRoute(item.href)}
                 onClick={() => {
+                  closeAllOpenDialogs();
                   cancelClose();
                   setOpenId(null);
                 }}

@@ -534,8 +534,8 @@ function NodeDetailsDialog({
           const fd = new FormData(e.currentTarget);
           startMetaTransition(() => {
             void updateWorkflowNodeDetailsAction(fd).finally(() => {
-              router.refresh();
               (document.getElementById(dialogId) as HTMLDialogElement | null)?.close();
+              router.refresh();
             });
           });
         }}
@@ -672,8 +672,8 @@ function NodeLabelsDialog({
           const fd = new FormData(e.currentTarget);
           startLabelsTransition(() => {
             void updateWorkflowNodeOperationalAction(fd).finally(() => {
-              router.refresh();
               (document.getElementById(dialogId) as HTMLDialogElement | null)?.close();
+              router.refresh();
             });
           });
         }}
