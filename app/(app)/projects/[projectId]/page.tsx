@@ -34,9 +34,13 @@ import { AttachmentVersionTree } from "@/components/attachment-version-tree";
 import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
 import { UserFace } from "@/components/user-face";
 import { DetailsHashOpener } from "@/components/details-hash-opener";
-import { clampProjectProgressPercent } from "@/lib/project-health";
 import { type ProjectTaskRow } from "@/components/project-tasks-panel";
-import { ProjectProgressDisplay, ProjectProgressBar, ProjectTasksPanelWithProgress } from "@/components/project-progress-bridge";
+import {
+  ProjectProgressBar,
+  ProjectProgressDisplay,
+  ProjectProgressProvider,
+  ProjectTasksPanelWithProgress,
+} from "@/components/project-progress-bridge";
 import type { Locale } from "@/lib/locale";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
@@ -373,7 +377,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       canEditWorkflow(user, project) ||
       user.projectMemberships.some((m) => m.projectId === project.id));
 
-  const progressPct = clampProjectProgressPercent(project.progressPercent);
   const relationCount = project.outgoingRelations.length + project.incomingRelations.length;
   const knowledgeTotalCount = ownKnowledge.length + sharedKnowledgeInbound.length;
   const filesTotalCount = projectFiles.length + sharedAttachmentInbound.length;
@@ -440,153 +443,152 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm">
-        <div className="relative grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <div className="space-y-1">
-            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonStatus")}</p>
-            <div className="flex items-center gap-2">
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${
-                  project.status === "ACTIVE"
-                    ? "bg-emerald-500"
-                    : project.status === "COMPLETED"
-                      ? "bg-sky-500"
-                      : "bg-zinc-400 dark:bg-zinc-500"
+      <ProjectProgressProvider initialTasks={taskRows}>
+        <div className="overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm">
+          <div className="relative grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonStatus")}</p>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    project.status === "ACTIVE"
+                      ? "bg-emerald-500"
+                      : project.status === "COMPLETED"
+                        ? "bg-sky-500"
+                        : "bg-zinc-400 dark:bg-zinc-500"
+                  }`}
+                  aria-hidden
+                />
+                <span className="font-medium text-[hsl(var(--foreground))]">{tProjectStatus(locale, project.status)}</span>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonPriority")}</p>
+              <span className={`inline-flex rounded-lg px-2.5 py-0.5 text-xs font-medium ${priorityClass}`}>
+                {tPriority(locale, project.priority)}
+              </span>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projProgressOverall")}</p>
+              <ProjectProgressDisplay />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonOwner")}</p>
+              <span className="flex items-center gap-2 font-medium text-[hsl(var(--foreground))]">
+                <UserFace name={project.owner.name} avatarUrl={project.owner.avatarUrl} size={24} />
+                {project.owner.name}
+              </span>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonCompany")}</p>
+              <p className="font-medium text-[hsl(var(--foreground))]">{project.company.name}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projMetricDaysLeft")}</p>
+              <p
+                className={`text-sm font-semibold tabular-nums ${
+                  daysLeft.urgent ? "text-orange-600 dark:text-orange-400" : "text-[hsl(var(--foreground))]"
                 }`}
-                aria-hidden
-              />
-              <span className="font-medium text-[hsl(var(--foreground))]">{tProjectStatus(locale, project.status)}</span>
+              >
+                {daysLeft.text}
+              </p>
             </div>
           </div>
-          <div className="space-y-1">
-            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonPriority")}</p>
-            <span className={`inline-flex rounded-lg px-2.5 py-0.5 text-xs font-medium ${priorityClass}`}>
-              {tPriority(locale, project.priority)}
-            </span>
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projProgressOverall")}</p>
-            <ProjectProgressDisplay
-              initialProgressPct={progressPct}
-              initialTasks={taskRows}
-            />
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonOwner")}</p>
-            <span className="flex items-center gap-2 font-medium text-[hsl(var(--foreground))]">
-              <UserFace name={project.owner.name} avatarUrl={project.owner.avatarUrl} size={24} />
-              {project.owner.name}
-            </span>
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonCompany")}</p>
-            <p className="font-medium text-[hsl(var(--foreground))]">{project.company.name}</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projMetricDaysLeft")}</p>
-            <p
-              className={`text-sm font-semibold tabular-nums ${
-                daysLeft.urgent ? "text-orange-600 dark:text-orange-400" : "text-[hsl(var(--foreground))]"
-              }`}
-            >
-              {daysLeft.text}
-            </p>
-          </div>
+          <ProjectProgressBar />
         </div>
-        <ProjectProgressBar initialProgressPct={progressPct} initialTasks={taskRows} />
-      </div>
 
-      {canReadCalendar ? (
-        <Card className="space-y-3 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>{t(locale, "projRelatedEventsTitle")}</CardTitle>
-            <Link
-              href={calendarHref({
-                y: new Date().getFullYear(),
-                m: new Date().getMonth() + 1,
-                view: "month",
-                create: true,
-                defaultProjectId: project.id,
-              })}
-              className={secondaryBtn}
-            >
-              {t(locale, "calendarNewEvent")}
-            </Link>
-          </div>
-          {!projectCalendarEvents.length ? (
-            <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "projRelatedEventsEmpty")}</p>
-          ) : (
-            <ul className="divide-y divide-[hsl(var(--border))]">
-              {projectCalendarEvents.map((ev) => (
-                <li key={ev.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {ev.label ? (
-                        <span
-                          className="h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: ev.label.color }}
-                          aria-label={ev.label.name}
-                        />
-                      ) : null}
-                      <Link
-                        href={calendarHref({
-                          y: ev.startsAt.getFullYear(),
-                          m: ev.startsAt.getMonth() + 1,
-                          view: "month",
-                          eventId: ev.id,
-                        })}
-                        className="font-medium text-[hsl(var(--primary))] hover:underline"
-                      >
-                        {ev.title}
-                      </Link>
+        {canReadCalendar ? (
+          <Card className="space-y-3 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>{t(locale, "projRelatedEventsTitle")}</CardTitle>
+              <Link
+                href={calendarHref({
+                  y: new Date().getFullYear(),
+                  m: new Date().getMonth() + 1,
+                  view: "month",
+                  create: true,
+                  defaultProjectId: project.id,
+                })}
+                className={secondaryBtn}
+              >
+                {t(locale, "calendarNewEvent")}
+              </Link>
+            </div>
+            {!projectCalendarEvents.length ? (
+              <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "projRelatedEventsEmpty")}</p>
+            ) : (
+              <ul className="divide-y divide-[hsl(var(--border))]">
+                {projectCalendarEvents.map((ev) => (
+                  <li key={ev.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {ev.label ? (
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: ev.label.color }}
+                            aria-label={ev.label.name}
+                          />
+                        ) : null}
+                        <Link
+                          href={calendarHref({
+                            y: ev.startsAt.getFullYear(),
+                            m: ev.startsAt.getMonth() + 1,
+                            view: "month",
+                            eventId: ev.id,
+                          })}
+                          className="font-medium text-[hsl(var(--primary))] hover:underline"
+                        >
+                          {ev.title}
+                        </Link>
+                      </div>
+                      <p className="mt-1 text-base leading-relaxed text-[hsl(var(--muted))]">
+                        {ev.startsAt.toISOString().slice(0, 16).replace("T", " ")} — {ev.organizer.name}
+                      </p>
                     </div>
-                    <p className="mt-1 text-base leading-relaxed text-[hsl(var(--muted))]">
-                      {ev.startsAt.toISOString().slice(0, 16).replace("T", " ")} — {ev.organizer.name}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          <Link href="/calendar" className="inline-block text-base font-medium text-[hsl(var(--primary))] hover:underline">
-            {t(locale, "projRelatedEventsOpenCalendar")}
-          </Link>
-        </Card>
-      ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Link href="/calendar" className="inline-block text-base font-medium text-[hsl(var(--primary))] hover:underline">
+              {t(locale, "projRelatedEventsOpenCalendar")}
+            </Link>
+          </Card>
+        ) : null}
 
-      <ProjectTasksPanelWithProgress
-        projectId={project.id}
-        tasks={taskRows}
-        canEdit={canEditTasks}
-        undoAvailable={undoAvailable}
-        memberOptions={project.memberships.map((m) => ({ id: m.userId, name: m.user.name }))}
-        locale={locale}
-        copy={{
-          title: t(locale, "wfMapTitle"),
-          undo: t(locale, "projTasksUndo"),
-          undoHint: t(locale, "projTasksUndoHint"),
-          undoDisabledHint: t(locale, "projTasksUndoDisabledHint"),
-          deleteAll: t(locale, "projTasksDeleteAll"),
-          deleteTask: t(locale, "projTasksDeleteTask"),
-          addTask: t(locale, "projTasksAddTask"),
-          addSubtask: t(locale, "projTasksAddSubtask"),
-          assignedPrefix: t(locale, "projTasksAssignedPrefix"),
-          confirmDeleteAll: t(locale, "projTasksConfirmDeleteAll"),
-          empty: t(locale, "projTasksNoTasks"),
-          noSubtasksHint: t(locale, "projTasksNoSubtasksHint"),
-          newTaskPh: t(locale, "projTaskNewTitlePh"),
-          newSubPh: t(locale, "projTaskNewSubPh"),
-          deadlineOptional: t(locale, "projTaskDeadlineLabel"),
-          assignSubOptional: t(locale, "projTaskAssignSub"),
-          metaTitle: t(locale, "projTaskMetaTitle"),
-          metaLead: t(locale, "projTaskMetaLead"),
-          saveMeta: t(locale, "btnSave"),
-          dueShort: t(locale, "projTaskDueShort"),
-          descriptionLabel: t(locale, "commonDescription"),
-          editDetails: t(locale, "projTaskEditDetails"),
-          dialogClose: t(locale, "kbDialogClose"),
-        }}
-      />
+        <ProjectTasksPanelWithProgress
+          projectId={project.id}
+          tasks={taskRows}
+          canEdit={canEditTasks}
+          undoAvailable={undoAvailable}
+          memberOptions={project.memberships.map((m) => ({ id: m.userId, name: m.user.name }))}
+          locale={locale}
+          copy={{
+            title: t(locale, "wfMapTitle"),
+            undo: t(locale, "projTasksUndo"),
+            undoHint: t(locale, "projTasksUndoHint"),
+            undoDisabledHint: t(locale, "projTasksUndoDisabledHint"),
+            deleteAll: t(locale, "projTasksDeleteAll"),
+            deleteTask: t(locale, "projTasksDeleteTask"),
+            addTask: t(locale, "projTasksAddTask"),
+            addSubtask: t(locale, "projTasksAddSubtask"),
+            assignedPrefix: t(locale, "projTasksAssignedPrefix"),
+            confirmDeleteAll: t(locale, "projTasksConfirmDeleteAll"),
+            empty: t(locale, "projTasksNoTasks"),
+            noSubtasksHint: t(locale, "projTasksNoSubtasksHint"),
+            newTaskPh: t(locale, "projTaskNewTitlePh"),
+            newSubPh: t(locale, "projTaskNewSubPh"),
+            deadlineOptional: t(locale, "projTaskDeadlineLabel"),
+            assignSubOptional: t(locale, "projTaskAssignSub"),
+            metaTitle: t(locale, "projTaskMetaTitle"),
+            metaLead: t(locale, "projTaskMetaLead"),
+            saveMeta: t(locale, "btnSave"),
+            dueShort: t(locale, "projTaskDueShort"),
+            descriptionLabel: t(locale, "commonDescription"),
+            editDetails: t(locale, "projTaskEditDetails"),
+            dialogClose: t(locale, "kbDialogClose"),
+          }}
+        />
+      </ProjectProgressProvider>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <details
