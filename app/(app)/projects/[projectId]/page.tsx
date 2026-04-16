@@ -796,13 +796,17 @@ export default async function ProjectDetailPage({
             assignSubOptional: t(locale, "projTaskAssignSub"),
             metaTitle: t(locale, "projTaskMetaTitle"),
             metaLead: t(locale, "projTaskMetaLead"),
+            labelsTitle: t(locale, "projTaskLabelsTitle"),
+            labelsLead: t(locale, "projTaskLabelsLead"),
             saveMeta: t(locale, "btnSave"),
             dueShort: t(locale, "projTaskDueShort"),
             descriptionLabel: t(locale, "commonDescription"),
             editDetails: t(locale, "projTaskEditDetails"),
+            editLabels: t(locale, "projTaskEditLabels"),
             dialogClose: t(locale, "kbDialogClose"),
             statusLabel: t(locale, "commonStatus"),
             labelsLabel: t(locale, "projTaskLabelsLabel"),
+            categoryLabel: t(locale, "projTaskCategoryLabel"),
             waitingStartedLabel: t(locale, "projTaskWaitingStartedLabel"),
             waitingOnInternalLabel: t(locale, "projTaskWaitingInternalLabel"),
             waitingOnExternalLabel: t(locale, "projTaskWaitingExternalLabel"),
@@ -824,6 +828,10 @@ export default async function ProjectDetailPage({
             externalPlaceholder: t(locale, "projTaskExternalPlaceholder"),
             waitingDetailsPlaceholder: t(locale, "projTaskWaitingDetailsPlaceholder"),
             nextActionPlaceholder: t(locale, "projTaskNextActionPlaceholder"),
+            summaryWaiting: t(locale, "projTaskSummaryWaiting"),
+            summaryApproval: t(locale, "projTaskSummaryApproval"),
+            summaryRisk: t(locale, "projTaskSummaryRisk"),
+            summaryBottleneck: t(locale, "projTaskSummaryBottleneck"),
           }}
         />
       </ProjectProgressProvider>

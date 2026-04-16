@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import type { AccessUser } from "@/lib/access";
+import { HomeBalancedDashboardRow } from "./home-balanced-dashboard-row";
 import { HomeExecutionSnapshotSection } from "./home-execution-snapshot-section";
 import { HomeGoodThingsSection } from "./home-good-things-section";
 import { HomePrioritiesSection } from "./home-priorities-section";
@@ -16,25 +17,27 @@ import {
 export function HomeDashboardStreams({ user, snapshot }: { user: AccessUser; snapshot: string }) {
   return (
     <div className="space-y-8">
-      <Suspense fallback={<HomeSnapshotFallback />}>
-        <HomeSnapshotSection user={user} snapshot={snapshot} />
-      </Suspense>
-
-      <div className="grid items-stretch gap-4 lg:grid-cols-3">
-        <div className="flex lg:col-span-2">
-          <Suspense fallback={<HomePrioritiesFallback />}>
-            <HomePrioritiesSection user={user} />
-          </Suspense>
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <Suspense fallback={<HomeExecutionSnapshotFallback />}>
-            <HomeExecutionSnapshotSection user={user} />
-          </Suspense>
-          <Suspense fallback={<HomeGoodThingsFallback />}>
-            <HomeGoodThingsSection user={user} />
-          </Suspense>
-        </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <HomeBalancedDashboardRow
+          priorities={
+            <Suspense fallback={<HomePrioritiesFallback />}>
+              <HomePrioritiesSection user={user} />
+            </Suspense>
+          }
+          sidebar={
+            <>
+              <Suspense fallback={<HomeExecutionSnapshotFallback />}>
+                <HomeExecutionSnapshotSection user={user} snapshot={snapshot} />
+              </Suspense>
+              <Suspense fallback={<HomeSnapshotFallback />}>
+                <HomeSnapshotSection user={user} snapshot={snapshot} />
+              </Suspense>
+              <Suspense fallback={<HomeGoodThingsFallback />}>
+                <HomeGoodThingsSection user={user} />
+              </Suspense>
+            </>
+          }
+        />
 
         <Suspense fallback={<HomeScoreFallback />}>
           <HomeScoreSection user={user} />

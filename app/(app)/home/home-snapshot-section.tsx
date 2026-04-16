@@ -20,53 +20,61 @@ import {
   isWaitingNode,
 } from "@/lib/workflow-node-operations";
 
-const SNAPSHOT_KEYS = new Set(["blocked", "approvals", "waiting-internal", "waiting-external", "longest", "overdue", "risk"]);
+type SnapshotCategory = "response" | "approval" | "execution" | "blocked";
+
+function normalizeSnapshot(snapshot: string): SnapshotCategory | null {
+  if (snapshot === "response" || snapshot === "waiting-internal" || snapshot === "waiting-external" || snapshot === "longest") {
+    return "response";
+  }
+  if (snapshot === "approval" || snapshot === "approvals") return "approval";
+  if (snapshot === "execution" || snapshot === "risk" || snapshot === "overdue") return "execution";
+  if (snapshot === "blocked") return "blocked";
+  return null;
+}
 
 function fmtShortDate(date: Date | null | undefined, locale: "en" | "zh") {
   if (!date) return null;
   return date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-GB", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function isExecutionNode(node: Awaited<ReturnType<typeof getHomeDashboardVisibleWorkflowNodes>>[number]) {
+  return !isBlockedNode(node) && !isPendingApprovalNode(node) && !isWaitingNode(node) && (isAtRiskNode(node) || isOverdueNode(node) || node.isProjectBottleneck);
+}
+
+function isResponseNode(node: Awaited<ReturnType<typeof getHomeDashboardVisibleWorkflowNodes>>[number]) {
+  return !isBlockedNode(node) && !isPendingApprovalNode(node) && isWaitingNode(node);
+}
+
 export async function HomeSnapshotSection({ user, snapshot }: { user: AccessUser; snapshot: string }) {
-  if (!snapshot || !SNAPSHOT_KEYS.has(snapshot)) return null;
+  const normalizedSnapshot = normalizeSnapshot(snapshot);
+  if (!normalizedSnapshot) return null;
 
   const locale = await getLocale();
   const nodes = await getHomeDashboardVisibleWorkflowNodes(user);
 
   const rows =
-    snapshot === "blocked"
+    normalizedSnapshot === "blocked"
       ? nodes.filter((node) => isBlockedNode(node))
-      : snapshot === "approvals"
+      : normalizedSnapshot === "approval"
         ? nodes.filter((node) => isPendingApprovalNode(node))
-        : snapshot === "waiting-internal"
-          ? nodes.filter((node) => isInternalWaitingNode(node))
-          : snapshot === "waiting-external"
-            ? nodes.filter((node) => isExternalWaitingNode(node))
-            : snapshot === "longest"
-              ? nodes
-                  .filter((node) => isWaitingNode(node))
-                  .sort((a, b) => (getWaitingEscalation(b)?.days ?? -1) - (getWaitingEscalation(a)?.days ?? -1))
-              : snapshot === "overdue"
-                ? nodes.filter((node) => isOverdueNode(node))
-                : nodes.filter((node) => isAtRiskNode(node) || node.isProjectBottleneck || getWaitingEscalation(node)?.level === "warning");
+        : normalizedSnapshot === "response"
+          ? nodes
+              .filter((node) => isResponseNode(node))
+              .sort((a, b) => (getWaitingEscalation(b)?.days ?? -1) - (getWaitingEscalation(a)?.days ?? -1))
+          : nodes.filter((node) => isExecutionNode(node));
 
   const titleMap = {
     blocked: t(locale, "homeSnapshotBlockedTitle"),
-    approvals: t(locale, "homeSnapshotApprovalsTitle"),
-    "waiting-internal": t(locale, "homeSnapshotWaitingInternalTitle"),
-    "waiting-external": t(locale, "homeSnapshotWaitingExternalTitle"),
-    longest: t(locale, "homeSnapshotLongestTitle"),
-    overdue: t(locale, "homeSnapshotOverdueTitle"),
-    risk: t(locale, "homeSnapshotRiskTitle"),
+    approval: t(locale, "homeSnapshotApprovalsTitle"),
+    response: t(locale, "homeSnapshotResponseTitle"),
+    execution: t(locale, "homeSnapshotExecutionTitle"),
   } as const;
-
-  const title = titleMap[snapshot as keyof typeof titleMap];
 
   return (
     <Card className="space-y-4 border-zinc-200/90 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{title}</CardTitle>
+          <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{titleMap[normalizedSnapshot]}</CardTitle>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{t(locale, "homeSnapshotLead")}</p>
         </div>
         <Link href="/home" className="text-sm font-medium text-zinc-600 underline underline-offset-4 dark:text-zinc-300">
@@ -86,33 +94,31 @@ export async function HomeSnapshotSection({ user, snapshot }: { user: AccessUser
                 ? "Blocked"
                 : isPendingApprovalNode(node)
                   ? "Pending approval"
-                  : waitingEscalation?.level === "warning"
-                    ? "Waiting / aging"
-                    : waitingEscalation?.level === "blocked"
-                      ? "Waiting / escalated"
-                      : waitingEscalation
-                        ? "Waiting"
-                        : isOverdueNode(node)
-                          ? "Overdue"
-                          : isAtRiskNode(node)
-                            ? "At risk"
-                            : node.status.replaceAll("_", " ");
+                  : isInternalWaitingNode(node)
+                    ? "Waiting on internal response"
+                    : isExternalWaitingNode(node)
+                      ? "Waiting on external response"
+                      : isOverdueNode(node)
+                        ? "Overdue"
+                        : isAtRiskNode(node)
+                          ? "At risk"
+                          : node.status.replaceAll("_", " ");
             const issue =
               node.waitingDetails?.trim()
                 ? node.waitingDetails.trim()
                 : isBlockedNode(node)
-                ? "This work is blocked and needs intervention."
-                : isPendingApprovalNode(node)
-                  ? "This work is waiting for a review decision."
-                  : isExternalWaitingNode(node)
-                    ? "This work is stuck on an external response."
-                    : isInternalWaitingNode(node)
-                      ? "This work is stuck on an internal teammate."
-                      : isOverdueNode(node)
-                        ? "This work is overdue."
-                        : isAtRiskNode(node)
-                          ? "This work is trending toward delay."
-                          : "This work needs follow-up.";
+                  ? "This work is blocked and needs intervention."
+                  : isPendingApprovalNode(node)
+                    ? "This work is waiting for a review decision."
+                    : isExternalWaitingNode(node)
+                      ? "This work is stuck on an external response."
+                      : isInternalWaitingNode(node)
+                        ? "This work is stuck on an internal teammate."
+                        : isOverdueNode(node)
+                          ? "This work is overdue."
+                          : isAtRiskNode(node)
+                            ? "This work is trending toward delay."
+                            : "This work needs follow-up.";
 
             return (
               <Link

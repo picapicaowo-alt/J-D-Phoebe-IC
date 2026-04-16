@@ -25,12 +25,8 @@ import {
   EXECUTION_RISK_LABELS,
   PENDING_APPROVAL_LABELS,
   WAITING_LABELS,
-  formatWorkflowNodeLabel,
-  getApprovalOwnerDisplay,
-  getOperationalNextAction,
-  getWaitingEscalation,
-  getWaitingOnDisplay,
   isAtRiskNode,
+  isBlockedNode,
   isOverdueNode,
 } from "@/lib/workflow-node-operations";
 
@@ -1158,7 +1154,8 @@ export function ProjectTasksPanel({
                     {hasKids ? null : <p className="text-xs text-[hsl(var(--muted))]">{copy.noSubtasksHint}</p>}
                     {task.children.map((sub) => {
                       const done = isComplete(sub.status);
-                      const subDialogId = `task-meta-${sub.id}`;
+                      const subDetailsDialogId = `task-details-${sub.id}`;
+                      const subLabelsDialogId = `task-labels-${sub.id}`;
                       return (
                         <div key={sub.id} id={`task-${sub.id}`}>
                           <div className="flex flex-wrap items-center gap-3 rounded-[10px] bg-slate-50 px-3 py-3 dark:bg-zinc-900/60 sm:ml-16 lg:ml-24 md:flex-nowrap">
@@ -1215,7 +1212,7 @@ export function ProjectTasksPanel({
                                   {copy.dueShort}: {fmtShortDate(sub.dueAt, locale)}
                                 </p>
                               ) : null}
-                              <TaskOperationalSummary task={sub} locale={locale} />
+                              <TaskOperationalSummary task={sub} copy={copy} />
                             </div>
                             <span className="shrink-0 text-sm font-semibold tabular-nums">{sub.progressPercent}%</span>
                             <div className="w-24 shrink-0">
@@ -1224,10 +1221,16 @@ export function ProjectTasksPanel({
                             {canEdit ? (
                               <DropdownMenu buttonContent={<IconMore />}>
                                 <OpenDialogButton
-                                  dialogId={subDialogId}
+                                  dialogId={subDetailsDialogId}
                                   className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
                                 >
                                   {copy.editDetails}
+                                </OpenDialogButton>
+                                <OpenDialogButton
+                                  dialogId={subLabelsDialogId}
+                                  className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                                >
+                                  {copy.editLabels}
                                 </OpenDialogButton>
                                 <form
                                   onSubmit={(e) => {
@@ -1249,29 +1252,41 @@ export function ProjectTasksPanel({
                             ) : null}
                           </div>
                           {canEdit ? (
-                            <NodeMetaDialog
-                              dialogId={subDialogId}
-                              projectId={projectId}
-                              node={{
-                                id: sub.id,
-                                description: sub.description,
-                                dueAt: sub.dueAt,
-                                assigneeId: sub.assigneeId,
-                                status: sub.status,
-                                operationalLabels: sub.operationalLabels,
-                                waitingStartedAt: sub.waitingStartedAt,
-                                waitingOnUserMention: sub.waitingOnUserName ? `@${sub.waitingOnUserName}` : null,
-                                waitingOnExternalName: sub.waitingOnExternalName,
-                                waitingDetails: sub.waitingDetails,
-                                approverId: sub.approverId,
-                                approvalRequestedAt: sub.approvalRequestedAt,
-                                approvalCompletedAt: sub.approvalCompletedAt,
-                                nextAction: sub.nextAction,
-                                isProjectBottleneck: sub.isProjectBottleneck,
-                              }}
-                              memberOptions={memberOptions}
-                              copy={copy}
-                            />
+                            <>
+                              <NodeDetailsDialog
+                                dialogId={subDetailsDialogId}
+                                projectId={projectId}
+                                node={{
+                                  id: sub.id,
+                                  description: sub.description,
+                                  dueAt: sub.dueAt,
+                                  assigneeId: sub.assigneeId,
+                                  status: sub.status,
+                                }}
+                                memberOptions={memberOptions}
+                                copy={copy}
+                              />
+                              <NodeLabelsDialog
+                                dialogId={subLabelsDialogId}
+                                projectId={projectId}
+                                node={{
+                                  id: sub.id,
+                                  status: sub.status,
+                                  operationalLabels: sub.operationalLabels,
+                                  waitingStartedAt: sub.waitingStartedAt,
+                                  waitingOnUserMention: sub.waitingOnUserName ? `@${sub.waitingOnUserName}` : null,
+                                  waitingOnExternalName: sub.waitingOnExternalName,
+                                  waitingDetails: sub.waitingDetails,
+                                  approverId: sub.approverId,
+                                  approvalRequestedAt: sub.approvalRequestedAt,
+                                  approvalCompletedAt: sub.approvalCompletedAt,
+                                  nextAction: sub.nextAction,
+                                  isProjectBottleneck: sub.isProjectBottleneck,
+                                }}
+                                memberOptions={memberOptions}
+                                copy={copy}
+                              />
+                            </>
                           ) : null}
                         </div>
                       );
@@ -1288,13 +1303,7 @@ export function ProjectTasksPanel({
                           const assigneeName = assigneeId ? (memberOptions.find((m) => m.id === assigneeId)?.name ?? null) : null;
                           const dueRaw = String(fd.get("dueAt") ?? "").trim();
                           const dueAt = dueRaw ? new Date(dueRaw).toISOString() : null;
-                          const waitingStartedRaw = String(fd.get("waitingStartedAt") ?? "").trim();
-                          const approvalRequestedRaw = String(fd.get("approvalRequestedAt") ?? "").trim();
-                          const approvalCompletedRaw = String(fd.get("approvalCompletedAt") ?? "").trim();
                           const status = (String(fd.get("status") ?? "").trim() || "NOT_STARTED") as WorkflowNodeStatus;
-                          const operationalLabels = fd.getAll("operationalLabels").map((value) => String(value).trim()) as WorkflowNodeLabel[];
-                          const waitingOnUserMention = String(fd.get("waitingOnUserMention") ?? "").trim() || null;
-                          const approverId = String(fd.get("approverUserId") ?? "").trim() || null;
                           startOtherTransition(() => {
                             runOptimistic({
                               type: "add-sub",
@@ -1308,18 +1317,18 @@ export function ProjectTasksPanel({
                                 assigneeId: assigneeId || null,
                                 dueAt,
                                 description: null,
-                                operationalLabels,
-                                waitingStartedAt: waitingStartedRaw ? new Date(waitingStartedRaw).toISOString() : null,
+                                operationalLabels: [],
+                                waitingStartedAt: null,
                                 waitingOnUserId: null,
-                                waitingOnUserName: waitingOnUserMention ? waitingOnUserMention.replace(/^@+/, "").trim() || null : null,
-                                waitingOnExternalName: String(fd.get("waitingOnExternalName") ?? "").trim() || null,
-                                waitingDetails: String(fd.get("waitingDetails") ?? "").trim() || null,
-                                approverId,
-                                approverName: approverId ? (memberOptions.find((m) => m.id === approverId)?.name ?? null) : null,
-                                approvalRequestedAt: approvalRequestedRaw ? new Date(approvalRequestedRaw).toISOString() : null,
-                                approvalCompletedAt: approvalCompletedRaw ? new Date(approvalCompletedRaw).toISOString() : null,
-                                nextAction: String(fd.get("nextAction") ?? "").trim() || null,
-                                isProjectBottleneck: String(fd.get("isProjectBottleneck") ?? "").trim() === "on",
+                                waitingOnUserName: null,
+                                waitingOnExternalName: null,
+                                waitingDetails: null,
+                                approverId: null,
+                                approverName: null,
+                                approvalRequestedAt: null,
+                                approvalCompletedAt: null,
+                                nextAction: null,
+                                isProjectBottleneck: false,
                                 children: [],
                               },
                             });
@@ -1356,25 +1365,6 @@ export function ProjectTasksPanel({
                             {copy.addSubtask}
                           </FormSubmitButton>
                         </div>
-                        <TaskOperationalFields
-                          copy={copy}
-                          memberOptions={memberOptions}
-                          showStatus={false}
-                          mentionListId={`waiting-mention-sub-${task.id}`}
-                          node={{
-                            status: "NOT_STARTED",
-                            operationalLabels: [],
-                            waitingStartedAt: null,
-                            waitingOnUserMention: null,
-                            waitingOnExternalName: null,
-                            waitingDetails: null,
-                            approverId: null,
-                            approvalRequestedAt: null,
-                            approvalCompletedAt: null,
-                            nextAction: null,
-                            isProjectBottleneck: false,
-                          }}
-                        />
                       </form>
                     ) : null}
                   </div>
