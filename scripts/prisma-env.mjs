@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Loads `.env`, then optionally overrides from `PRISMA_ENV_FILE` (e.g. `.env.production.local`
- * after `vercel env pull .env.production.local --environment production`).
- * Keys in the override file replace existing values so you can seed the **production** DB
- * even when `.env` already has a local `DATABASE_URL`.
+ * Loads `.env`, then mirrors Next.js by applying `.env.local` on top unless
+ * `PRISMA_SKIP_ENV_LOCAL=1` is set. Finally, an optional `PRISMA_ENV_FILE`
+ * (for example `.env.production.local` after `vercel env pull`) can override
+ * both so Prisma CLI commands target the same database as the running app.
  *
  * Then sets DIRECT_URL from DATABASE_URL when DIRECT_URL is still unset.
  */
@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const envPath = path.join(root, ".env");
+const envLocalPath = path.join(root, ".env.local");
 
 function parseLine(line) {
   const t = line.trim();
@@ -54,6 +55,9 @@ function loadDotEnvOverride(file) {
 }
 
 loadDotEnv(envPath);
+if (process.env.PRISMA_SKIP_ENV_LOCAL !== "1") {
+  loadDotEnvOverride(envLocalPath);
+}
 
 const overrideName = process.env.PRISMA_ENV_FILE?.trim();
 if (overrideName) {
