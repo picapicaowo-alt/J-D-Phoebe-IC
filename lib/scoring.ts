@@ -2,10 +2,13 @@ import type {
   AbilityDimension,
   FeedbackCategory,
   LeaderboardCategory,
+  Prisma,
   PrismaClient,
   RecognitionTagCategory,
 } from "@prisma/client";
 import { ScorePolarity } from "@prisma/client";
+
+type ScoreDb = PrismaClient | Prisma.TransactionClient;
 
 function recognitionPrimaryBoard(cat: RecognitionTagCategory): LeaderboardCategory {
   switch (cat) {
@@ -47,7 +50,7 @@ function recognitionAbility(cat: RecognitionTagCategory): AbilityDimension {
 }
 
 export async function appendRecognitionScores(
-  prisma: PrismaClient,
+  prisma: ScoreDb,
   input: {
     toUserId: string;
     tagCategory: RecognitionTagCategory;
@@ -117,7 +120,7 @@ function feedbackDimensions(cat: FeedbackCategory): { board: LeaderboardCategory
 }
 
 export async function appendKnowledgeReuseScore(
-  prisma: PrismaClient,
+  prisma: ScoreDb,
   input: { userId: string; assetId: string; companyId?: string | null; projectId?: string | null },
 ) {
   await prisma.scoreLedgerEntry.create({
@@ -137,7 +140,7 @@ export async function appendKnowledgeReuseScore(
 }
 
 export async function appendFeedbackScores(
-  prisma: PrismaClient,
+  prisma: ScoreDb,
   input: {
     toUserId: string;
     category: FeedbackCategory;
@@ -161,9 +164,27 @@ export async function appendFeedbackScores(
   await prisma.scoreLedgerEntry.createMany({ data: rows });
 }
 
+export async function clearRecognitionScores(prisma: ScoreDb, recognitionId: string) {
+  await prisma.scoreLedgerEntry.deleteMany({
+    where: {
+      sourceType: "RECOGNITION_EVENT",
+      sourceId: recognitionId,
+    },
+  });
+}
+
+export async function clearFeedbackScores(prisma: ScoreDb, feedbackId: string) {
+  await prisma.scoreLedgerEntry.deleteMany({
+    where: {
+      sourceType: "FEEDBACK_EVENT",
+      sourceId: feedbackId,
+    },
+  });
+}
+
 /** When a map node moves to DONE, credit assignees (or project owner if unassigned). Idempotent per node + reason. */
 export async function appendNodeCompletionLedgers(
-  prisma: PrismaClient,
+  prisma: ScoreDb,
   input: {
     nodeId: string;
     projectId: string;
@@ -198,7 +219,7 @@ export async function appendNodeCompletionLedgers(
 
 /** Open node still not DONE after effective due — call from status updates when appropriate. */
 export async function appendNodeOverdueOpenLedger(
-  prisma: PrismaClient,
+  prisma: ScoreDb,
   input: {
     nodeId: string;
     projectId: string;
@@ -229,7 +250,7 @@ export async function appendNodeOverdueOpenLedger(
 }
 
 export async function sumAbilityByUser(
-  prisma: PrismaClient,
+  prisma: ScoreDb,
   userId: string,
   since: Date,
   until: Date,
