@@ -7,11 +7,21 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { resolveBlobReadWriteToken } from "@/lib/blob";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 const MAX_BYTES = 6 * 1024 * 1024;
+const INLINE_FALLBACK_MAX_BYTES = 160 * 1024;
+const DISPLAY_IMAGE_MAX_DIMENSION = 256;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+function extFromMime(mime: string) {
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  if (mime === "image/gif") return "gif";
+  return "jpg";
+}
 
 function safeReturnTo(formData: FormData, fallbackPath: string) {
   const raw = String(formData.get("returnTo") ?? "").trim();
@@ -39,27 +49,52 @@ async function persistImage(buf: Buffer, mime: string, folder: string): Promise<
   }
   if (buf.length > MAX_BYTES) throw new Error("Image is too large (max 6MB).");
 
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  let finalBuf = buf;
+  let finalMime = mime;
+
+  if (mime !== "image/gif") {
+    try {
+      const sharp = (await import("sharp")).default;
+      finalBuf = await sharp(buf).rotate().resize(DISPLAY_IMAGE_MAX_DIMENSION, DISPLAY_IMAGE_MAX_DIMENSION, {
+        fit: "inside",
+        withoutEnlargement: true,
+      }).webp({ quality: 82 }).toBuffer();
+      finalMime = "image/webp";
+    } catch {
+      throw new Error("We couldn't process that image. Please try a JPEG, PNG, WebP, or GIF.");
+    }
+  }
+
+  const ext = extFromMime(finalMime);
+  const blobToken = resolveBlobReadWriteToken();
+
+  if (blobToken.token) {
     const { put } = await import("@vercel/blob");
-    const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : mime === "image/gif" ? "gif" : "jpg";
     const key = `${folder}/${randomUUID()}.${ext}`;
-    const blob = await put(key, buf, { access: "public", token: process.env.BLOB_READ_WRITE_TOKEN });
+    const blob = await put(key, finalBuf, { access: "public", token: blobToken.token });
     return blob.url;
   }
 
   if (process.env.VERCEL === "1") {
-    throw new Error(
-      "Image upload on Vercel requires BLOB_READ_WRITE_TOKEN (Vercel Blob). Add it under Project → Settings → Environment Variables, then redeploy.",
-    );
+    if (blobToken.ambiguousEnvVarNames.length > 0) {
+      throw new Error(
+        `Multiple Blob read/write tokens were found (${blobToken.ambiguousEnvVarNames.join(", ")}). Set BLOB_READ_WRITE_TOKEN explicitly for this app and redeploy.`,
+      );
+    }
+    if (finalBuf.length > INLINE_FALLBACK_MAX_BYTES) {
+      throw new Error(
+        "This image is still too large for the built-in Vercel fallback. Use a smaller image, or set BLOB_READ_WRITE_TOKEN and redeploy to store it in Vercel Blob.",
+      );
+    }
+    return `data:${finalMime};base64,${finalBuf.toString("base64")}`;
   }
 
-  const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : mime === "image/gif" ? "gif" : "jpg";
   const relDir = path.join("public", "uploads", folder);
   const dir = path.join(process.cwd(), relDir);
   await mkdir(dir, { recursive: true });
   const name = `${randomUUID()}.${ext}`;
   const diskPath = path.join(dir, name);
-  await writeFile(diskPath, buf);
+  await writeFile(diskPath, finalBuf);
   return `/${path.join("uploads", folder, name).replace(/\\/g, "/")}`;
 }
 

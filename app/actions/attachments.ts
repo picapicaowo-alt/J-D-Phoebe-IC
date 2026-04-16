@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { AttachmentResourceKind } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { canEditWorkflow, canManageProject, canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { resolveBlobReadWriteToken } from "@/lib/blob";
 import { assertPermission, userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
@@ -42,11 +43,22 @@ async function storeFile(
   folderKey: string,
 ): Promise<{ storageKey: string; blobUrl: string | null }> {
   const safeName = sanitizeFileName(fileName);
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  const blobToken = resolveBlobReadWriteToken();
+  if (blobToken.token) {
     const { put } = await import("@vercel/blob");
     const key = `${folderKey}/${randomUUID()}-${safeName}`;
-    const blob = await put(key, buf, { access: "public", token: process.env.BLOB_READ_WRITE_TOKEN });
+    const blob = await put(key, buf, { access: "public", token: blobToken.token });
     return { storageKey: key, blobUrl: blob.url };
+  }
+  if (process.env.VERCEL === "1") {
+    if (blobToken.ambiguousEnvVarNames.length > 0) {
+      throw new Error(
+        `Multiple Blob read/write tokens were found (${blobToken.ambiguousEnvVarNames.join(", ")}). Set BLOB_READ_WRITE_TOKEN explicitly for this app and redeploy.`,
+      );
+    }
+    throw new Error(
+      "File upload on Vercel requires BLOB_READ_WRITE_TOKEN or a single Vercel Blob *_READ_WRITE_TOKEN variable. Add one under Project → Settings → Environment Variables, then redeploy.",
+    );
   }
   const relDir = path.join("uploads", folderKey);
   const dir = path.join(process.cwd(), relDir);
