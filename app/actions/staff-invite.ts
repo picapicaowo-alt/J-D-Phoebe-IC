@@ -6,11 +6,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { writeAudit } from "@/lib/audit";
 import { isSuperAdmin, type AccessUser } from "@/lib/access";
-import { assertPermission } from "@/lib/permissions";
+import { invalidateAccessUserCache, requireUser } from "@/lib/auth";
 import { sendTransactionalEmail } from "@/lib/email";
 import { generateStaffInviteOtpCode, hashStaffInviteOtp, verifyStaffInviteOtp } from "@/lib/otp";
+import { assertPermission, invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { canReuseUserAccount, findReusableUserCandidateByEmail, reprovisionReusableUser } from "@/lib/user-account-reuse";
 
 const INVITE_TTL_MS = 20 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 8;
@@ -36,8 +37,8 @@ export async function startStaffInviteAction(formData: FormData) {
   const password = requireString(formData, "password");
   const title = String(formData.get("title") ?? "").trim() || null;
 
-  const existing = await prisma.user.findFirst({ where: { email, deletedAt: null } });
-  if (existing) {
+  const existing = await findReusableUserCandidateByEmail(email);
+  if (existing && !canReuseUserAccount(existing)) {
     redirect("/staff/new?error=email_taken");
   }
 
@@ -115,27 +116,38 @@ export async function confirmStaffInviteAction(formData: FormData) {
     redirect(`/staff/new/verify?inviteId=${invite.id}&error=bad_otp`);
   }
 
-  const dup = await prisma.user.findFirst({ where: { email: invite.email, deletedAt: null } });
-  if (dup) {
+  const existing = await findReusableUserCandidateByEmail(invite.email);
+  const reusableExisting = canReuseUserAccount(existing) ? existing : null;
+  if (existing && !reusableExisting) {
     await prisma.staffInvite.delete({ where: { id: invite.id } }).catch(() => {});
     redirect("/staff/new?error=email_taken");
   }
 
   const user = await prisma.$transaction(async (tx) => {
-    const u = await tx.user.create({
-      data: {
-        email: invite.email,
-        name: invite.name,
-        title: invite.title,
-        passwordHash: invite.passwordHash,
-        active: true,
-        mustChangePassword: true,
-      },
-    });
+    const u = reusableExisting
+      ? await reprovisionReusableUser(tx, {
+          userId: reusableExisting.id,
+          name: invite.name,
+          title: invite.title,
+          passwordHash: invite.passwordHash,
+          mustChangePassword: true,
+        })
+      : await tx.user.create({
+          data: {
+            email: invite.email,
+            name: invite.name,
+            title: invite.title,
+            passwordHash: invite.passwordHash,
+            active: true,
+            mustChangePassword: true,
+          },
+        });
     await tx.staffInvite.delete({ where: { id: invite.id } });
     return u;
   });
 
+  invalidateAccessUserCache(user);
+  invalidatePermissionCache(user.id);
   await writeAudit({ actorId: actor.id, entityType: "USER", entityId: user.id, action: "CREATE", newValue: user.email });
   revalidatePath("/staff");
   redirect(`/staff/${user.id}`);

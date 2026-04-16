@@ -3,13 +3,21 @@ import { prisma } from "@/lib/prisma";
 
 const reusableUserSelect = {
   id: true,
+  active: true,
   deletedAt: true,
   isSuperAdmin: true,
+  _count: {
+    select: {
+      groupMemberships: true,
+      companyMemberships: true,
+      projectMemberships: true,
+    },
+  },
 } satisfies Prisma.UserSelect;
 
 export type ReusableUserCandidate = Prisma.UserGetPayload<{ select: typeof reusableUserSelect }>;
 
-type ReprovisionDeletedUserInput = {
+type ReprovisionReusableUserInput = {
   userId: string;
   name: string;
   passwordHash: string;
@@ -24,13 +32,22 @@ export async function findReusableUserCandidateByEmail(email: string) {
   });
 }
 
-export function canReuseDeletedUser(candidate: ReusableUserCandidate | null) {
-  return Boolean(candidate?.deletedAt && !candidate.isSuperAdmin);
+function hasNoAccessAssignments(candidate: ReusableUserCandidate) {
+  return (
+    candidate._count.groupMemberships === 0 &&
+    candidate._count.companyMemberships === 0 &&
+    candidate._count.projectMemberships === 0
+  );
 }
 
-export async function reprovisionDeletedUser(
+export function canReuseUserAccount(candidate: ReusableUserCandidate | null) {
+  if (!candidate || candidate.isSuperAdmin) return false;
+  return Boolean(candidate.deletedAt) || hasNoAccessAssignments(candidate);
+}
+
+export async function reprovisionReusableUser(
   tx: Prisma.TransactionClient,
-  { userId, name, passwordHash, mustChangePassword, title }: ReprovisionDeletedUserInput,
+  { userId, name, passwordHash, mustChangePassword, title }: ReprovisionReusableUserInput,
 ) {
   await tx.groupMembership.deleteMany({ where: { userId } });
   await tx.companyMembership.deleteMany({ where: { userId } });

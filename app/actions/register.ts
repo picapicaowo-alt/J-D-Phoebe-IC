@@ -8,7 +8,7 @@ import { isClerkEnabled } from "@/lib/clerk-config";
 import { ensureMemberOnboardingForCompany } from "@/lib/member-onboarding";
 import { invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { canReuseDeletedUser, findReusableUserCandidateByEmail, reprovisionDeletedUser } from "@/lib/user-account-reuse";
+import { canReuseUserAccount, findReusableUserCandidateByEmail, reprovisionReusableUser } from "@/lib/user-account-reuse";
 
 export type RegisterActionResult =
   | {
@@ -51,7 +51,7 @@ export async function registerAction(formData: FormData): Promise<RegisterAction
   }
 
   const existing = await findReusableUserCandidateByEmail(email);
-  const reusableExisting = canReuseDeletedUser(existing) ? existing : null;
+  const reusableExisting = canReuseUserAccount(existing) ? existing : null;
   if (existing && !reusableExisting) {
     return { ok: false, messageKey: "registerEmailTaken" };
   }
@@ -78,7 +78,7 @@ export async function registerAction(formData: FormData): Promise<RegisterAction
   try {
     const user = await prisma.$transaction(async (tx) => {
       const u = reusableExisting
-        ? await reprovisionDeletedUser(tx, {
+        ? await reprovisionReusableUser(tx, {
             userId: reusableExisting.id,
             name,
             passwordHash,
