@@ -21,7 +21,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       project: { include: { company: true } },
       knowledgeAsset: { include: { author: true } },
       contributor: true,
-      memberOutput: true,
     },
   });
   if (!att) return new NextResponse("Not found", { status: 404 });

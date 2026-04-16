@@ -39,10 +39,6 @@ export async function softDeleteAttachmentAction(formData: FormData) {
     const k = await prisma.knowledgeAsset.findFirst({ where: { id: att.knowledgeAssetId }, select: { projectId: true } });
     if (k?.projectId) revalidatePath(`/projects/${k.projectId}`);
   }
-  if (att.memberOutputId) {
-    const mo = await prisma.memberOutput.findFirst({ where: { id: att.memberOutputId }, select: { userId: true } });
-    if (mo) revalidatePath(`/staff/${mo.userId}`);
-  }
 }
 
 export async function restoreAttachmentTrashAction(formData: FormData) {
@@ -66,9 +62,5 @@ export async function restoreAttachmentTrashAction(formData: FormData) {
   if (att.workflowNodeId) {
     const n = await prisma.workflowNode.findFirst({ where: { id: att.workflowNodeId }, select: { projectId: true } });
     if (n) revalidatePath(`/projects/${n.projectId}`);
-  }
-  if (att.memberOutputId) {
-    const mo = await prisma.memberOutput.findFirst({ where: { id: att.memberOutputId }, select: { userId: true } });
-    if (mo) revalidatePath(`/staff/${mo.userId}`);
   }
 }

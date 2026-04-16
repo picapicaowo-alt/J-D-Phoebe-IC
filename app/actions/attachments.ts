@@ -177,8 +177,9 @@ export async function addExternalResourceLinkAction(formData: FormData) {
 
   const projectId = String(formData.get("projectId") ?? "").trim() || null;
   const knowledgeAssetId = String(formData.get("knowledgeAssetId") ?? "").trim() || null;
-  const memberOutputId = String(formData.get("memberOutputId") ?? "").trim() || null;
-  const scopes = [projectId, knowledgeAssetId, memberOutputId].filter(Boolean);
+  const memberOutputId = String(formData.get("memberOutputId") ?? "").trim();
+  if (memberOutputId) throw new Error("Member outputs are disabled.");
+  const scopes = [projectId, knowledgeAssetId].filter(Boolean);
   if (scopes.length !== 1) throw new Error("Specify exactly one attachment target.");
 
   let previousVersionId: string | null = null;

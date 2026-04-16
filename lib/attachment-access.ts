@@ -1,8 +1,6 @@
 import type { AccessUser } from "@/lib/access";
 import { canEditWorkflow, canViewProject, isSuperAdmin } from "@/lib/access";
-import { canAccessMemberOutput } from "@/lib/member-output-access";
 import { userHasPermission } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
 
 export type AttachmentRow = {
   id: string;
@@ -27,7 +25,6 @@ export async function canViewAttachment(actor: AccessUser, att: AttachmentRow): 
     );
   }
   if (att.contributorUserId) return actor.id === att.contributorUserId;
-  if (att.memberOutputId) return canAccessMemberOutput(actor, att.memberOutputId);
   return false;
 }
 
@@ -43,12 +40,6 @@ export async function canManageAttachment(actor: AccessUser, att: AttachmentRow)
   }
   if (att.knowledgeAsset) {
     return actor.id === att.knowledgeAsset.authorId;
-  }
-  if (att.memberOutputId) {
-    const mo = await prisma.memberOutput.findFirst({ where: { id: att.memberOutputId, deletedAt: null } });
-    if (!mo) return false;
-    if (actor.id === mo.userId) return true;
-    return await userHasPermission(actor, "staff.update");
   }
   if (att.contributorUserId) return actor.id === att.contributorUserId;
   return false;
