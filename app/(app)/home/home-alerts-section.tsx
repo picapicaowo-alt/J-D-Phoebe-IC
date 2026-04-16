@@ -4,17 +4,31 @@ import type { AccessUser } from "@/lib/access";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
+import { getUpcomingInboxReminders } from "@/lib/inbox-reminders";
+
+function formatReminderDate(when: Date, locale: "en" | "zh") {
+  return when.toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
 
 export async function AlertsSection({ user }: { user: AccessUser }) {
   const locale = await getLocale();
-  const [unreadAlertCount, recentUnreadAlerts] = await Promise.all([
+  const [unreadAlertCount, recentUnreadAlerts, reminders] = await Promise.all([
     prisma.inAppNotification.count({ where: { userId: user.id, readAt: null } }),
     prisma.inAppNotification.findMany({
       where: { userId: user.id, readAt: null },
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
+    getUpcomingInboxReminders(user.id, { windowDays: 7, limitPerKind: 3 }),
   ]);
+  const visibleReminders = reminders.slice(0, 4);
+  const totalCount = unreadAlertCount + visibleReminders.length;
 
   return (
     <Card className="border-zinc-200/90 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
@@ -27,10 +41,10 @@ export async function AlertsSection({ user }: { user: AccessUser }) {
           href="/me/notifications"
           className="shrink-0 rounded-lg bg-[hsl(var(--primary))] px-3 py-2 text-base font-semibold text-white shadow-sm hover:opacity-95"
         >
-          {unreadAlertCount ? `${t(locale, "homeAlertsOpen")} (${unreadAlertCount})` : t(locale, "homeAlertsOpen")}
+          {totalCount ? `${t(locale, "homeAlertsOpen")} (${totalCount})` : t(locale, "homeAlertsOpen")}
         </Link>
       </div>
-      {recentUnreadAlerts.length ? (
+      {recentUnreadAlerts.length || visibleReminders.length ? (
         <ul className="mt-3 space-y-2 border-t border-zinc-200/80 pt-3 dark:border-zinc-800">
           {recentUnreadAlerts.map((n) => (
             <li key={n.id} className="text-base text-zinc-800 dark:text-zinc-200">
@@ -42,6 +56,17 @@ export async function AlertsSection({ user }: { user: AccessUser }) {
                 <span className="font-medium">{n.title}</span>
               )}
               {n.body ? <p className="mt-0.5 text-base leading-snug text-zinc-600 dark:text-zinc-400">{n.body}</p> : null}
+            </li>
+          ))}
+          {visibleReminders.map((item) => (
+            <li key={`${item.kind}:${item.id}`} className="text-base text-zinc-800 dark:text-zinc-200">
+              <Link href={item.href} className="font-medium text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-50">
+                {item.kind === "TODO_DUE" ? `[${t(locale, "notificationsReminderTodo")}]` : `[${t(locale, "notificationsReminderMeeting")}]`} {item.title}
+              </Link>
+              <p className="mt-0.5 text-base leading-snug text-zinc-600 dark:text-zinc-400">
+                {t(locale, "notificationsReminderAt")}: {formatReminderDate(item.at, locale)}
+                {item.projectName ? ` · ${t(locale, "notificationsReminderProject")}: ${item.projectName}` : ""}
+              </p>
             </li>
           ))}
         </ul>

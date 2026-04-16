@@ -1,118 +1,95 @@
 import Link from "next/link";
-import type { ProjectStatus } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import type { AccessUser } from "@/lib/access";
 import { Card, CardTitle } from "@/components/ui/card";
-import { getHomeDashboardVisibleProjects } from "@/lib/home-dashboard-data";
+import type { AccessUser } from "@/lib/access";
+import { getHomeDashboardVisibleWorkflowNodes } from "@/lib/home-dashboard-data";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
+import {
+  getWaitingEscalation,
+  isAtRiskNode,
+  isBlockedNode,
+  isExternalWaitingNode,
+  isInternalWaitingNode,
+  isOverdueNode,
+  isPendingApprovalNode,
+  isWaitingNode,
+} from "@/lib/workflow-node-operations";
+
+type SnapshotCard = {
+  href: string;
+  label: string;
+  count: number;
+  tone: string;
+};
 
 export async function HomeExecutionSnapshotSection({ user }: { user: AccessUser }) {
   const locale = await getLocale();
-  const { visibleIds } = await getHomeDashboardVisibleProjects(user);
-  const projectScope = visibleIds.length ? { projectId: { in: visibleIds } } : { projectId: { in: ["__none__"] } };
+  const nodes = await getHomeDashboardVisibleWorkflowNodes(user);
 
-  const [blockedCount, waitingCount, approvalCount, dueSoonCount] = await Promise.all([
-    prisma.workflowNode.count({ where: { deletedAt: null, status: "BLOCKED", ...projectScope } }),
-    prisma.workflowNode.count({
-      where: {
-        deletedAt: null,
-        status: "WAITING",
-        nodeType: { not: "APPROVAL" },
-        ...projectScope,
-      },
-    }),
-    prisma.workflowNode.count({
-      where: {
-        deletedAt: null,
-        nodeType: "APPROVAL",
-        status: { notIn: ["DONE", "SKIPPED", "APPROVED"] },
-        ...projectScope,
-      },
-    }),
-    prisma.project.count({
-      where: {
-        deletedAt: null,
-        id: visibleIds.length ? { in: visibleIds } : { in: ["__none__"] },
-        status: { in: ["PLANNING", "ACTIVE", "AT_RISK", "ON_HOLD"] as ProjectStatus[] },
-        deadline: { lte: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7), not: null },
-      },
-    }),
-  ]);
+  const waitingNodes = nodes.filter((node) => isWaitingNode(node));
+  const cards: SnapshotCard[] = [
+    {
+      href: "/home?snapshot=blocked",
+      label: t(locale, "homeBlockedNodes"),
+      count: nodes.filter((node) => isBlockedNode(node)).length,
+      tone: "text-rose-600 dark:text-rose-400",
+    },
+    {
+      href: "/home?snapshot=approvals",
+      label: t(locale, "homeApprovalsNeeded"),
+      count: nodes.filter((node) => isPendingApprovalNode(node)).length,
+      tone: "text-sky-600 dark:text-sky-400",
+    },
+    {
+      href: "/home?snapshot=waiting-internal",
+      label: t(locale, "homeWaitingInternal"),
+      count: nodes.filter((node) => isInternalWaitingNode(node)).length,
+      tone: "text-amber-700 dark:text-amber-300",
+    },
+    {
+      href: "/home?snapshot=waiting-external",
+      label: t(locale, "homeWaitingExternal"),
+      count: nodes.filter((node) => isExternalWaitingNode(node)).length,
+      tone: "text-orange-700 dark:text-orange-300",
+    },
+    {
+      href: "/home?snapshot=longest",
+      label: t(locale, "homeLongestWaiting"),
+      count: waitingNodes.length,
+      tone: "text-fuchsia-700 dark:text-fuchsia-300",
+    },
+    {
+      href: "/home?snapshot=overdue",
+      label: t(locale, "homeOverdueItems"),
+      count: nodes.filter((node) => isOverdueNode(node)).length,
+      tone: "text-rose-700 dark:text-rose-300",
+    },
+    {
+      href: "/home?snapshot=risk",
+      label: t(locale, "homeRiskItems"),
+      count: nodes.filter((node) => isAtRiskNode(node) || node.isProjectBottleneck || getWaitingEscalation(node)?.level === "warning").length,
+      tone: "text-orange-700 dark:text-orange-300",
+    },
+  ];
 
   return (
-    <Card className="space-y-3 border-zinc-200/90 p-5">
-      <CardTitle className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{t(locale, "homeExecutionSnapshot")}</CardTitle>
-      <ul className="space-y-2 text-base">
-        <li>
+    <Card className="space-y-4 border-zinc-200/90 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <CardTitle className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{t(locale, "homeExecutionSnapshot")}</CardTitle>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">{t(locale, "homeExecutionSnapshotLead")}</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {cards.map((card) => (
           <Link
-            href="/home?snapshot=blocked"
-            className="flex items-center justify-between rounded-lg border border-zinc-100 px-3 py-2 transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900/50"
+            key={card.href}
+            href={card.href}
+            className="rounded-xl border border-zinc-200/80 bg-white/90 p-4 transition hover:-translate-y-0.5 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950/40 dark:hover:bg-zinc-900/70"
           >
-            <span className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-300">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </span>
-              {t(locale, "homeBlockedNodes")}
-            </span>
-            <span className="text-lg font-semibold text-rose-600 dark:text-rose-400">{blockedCount}</span>
+            <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">{card.label}</p>
+            <div className={`mt-2 text-2xl font-semibold ${card.tone}`}>{card.count}</div>
           </Link>
-        </li>
-        <li>
-          <Link
-            href="/home?snapshot=waiting"
-            className="flex items-center justify-between rounded-lg border border-zinc-100 px-3 py-2 transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900/50"
-          >
-            <span className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </span>
-              {t(locale, "homeWaitingList")}
-            </span>
-            <span className="text-lg font-semibold text-amber-600 dark:text-amber-400">{waitingCount}</span>
-          </Link>
-        </li>
-        <li>
-          <Link
-            href="/home?snapshot=approvals"
-            className="flex items-center justify-between rounded-lg border border-zinc-100 px-3 py-2 transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900/50"
-          >
-            <span className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-200">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
-                </svg>
-              </span>
-              {t(locale, "homeApprovalsNeeded")}
-            </span>
-            <span className="text-lg font-semibold text-sky-600 dark:text-sky-400">{approvalCount}</span>
-          </Link>
-        </li>
-        <li>
-          <Link
-            href="/home?snapshot=due"
-            className="flex items-center justify-between rounded-lg border border-zinc-100 px-3 py-2 transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900/50"
-          >
-            <span className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-200">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M12 8v4l2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </span>
-              {t(locale, "homeNearDeadline")}
-            </span>
-            <span className="text-lg font-semibold text-orange-600 dark:text-orange-400">{dueSoonCount}</span>
-          </Link>
-        </li>
-      </ul>
+        ))}
+      </div>
     </Card>
   );
 }

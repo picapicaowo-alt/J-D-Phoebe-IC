@@ -56,10 +56,9 @@ export async function syncProjectTaskRollups(projectId: string) {
   await prisma.$transaction(
     nodes.map((n) => {
       const pct = computed.get(n.id)!;
-      const status = statusFromAggregatedProgress(pct);
       return prisma.workflowNode.update({
         where: { id: n.id },
-        data: { progressPercent: pct, status },
+        data: childrenByParent.get(n.id)?.length ? { progressPercent: pct, status: statusFromAggregatedProgress(pct) } : { progressPercent: pct },
       });
     }),
   );

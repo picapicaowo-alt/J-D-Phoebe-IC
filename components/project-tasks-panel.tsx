@@ -3,7 +3,7 @@
 import { useOptimistic, useState, useTransition, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import type { WorkflowNodeStatus } from "@prisma/client";
+import type { WorkflowNodeLabel, WorkflowNodeStatus } from "@prisma/client";
 import {
   addProjectSubtaskAction,
   addProjectTaskAction,
@@ -16,8 +16,21 @@ import {
 import { statusFromAggregatedProgress } from "@/lib/project-task-progress";
 import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import {
+  EXECUTION_RISK_LABELS,
+  PENDING_APPROVAL_LABELS,
+  WAITING_LABELS,
+  formatWorkflowNodeLabel,
+  getApprovalOwnerDisplay,
+  getOperationalNextAction,
+  getWaitingEscalation,
+  getWaitingOnDisplay,
+  isAtRiskNode,
+  isOverdueNode,
+} from "@/lib/workflow-node-operations";
 
 export type ProjectTaskRow = {
   id: string;
@@ -28,6 +41,18 @@ export type ProjectTaskRow = {
   assigneeId: string | null;
   dueAt: string | null;
   description: string | null;
+  operationalLabels: WorkflowNodeLabel[];
+  waitingStartedAt: string | null;
+  waitingOnUserId: string | null;
+  waitingOnUserName: string | null;
+  waitingOnExternalName: string | null;
+  waitingDetails: string | null;
+  approverId: string | null;
+  approverName: string | null;
+  approvalRequestedAt: string | null;
+  approvalCompletedAt: string | null;
+  nextAction: string | null;
+  isProjectBottleneck: boolean;
   children: ProjectTaskRow[];
 };
 
@@ -55,6 +80,20 @@ export type ProjectTasksCopy = {
   descriptionLabel: string;
   editDetails: string;
   dialogClose: string;
+  statusLabel: string;
+  labelsLabel: string;
+  waitingStartedLabel: string;
+  waitingOnInternalLabel: string;
+  waitingOnExternalLabel: string;
+  waitingDetailsLabel: string;
+  approvalRequestedLabel: string;
+  approvalCompletedLabel: string;
+  approverLabel: string;
+  nextActionLabel: string;
+  bottleneckLabel: string;
+  showOperationalFields: string;
+  statusOptions: { value: WorkflowNodeStatus; label: string }[];
+  labelOptions: { value: WorkflowNodeLabel; label: string }[];
 };
 
 type TaskOptimisticAction =
@@ -80,7 +119,6 @@ function syncTaskNodeRollup(node: ProjectTaskRow): ProjectTaskRow {
       ...node,
       children,
       progressPercent,
-      status: statusFromAggregatedProgress(progressPercent),
     };
   }
   const progressPercent = Math.round(children.reduce((sum, child) => sum + child.progressPercent, 0) / children.length);
@@ -182,6 +220,97 @@ function fmtShortDate(iso: string | null, locale: "en" | "zh") {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-GB", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function formatWaitAge(waitingStartedAt: string | null) {
+  if (!waitingStartedAt) return null;
+  const escalation = getWaitingEscalation({
+    status: "WAITING",
+    operationalLabels: WAITING_LABELS,
+    waitingStartedAt: new Date(waitingStartedAt),
+  });
+  if (!escalation) return null;
+  if (escalation.days === 0) return "0d";
+  return `${escalation.days}d`;
+}
+
+function badgeToneForLabel(label: WorkflowNodeLabel) {
+  if (PENDING_APPROVAL_LABELS.includes(label)) return "info" as const;
+  if (EXECUTION_RISK_LABELS.includes(label)) return label === "AT_RISK" ? ("warn" as const) : ("bad" as const);
+  if (WAITING_LABELS.includes(label)) return "warn" as const;
+  return "neutral" as const;
+}
+
+function statusTone(status: WorkflowNodeStatus) {
+  if (status === "BLOCKED") return "bad" as const;
+  if (status === "WAITING") return "warn" as const;
+  if (status === "APPROVED" || status === "DONE") return "good" as const;
+  if (status === "IN_PROGRESS") return "info" as const;
+  return "neutral" as const;
+}
+
+function taskSummaryBadges(task: ProjectTaskRow) {
+  const labels = task.operationalLabels.slice(0, 3);
+  const waitAge = formatWaitAge(task.waitingStartedAt);
+  return { labels, waitAge };
+}
+
+function TaskOperationalSummary({
+  task,
+  locale,
+}: {
+  task: ProjectTaskRow;
+  locale: "en" | "zh";
+}) {
+  const node = {
+    status: task.status,
+    dueAt: task.dueAt ? new Date(task.dueAt) : null,
+    operationalLabels: task.operationalLabels,
+    waitingStartedAt: task.waitingStartedAt ? new Date(task.waitingStartedAt) : null,
+    waitingOnUser: task.waitingOnUserName ? { name: task.waitingOnUserName } : null,
+    waitingOnExternalName: task.waitingOnExternalName,
+    waitingDetails: task.waitingDetails,
+    approverUser: task.approverName ? { name: task.approverName } : null,
+    approvalRequestedAt: task.approvalRequestedAt ? new Date(task.approvalRequestedAt) : null,
+    nextAction: task.nextAction,
+  };
+  const waitingOn = getWaitingOnDisplay(node);
+  const approver = getApprovalOwnerDisplay(node);
+  const waitEscalation = getWaitingEscalation(node);
+  const badges = taskSummaryBadges(task);
+
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        <Badge tone={statusTone(task.status)}>{task.status.replaceAll("_", " ")}</Badge>
+        {task.isProjectBottleneck ? <Badge tone="bad">Bottleneck</Badge> : null}
+        {labelsToBadges(badges.labels)}
+        {waitEscalation ? (
+          <Badge tone={waitEscalation.level === "blocked" ? "bad" : waitEscalation.level === "warning" ? "warn" : "neutral"}>
+            Waiting {badges.waitAge}
+          </Badge>
+        ) : null}
+        {isOverdueNode(node) ? <Badge tone="bad">Overdue</Badge> : null}
+        {isAtRiskNode(node) ? <Badge tone="warn">At Risk</Badge> : null}
+      </div>
+      {(waitingOn || approver || task.nextAction || task.dueAt) && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[hsl(var(--muted))]">
+          {waitingOn ? <span>Waiting on {waitingOn}</span> : null}
+          {approver ? <span>Approver {approver}</span> : null}
+          {task.dueAt ? <span>Due {fmtShortDate(task.dueAt, locale)}</span> : null}
+          {task.nextAction ? <span>Next {task.nextAction}</span> : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function labelsToBadges(labels: WorkflowNodeLabel[]) {
+  return labels.map((label) => (
+    <Badge key={label} tone={badgeToneForLabel(label)}>
+      {formatWorkflowNodeLabel(label)}
+    </Badge>
+  ));
 }
 
 function ChevronDown({ className }: { className?: string }) {
@@ -320,6 +449,143 @@ function ProgressTrack({ pct, thick = false }: { pct: number; thick?: boolean })
   );
 }
 
+type TaskOperationalFormState = {
+  status: WorkflowNodeStatus;
+  operationalLabels: WorkflowNodeLabel[];
+  waitingStartedAt: string | null;
+  waitingOnUserId: string | null;
+  waitingOnExternalName: string | null;
+  waitingDetails: string | null;
+  approverId: string | null;
+  approvalRequestedAt: string | null;
+  approvalCompletedAt: string | null;
+  nextAction: string | null;
+  isProjectBottleneck: boolean;
+};
+
+function TaskOperationalFields({
+  copy,
+  memberOptions,
+  node,
+  showStatus = true,
+}: {
+  copy: ProjectTasksCopy;
+  memberOptions: { id: string; name: string }[];
+  node: TaskOperationalFormState;
+  showStatus?: boolean;
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border border-[hsl(var(--border))] bg-black/5 p-3 dark:bg-white/5">
+      {showStatus ? (
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.statusLabel}</label>
+          <Select name="status" className="h-10 text-sm" defaultValue={node.status}>
+            {copy.statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+      ) : null}
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.labelsLabel}</label>
+        <div className="grid gap-2 md:grid-cols-2">
+          {copy.labelOptions.map((option) => (
+            <label key={option.value} className="flex items-start gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm">
+              <input
+                type="checkbox"
+                name="operationalLabels"
+                value={option.value}
+                defaultChecked={node.operationalLabels.includes(option.value)}
+                className="mt-0.5"
+              />
+              <span>{option.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingStartedLabel}</label>
+          <Input
+            name="waitingStartedAt"
+            type="datetime-local"
+            defaultValue={isoToDatetimeLocalValue(node.waitingStartedAt)}
+            className="text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingOnInternalLabel}</label>
+          <Select name="waitingOnUserId" className="h-10 text-sm" defaultValue={node.waitingOnUserId ?? ""}>
+            <option value="">—</option>
+            {memberOptions.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingOnExternalLabel}</label>
+          <Input name="waitingOnExternalName" defaultValue={node.waitingOnExternalName ?? ""} className="text-sm" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approverLabel}</label>
+          <Select name="approverUserId" className="h-10 text-sm" defaultValue={node.approverId ?? ""}>
+            <option value="">—</option>
+            {memberOptions.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approvalRequestedLabel}</label>
+          <Input
+            name="approvalRequestedAt"
+            type="datetime-local"
+            defaultValue={isoToDatetimeLocalValue(node.approvalRequestedAt)}
+            className="text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approvalCompletedLabel}</label>
+          <Input
+            name="approvalCompletedAt"
+            type="datetime-local"
+            defaultValue={isoToDatetimeLocalValue(node.approvalCompletedAt)}
+            className="text-sm"
+          />
+        </div>
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingDetailsLabel}</label>
+        <textarea
+          name="waitingDetails"
+          rows={2}
+          defaultValue={node.waitingDetails ?? ""}
+          className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm outline-none ring-[hsl(var(--accent))] focus:ring-2"
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.nextActionLabel}</label>
+        <textarea
+          name="nextAction"
+          rows={2}
+          defaultValue={node.nextAction ?? ""}
+          className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm outline-none ring-[hsl(var(--accent))] focus:ring-2"
+        />
+      </div>
+      <label className="flex items-center gap-2 text-sm text-[hsl(var(--foreground))]">
+        <input type="checkbox" name="isProjectBottleneck" defaultChecked={node.isProjectBottleneck} />
+        {copy.bottleneckLabel}
+      </label>
+    </div>
+  );
+}
+
 function NodeMetaDialog({
   dialogId,
   projectId,
@@ -329,7 +595,7 @@ function NodeMetaDialog({
 }: {
   dialogId: string;
   projectId: string;
-  node: { id: string; description: string | null; dueAt: string | null; assigneeId: string | null };
+  node: { id: string; description: string | null; dueAt: string | null; assigneeId: string | null } & TaskOperationalFormState;
   memberOptions: { id: string; name: string }[];
   copy: ProjectTasksCopy;
 }) {
@@ -390,6 +656,7 @@ function NodeMetaDialog({
             ))}
           </Select>
         </div>
+        <TaskOperationalFields copy={copy} memberOptions={memberOptions} node={node} />
         <div className="flex flex-wrap gap-2 pt-1">
           <FormSubmitButton type="submit" className="min-w-[120px]">
             {copy.saveMeta}
@@ -509,6 +776,13 @@ export function ProjectTasksPanel({
                 const assigneeName = assigneeId ? (memberOptions.find((m) => m.id === assigneeId)?.name ?? null) : null;
                 const dueRaw = String(fd.get("dueAt") ?? "").trim();
                 const dueAt = dueRaw ? new Date(dueRaw).toISOString() : null;
+                const waitingStartedRaw = String(fd.get("waitingStartedAt") ?? "").trim();
+                const approvalRequestedRaw = String(fd.get("approvalRequestedAt") ?? "").trim();
+                const approvalCompletedRaw = String(fd.get("approvalCompletedAt") ?? "").trim();
+                const status = (String(fd.get("status") ?? "").trim() || "NOT_STARTED") as WorkflowNodeStatus;
+                const operationalLabels = fd.getAll("operationalLabels").map((value) => String(value).trim()) as WorkflowNodeLabel[];
+                const waitingOnUserId = String(fd.get("waitingOnUserId") ?? "").trim() || null;
+                const approverId = String(fd.get("approverUserId") ?? "").trim() || null;
                 startOtherTransition(() => {
                   runOptimistic({
                     type: "add-root",
@@ -516,11 +790,23 @@ export function ProjectTasksPanel({
                       id: tempOptimId(),
                       title,
                       progressPercent: 0,
-                      status: "NOT_STARTED",
+                      status,
                       assigneeName,
                       assigneeId: assigneeId || null,
                       dueAt,
                       description: null,
+                      operationalLabels,
+                      waitingStartedAt: waitingStartedRaw ? new Date(waitingStartedRaw).toISOString() : null,
+                      waitingOnUserId,
+                      waitingOnUserName: waitingOnUserId ? (memberOptions.find((m) => m.id === waitingOnUserId)?.name ?? null) : null,
+                      waitingOnExternalName: String(fd.get("waitingOnExternalName") ?? "").trim() || null,
+                      waitingDetails: String(fd.get("waitingDetails") ?? "").trim() || null,
+                      approverId,
+                      approverName: approverId ? (memberOptions.find((m) => m.id === approverId)?.name ?? null) : null,
+                      approvalRequestedAt: approvalRequestedRaw ? new Date(approvalRequestedRaw).toISOString() : null,
+                      approvalCompletedAt: approvalCompletedRaw ? new Date(approvalCompletedRaw).toISOString() : null,
+                      nextAction: String(fd.get("nextAction") ?? "").trim() || null,
+                      isProjectBottleneck: String(fd.get("isProjectBottleneck") ?? "").trim() === "on",
                       children: [],
                     },
                   });
@@ -528,26 +814,58 @@ export function ProjectTasksPanel({
                 });
                 form.reset();
               }}
-              className="flex flex-wrap items-center gap-2"
+              className="space-y-2"
             >
               <input type="hidden" name="projectId" value={projectId} />
-              <Select name="assigneeId" className="h-8 max-w-[160px] text-xs" defaultValue="">
-                <option value="">—</option>
-                {memberOptions.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </Select>
-              <Input name="title" required placeholder={copy.newTaskPh} className="h-8 w-40 text-sm md:w-52" />
-              <label className="flex min-w-[140px] flex-col gap-0.5 text-xs text-[hsl(var(--muted))]">
-                {copy.deadlineOptional}
-                <Input name="dueAt" type="datetime-local" className="h-8 text-xs" />
-              </label>
-              <FormSubmitButton type="submit" variant="secondary" className="h-8 gap-1.5 px-3" disabled={isBusy}>
-                <IconPlus />
-                {copy.addTask}
-              </FormSubmitButton>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input name="title" required placeholder={copy.newTaskPh} className="h-8 w-40 text-sm md:w-52" />
+                <Select name="status" className="h-8 max-w-[160px] text-xs" defaultValue="NOT_STARTED">
+                  {copy.statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <Select name="assigneeId" className="h-8 max-w-[160px] text-xs" defaultValue="">
+                  <option value="">—</option>
+                  {memberOptions.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </Select>
+                <label className="flex min-w-[140px] flex-col gap-0.5 text-xs text-[hsl(var(--muted))]">
+                  {copy.deadlineOptional}
+                  <Input name="dueAt" type="datetime-local" className="h-8 text-xs" />
+                </label>
+                <FormSubmitButton type="submit" variant="secondary" className="h-8 gap-1.5 px-3" disabled={isBusy}>
+                  <IconPlus />
+                  {copy.addTask}
+                </FormSubmitButton>
+              </div>
+              <details className="rounded-lg border border-[hsl(var(--border))] bg-black/5 p-2 dark:bg-white/5">
+                <summary className="cursor-pointer text-xs font-medium text-[hsl(var(--muted))]">{copy.showOperationalFields}</summary>
+                <div className="mt-2">
+                  <TaskOperationalFields
+                    copy={copy}
+                    memberOptions={memberOptions}
+                    showStatus={false}
+                    node={{
+                      status: "NOT_STARTED",
+                      operationalLabels: [],
+                      waitingStartedAt: null,
+                      waitingOnUserId: null,
+                      waitingOnExternalName: null,
+                      waitingDetails: null,
+                      approverId: null,
+                      approvalRequestedAt: null,
+                      approvalCompletedAt: null,
+                      nextAction: null,
+                      isProjectBottleneck: false,
+                    }}
+                  />
+                </div>
+              </details>
             </form>
           </div>
         ) : null}
@@ -563,7 +881,7 @@ export function ProjectTasksPanel({
             const taskDialogId = `task-meta-${task.id}`;
             const taskDone = isComplete(task.status);
             return (
-              <div key={task.id} className="rounded-[10px] border border-[hsl(var(--border))] p-px">
+              <div key={task.id} id={`task-${task.id}`} className="rounded-[10px] border border-[hsl(var(--border))] p-px">
                 <div className="flex flex-wrap items-center gap-3 px-3 py-3 md:flex-nowrap">
                   {canEdit ? (
                     <form
@@ -622,6 +940,7 @@ export function ProjectTasksPanel({
                         {copy.dueShort}: {fmtShortDate(task.dueAt, locale)}
                       </p>
                     ) : null}
+                    <TaskOperationalSummary task={task} locale={locale} />
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <span className="text-sm font-semibold tabular-nums text-[hsl(var(--foreground))]">{task.progressPercent}%</span>
@@ -663,6 +982,17 @@ export function ProjectTasksPanel({
                       description: task.description,
                       dueAt: task.dueAt,
                       assigneeId: task.assigneeId,
+                      status: task.status,
+                      operationalLabels: task.operationalLabels,
+                      waitingStartedAt: task.waitingStartedAt,
+                      waitingOnUserId: task.waitingOnUserId,
+                      waitingOnExternalName: task.waitingOnExternalName,
+                      waitingDetails: task.waitingDetails,
+                      approverId: task.approverId,
+                      approvalRequestedAt: task.approvalRequestedAt,
+                      approvalCompletedAt: task.approvalCompletedAt,
+                      nextAction: task.nextAction,
+                      isProjectBottleneck: task.isProjectBottleneck,
                     }}
                     memberOptions={memberOptions}
                     copy={copy}
@@ -676,7 +1006,7 @@ export function ProjectTasksPanel({
                       const done = isComplete(sub.status);
                       const subDialogId = `task-meta-${sub.id}`;
                       return (
-                        <div key={sub.id}>
+                        <div key={sub.id} id={`task-${sub.id}`}>
                           <div className="flex flex-wrap items-center gap-3 rounded-[10px] bg-slate-50 px-3 py-3 dark:bg-zinc-900/60 sm:ml-16 lg:ml-24 md:flex-nowrap">
                             {canEdit ? (
                               <form
@@ -731,6 +1061,7 @@ export function ProjectTasksPanel({
                                   {copy.dueShort}: {fmtShortDate(sub.dueAt, locale)}
                                 </p>
                               ) : null}
+                              <TaskOperationalSummary task={sub} locale={locale} />
                             </div>
                             <span className="shrink-0 text-sm font-semibold tabular-nums">{sub.progressPercent}%</span>
                             <div className="w-24 shrink-0">
@@ -772,6 +1103,17 @@ export function ProjectTasksPanel({
                                 description: sub.description,
                                 dueAt: sub.dueAt,
                                 assigneeId: sub.assigneeId,
+                                status: sub.status,
+                                operationalLabels: sub.operationalLabels,
+                                waitingStartedAt: sub.waitingStartedAt,
+                                waitingOnUserId: sub.waitingOnUserId,
+                                waitingOnExternalName: sub.waitingOnExternalName,
+                                waitingDetails: sub.waitingDetails,
+                                approverId: sub.approverId,
+                                approvalRequestedAt: sub.approvalRequestedAt,
+                                approvalCompletedAt: sub.approvalCompletedAt,
+                                nextAction: sub.nextAction,
+                                isProjectBottleneck: sub.isProjectBottleneck,
                               }}
                               memberOptions={memberOptions}
                               copy={copy}
@@ -792,6 +1134,13 @@ export function ProjectTasksPanel({
                           const assigneeName = assigneeId ? (memberOptions.find((m) => m.id === assigneeId)?.name ?? null) : null;
                           const dueRaw = String(fd.get("dueAt") ?? "").trim();
                           const dueAt = dueRaw ? new Date(dueRaw).toISOString() : null;
+                          const waitingStartedRaw = String(fd.get("waitingStartedAt") ?? "").trim();
+                          const approvalRequestedRaw = String(fd.get("approvalRequestedAt") ?? "").trim();
+                          const approvalCompletedRaw = String(fd.get("approvalCompletedAt") ?? "").trim();
+                          const status = (String(fd.get("status") ?? "").trim() || "NOT_STARTED") as WorkflowNodeStatus;
+                          const operationalLabels = fd.getAll("operationalLabels").map((value) => String(value).trim()) as WorkflowNodeLabel[];
+                          const waitingOnUserId = String(fd.get("waitingOnUserId") ?? "").trim() || null;
+                          const approverId = String(fd.get("approverUserId") ?? "").trim() || null;
                           startOtherTransition(() => {
                             runOptimistic({
                               type: "add-sub",
@@ -800,11 +1149,23 @@ export function ProjectTasksPanel({
                                 id: tempOptimId(),
                                 title,
                                 progressPercent: 0,
-                                status: "NOT_STARTED",
+                                status,
                                 assigneeName,
                                 assigneeId: assigneeId || null,
                                 dueAt,
                                 description: null,
+                                operationalLabels,
+                                waitingStartedAt: waitingStartedRaw ? new Date(waitingStartedRaw).toISOString() : null,
+                                waitingOnUserId,
+                                waitingOnUserName: waitingOnUserId ? (memberOptions.find((m) => m.id === waitingOnUserId)?.name ?? null) : null,
+                                waitingOnExternalName: String(fd.get("waitingOnExternalName") ?? "").trim() || null,
+                                waitingDetails: String(fd.get("waitingDetails") ?? "").trim() || null,
+                                approverId,
+                                approverName: approverId ? (memberOptions.find((m) => m.id === approverId)?.name ?? null) : null,
+                                approvalRequestedAt: approvalRequestedRaw ? new Date(approvalRequestedRaw).toISOString() : null,
+                                approvalCompletedAt: approvalCompletedRaw ? new Date(approvalCompletedRaw).toISOString() : null,
+                                nextAction: String(fd.get("nextAction") ?? "").trim() || null,
+                                isProjectBottleneck: String(fd.get("isProjectBottleneck") ?? "").trim() === "on",
                                 children: [],
                               },
                             });
@@ -812,26 +1173,60 @@ export function ProjectTasksPanel({
                           });
                           form.reset();
                         }}
-                        className="flex flex-wrap items-center gap-2 pt-1 sm:ml-16 lg:ml-24"
+                        className="space-y-2 pt-1 sm:ml-16 lg:ml-24"
                       >
                         <input type="hidden" name="projectId" value={projectId} />
                         <input type="hidden" name="parentNodeId" value={task.id} />
-                        <Input name="title" required placeholder={copy.newSubPh} className="h-8 max-w-[200px] flex-1 text-sm" />
-                        <Select name="assigneeId" className="h-8 max-w-[160px] text-xs" defaultValue="">
-                          <option value="">—</option>
-                          {memberOptions.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.name}
-                            </option>
-                          ))}
-                        </Select>
-                        <label className="flex flex-col gap-0.5 text-xs text-[hsl(var(--muted))]">
-                          {copy.deadlineOptional}
-                          <Input name="dueAt" type="datetime-local" className="h-8 text-xs" />
-                        </label>
-                        <FormSubmitButton type="submit" variant="secondary" className="h-8" disabled={isBusy}>
-                          {copy.addSubtask}
-                        </FormSubmitButton>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Input name="title" required placeholder={copy.newSubPh} className="h-8 max-w-[200px] flex-1 text-sm" />
+                          <Select name="status" className="h-8 max-w-[160px] text-xs" defaultValue="NOT_STARTED">
+                            {copy.statusOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </Select>
+                          <Select name="assigneeId" className="h-8 max-w-[160px] text-xs" defaultValue="">
+                            <option value="">—</option>
+                            {memberOptions.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </Select>
+                          <label className="flex flex-col gap-0.5 text-xs text-[hsl(var(--muted))]">
+                            {copy.deadlineOptional}
+                            <Input name="dueAt" type="datetime-local" className="h-8 text-xs" />
+                          </label>
+                          <FormSubmitButton type="submit" variant="secondary" className="h-8" disabled={isBusy}>
+                            {copy.addSubtask}
+                          </FormSubmitButton>
+                        </div>
+                        <details className="rounded-lg border border-[hsl(var(--border))] bg-black/5 p-2 dark:bg-white/5">
+                          <summary className="cursor-pointer text-xs font-medium text-[hsl(var(--muted))]">
+                            {copy.showOperationalFields}
+                          </summary>
+                          <div className="mt-2">
+                            <TaskOperationalFields
+                              copy={copy}
+                              memberOptions={memberOptions}
+                              showStatus={false}
+                              node={{
+                                status: "NOT_STARTED",
+                                operationalLabels: [],
+                                waitingStartedAt: null,
+                                waitingOnUserId: null,
+                                waitingOnExternalName: null,
+                                waitingDetails: null,
+                                approverId: null,
+                                approvalRequestedAt: null,
+                                approvalCompletedAt: null,
+                                nextAction: null,
+                                isProjectBottleneck: false,
+                              }}
+                            />
+                          </div>
+                        </details>
                       </form>
                     ) : null}
                   </div>

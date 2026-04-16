@@ -30,6 +30,40 @@ export const getHomeDashboardVisibleProjects = cache(async function getHomeDashb
 
 export const TERMINAL_PROJECT: ProjectStatus[] = ["COMPLETED", "ARCHIVED", "CANCELLED"];
 
+export const getHomeDashboardVisibleWorkflowNodes = cache(async function getHomeDashboardVisibleWorkflowNodes(user: AccessUser) {
+  const { visibleIds } = await getHomeDashboardVisibleProjects(user);
+  if (!visibleIds.length) return [];
+
+  return prisma.workflowNode.findMany({
+    where: {
+      deletedAt: null,
+      projectId: { in: visibleIds },
+      status: { notIn: ["DONE", "SKIPPED"] },
+    },
+    select: {
+      id: true,
+      projectId: true,
+      title: true,
+      status: true,
+      nodeType: true,
+      dueAt: true,
+      operationalLabels: true,
+      waitingStartedAt: true,
+      waitingOnExternalName: true,
+      waitingDetails: true,
+      approvalRequestedAt: true,
+      approvalCompletedAt: true,
+      nextAction: true,
+      isProjectBottleneck: true,
+      project: { select: { id: true, name: true } },
+      assignees: { select: { user: { select: { id: true, name: true } } }, take: 1 },
+      waitingOnUser: { select: { id: true, name: true } },
+      approverUser: { select: { id: true, name: true } },
+    },
+    orderBy: [{ updatedAt: "desc" }],
+  });
+});
+
 export function projectPriorityScore(p: { deadline: Date | null; priority: Priority; status: ProjectStatus }, nowMs: number): number {
   if (TERMINAL_PROJECT.includes(p.status)) return -1e18;
   const dl = p.deadline ? new Date(p.deadline).getTime() : Number.POSITIVE_INFINITY;

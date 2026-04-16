@@ -8,6 +8,13 @@ import { canEditWorkflow, canManageProject, canViewProject, type AccessUser } fr
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { syncProjectTaskRollups } from "@/lib/project-task-progress";
+import {
+  APPROVAL_OUTCOME_LABELS,
+  PENDING_APPROVAL_LABELS,
+  WAITING_LABELS,
+  hasAnyOperationalLabel,
+  normalizeOperationalLabels,
+} from "@/lib/workflow-node-operations";
 
 /** Run rollup + second revalidate after the response is sent so mutations return fast (avoids Vercel / PgBouncer timeouts). */
 function scheduleTaskRollupRevalidate(projectId: string) {
@@ -29,11 +36,50 @@ function requireString(formData: FormData, key: string) {
   return v;
 }
 
-function parseOptionalDueAt(formData: FormData, key = "dueAt"): Date | null {
+function parseOptionalDate(formData: FormData, key = "dueAt"): Date | null {
   const raw = String(formData.get(key) ?? "").trim();
   if (!raw) return null;
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function parseNodeStatus(formData: FormData, key = "status") {
+  const raw = String(formData.get(key) ?? "").trim();
+  const allowed: WorkflowNodeStatus[] = ["NOT_STARTED", "IN_PROGRESS", "WAITING", "BLOCKED", "APPROVED", "DONE", "SKIPPED"];
+  return allowed.includes(raw as WorkflowNodeStatus) ? (raw as WorkflowNodeStatus) : WorkflowNodeStatus.NOT_STARTED;
+}
+
+function parseOperationalInput(formData: FormData, opts?: { nodeType?: WorkflowNodeType }) {
+  const status = parseNodeStatus(formData);
+  const operationalLabels = normalizeOperationalLabels(formData.getAll("operationalLabels").map((value) => String(value).trim()));
+  const hasWaitingState = status === "WAITING" || hasAnyOperationalLabel(operationalLabels, WAITING_LABELS);
+  const hasApprovalState =
+    opts?.nodeType === "APPROVAL" ||
+    hasAnyOperationalLabel(operationalLabels, PENDING_APPROVAL_LABELS) ||
+    hasAnyOperationalLabel(operationalLabels, APPROVAL_OUTCOME_LABELS);
+
+  const waitingStartedAt = hasWaitingState ? parseOptionalDate(formData, "waitingStartedAt") ?? new Date() : null;
+  const waitingOnUserId = hasWaitingState ? String(formData.get("waitingOnUserId") ?? "").trim() || null : null;
+  const waitingOnExternalName = hasWaitingState ? String(formData.get("waitingOnExternalName") ?? "").trim() || null : null;
+  const waitingDetails = hasWaitingState ? String(formData.get("waitingDetails") ?? "").trim() || null : null;
+
+  const approvalRequestedAt = hasApprovalState ? parseOptionalDate(formData, "approvalRequestedAt") ?? new Date() : null;
+  const approvalCompletedAt = hasApprovalState ? parseOptionalDate(formData, "approvalCompletedAt") : null;
+  const approverUserId = hasApprovalState ? String(formData.get("approverUserId") ?? "").trim() || null : null;
+
+  return {
+    status,
+    operationalLabels,
+    waitingStartedAt,
+    waitingOnUserId,
+    waitingOnExternalName,
+    waitingDetails,
+    approvalRequestedAt,
+    approvalCompletedAt,
+    approverUserId,
+    nextAction: String(formData.get("nextAction") ?? "").trim() || null,
+    isProjectBottleneck: String(formData.get("isProjectBottleneck") ?? "").trim() === "on",
+  };
 }
 
 async function defaultLayerId(projectId: string) {
@@ -71,7 +117,8 @@ export async function addProjectTaskAction(formData: FormData) {
   await requireProjectForTasks(user, projectId);
   const title = requireString(formData, "title");
   const assigneeId = String(formData.get("assigneeId") ?? "").trim() || null;
-  const dueAt = parseOptionalDueAt(formData, "dueAt");
+  const dueAt = parseOptionalDate(formData, "dueAt");
+  const operationalInput = parseOperationalInput(formData, { nodeType: WorkflowNodeType.TASK });
 
   const layerId = await defaultLayerId(projectId);
   const maxSort = await prisma.workflowNode.aggregate({
@@ -87,10 +134,20 @@ export async function addProjectTaskAction(formData: FormData) {
       parentNodeId: null,
       nodeType: WorkflowNodeType.TASK,
       title,
-      status: WorkflowNodeStatus.NOT_STARTED,
+      status: operationalInput.status,
       progressPercent: 0,
       sortOrder,
       dueAt,
+      operationalLabels: operationalInput.operationalLabels,
+      waitingStartedAt: operationalInput.waitingStartedAt,
+      waitingOnUserId: operationalInput.waitingOnUserId,
+      waitingOnExternalName: operationalInput.waitingOnExternalName,
+      waitingDetails: operationalInput.waitingDetails,
+      approverUserId: operationalInput.approverUserId,
+      approvalRequestedAt: operationalInput.approvalRequestedAt,
+      approvalCompletedAt: operationalInput.approvalCompletedAt,
+      nextAction: operationalInput.nextAction,
+      isProjectBottleneck: operationalInput.isProjectBottleneck,
     },
   });
 
@@ -116,7 +173,8 @@ export async function addProjectSubtaskAction(formData: FormData) {
   const parentNodeId = requireString(formData, "parentNodeId");
   const title = requireString(formData, "title");
   const assigneeId = String(formData.get("assigneeId") ?? "").trim() || null;
-  const dueAt = parseOptionalDueAt(formData, "dueAt");
+  const dueAt = parseOptionalDate(formData, "dueAt");
+  const operationalInput = parseOperationalInput(formData, { nodeType: WorkflowNodeType.TASK });
 
   const parent = await prisma.workflowNode.findFirst({
     where: { id: parentNodeId, projectId, deletedAt: null },
@@ -137,10 +195,20 @@ export async function addProjectSubtaskAction(formData: FormData) {
       parentNodeId,
       nodeType: WorkflowNodeType.TASK,
       title,
-      status: WorkflowNodeStatus.NOT_STARTED,
+      status: operationalInput.status,
       progressPercent: 0,
       sortOrder,
       dueAt,
+      operationalLabels: operationalInput.operationalLabels,
+      waitingStartedAt: operationalInput.waitingStartedAt,
+      waitingOnUserId: operationalInput.waitingOnUserId,
+      waitingOnExternalName: operationalInput.waitingOnExternalName,
+      waitingDetails: operationalInput.waitingDetails,
+      approverUserId: operationalInput.approverUserId,
+      approvalRequestedAt: operationalInput.approvalRequestedAt,
+      approvalCompletedAt: operationalInput.approvalCompletedAt,
+      nextAction: operationalInput.nextAction,
+      isProjectBottleneck: operationalInput.isProjectBottleneck,
     },
   });
 
@@ -167,16 +235,32 @@ export async function updateWorkflowNodeMetaAction(formData: FormData) {
 
   const node = await prisma.workflowNode.findFirst({
     where: { id: nodeId, projectId, deletedAt: null },
+    select: { id: true, nodeType: true },
   });
   if (!node) throw new Error("Not found");
 
   const description = String(formData.get("description") ?? "").trim() || null;
-  const dueAt = parseOptionalDueAt(formData, "dueAt");
+  const dueAt = parseOptionalDate(formData, "dueAt");
   const assigneeId = String(formData.get("assigneeId") ?? "").trim();
+  const operationalInput = parseOperationalInput(formData, { nodeType: node.nodeType });
 
   await prisma.workflowNode.update({
     where: { id: nodeId },
-    data: { description, dueAt },
+    data: {
+      description,
+      dueAt,
+      status: operationalInput.status,
+      operationalLabels: operationalInput.operationalLabels,
+      waitingStartedAt: operationalInput.waitingStartedAt,
+      waitingOnUserId: operationalInput.waitingOnUserId,
+      waitingOnExternalName: operationalInput.waitingOnExternalName,
+      waitingDetails: operationalInput.waitingDetails,
+      approverUserId: operationalInput.approverUserId,
+      approvalRequestedAt: operationalInput.approvalRequestedAt,
+      approvalCompletedAt: operationalInput.approvalCompletedAt,
+      nextAction: operationalInput.nextAction,
+      isProjectBottleneck: operationalInput.isProjectBottleneck,
+    },
   });
 
   await prisma.workflowNodeAssignee.deleteMany({ where: { workflowNodeId: nodeId } });

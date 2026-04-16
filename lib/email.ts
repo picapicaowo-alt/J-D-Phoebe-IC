@@ -1,9 +1,41 @@
+import nodemailer from "nodemailer";
+
 /**
- * Transactional email via [Resend](https://resend.com). Set RESEND_API_KEY and EMAIL_FROM in production.
- * Without RESEND_API_KEY, OTPs are logged in development only (see staff invite flow).
+ * Transactional email via SMTP or Resend.
+ *
+ * Preferred: SMTP using your company mailbox
+ * - SMTP_HOST
+ * - SMTP_PORT
+ * - SMTP_USER
+ * - SMTP_PASS
+ * - SMTP_SECURE (optional, "true" for implicit TLS)
+ * - EMAIL_FROM
+ *
+ * Fallback: Resend
+ * - RESEND_API_KEY
+ * - EMAIL_FROM
  */
 
 export type SendEmailResult = { ok: true } | { ok: false; error: string };
+
+function getEmailFrom() {
+  return process.env.EMAIL_FROM?.trim() || "Onboarding <onboarding@resend.dev>";
+}
+
+export function getEmailDeliveryMode() {
+  const smtpHost = process.env.SMTP_HOST?.trim();
+  const smtpPort = Number(process.env.SMTP_PORT ?? "");
+  const smtpUser = process.env.SMTP_USER?.trim();
+  const smtpPass = process.env.SMTP_PASS?.trim();
+
+  if (smtpHost && Number.isFinite(smtpPort) && smtpPort > 0 && smtpUser && smtpPass) {
+    return "smtp" as const;
+  }
+  if (process.env.RESEND_API_KEY?.trim()) {
+    return "resend" as const;
+  }
+  return "none" as const;
+}
 
 export async function sendTransactionalEmail(opts: {
   to: string;
@@ -11,37 +43,65 @@ export async function sendTransactionalEmail(opts: {
   text: string;
   html?: string;
 }): Promise<SendEmailResult> {
-  const key = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.EMAIL_FROM?.trim() || "Onboarding <onboarding@resend.dev>";
+  const mode = getEmailDeliveryMode();
+  const from = getEmailFrom();
 
-  if (!key) {
-    if (process.env.NODE_ENV === "production") {
-      return { ok: false, error: "RESEND_API_KEY is not configured." };
+  if (mode === "smtp") {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST!.trim(),
+        port: Number(process.env.SMTP_PORT),
+        secure: String(process.env.SMTP_SECURE ?? "").trim().toLowerCase() === "true" || Number(process.env.SMTP_PORT) === 465,
+        auth: {
+          user: process.env.SMTP_USER!.trim(),
+          pass: process.env.SMTP_PASS!.trim(),
+        },
+      });
+
+      await transporter.sendMail({
+        from,
+        to: opts.to,
+        subject: opts.subject,
+        text: opts.text,
+        ...(opts.html ? { html: opts.html } : {}),
+      });
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: `smtp:${message}` };
     }
-    console.warn("[email] RESEND_API_KEY missing; skipping send to", opts.to);
-    return { ok: false, error: "missing_api_key" };
   }
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: [opts.to],
-      subject: opts.subject,
-      text: opts.text,
-      ...(opts.html ? { html: opts.html } : {}),
-    }),
-  });
+  if (mode === "resend") {
+    const key = process.env.RESEND_API_KEY!.trim();
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [opts.to],
+        subject: opts.subject,
+        text: opts.text,
+        ...(opts.html ? { html: opts.html } : {}),
+      }),
+    });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    return { ok: false, error: body || `HTTP ${res.status}` };
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { ok: false, error: body || `HTTP ${res.status}` };
+    }
+    return { ok: true };
   }
-  return { ok: true };
+
+  if (process.env.NODE_ENV === "production") {
+    return { ok: false, error: "No email provider configured. Set SMTP_* or RESEND_API_KEY." };
+  }
+
+  console.warn("[email] no provider configured; skipping send to", opts.to);
+  return { ok: false, error: "missing_email_provider" };
 }
 
 /** Send the same lifecycle notification to multiple internal addresses (best-effort). */

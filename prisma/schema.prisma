@@ -57,6 +57,24 @@ enum WorkflowNodeType {
   COMPLETED
 }
 
+enum WorkflowNodeLabel {
+  WAITING_ON_RESPONSE
+  WAITING_ON_INTERNAL_TEAM_MEMBER
+  WAITING_ON_EXTERNAL_PARTY
+  WAITING_ON_CLIENT
+  WAITING_ON_VENDOR_PARTNER
+  WAITING_ON_DOCUMENT_MATERIAL
+  PENDING_APPROVAL
+  UNDER_REVIEW
+  APPROVED
+  NEEDS_REVISION
+  REJECTED
+  AT_RISK
+  BLOCKED
+  OVERDUE
+  PAUSED
+}
+
 enum WorkflowEdgeKind {
   DEPENDENCY
   SEQUENTIAL
@@ -337,6 +355,8 @@ model User {
   supervisorForMemberships CompanyMembership[]    @relation("MembershipSupervisor")
   projectMemberships       ProjectMembership[]
   nodeAssignments          WorkflowNodeAssignee[]
+  waitingOnNodes           WorkflowNode[]         @relation("NodeWaitingOnUser")
+  approverForNodes         WorkflowNode[]         @relation("NodeApproverUser")
   ownedProjects            Project[]              @relation("ProjectOwner")
   auditEntries             AuditLogEntry[]        @relation("AuditActor")
   sessions                 Session[]
@@ -586,6 +606,16 @@ model WorkflowNode {
   archivedAt      DateTime?
   deletedAt       DateTime?
   dueAt           DateTime?
+  operationalLabels WorkflowNodeLabel[] @default([])
+  waitingOnUserId  String?
+  waitingOnExternalName String?
+  waitingDetails   String?
+  waitingStartedAt DateTime?
+  approverUserId   String?
+  approvalRequestedAt DateTime?
+  approvalCompletedAt DateTime?
+  nextAction       String?
+  isProjectBottleneck Boolean        @default(false)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
@@ -593,6 +623,8 @@ model WorkflowNode {
   layer        WorkflowLayer?         @relation(fields: [layerId], references: [id], onDelete: SetNull)
   parent       WorkflowNode?          @relation("NodeTree", fields: [parentNodeId], references: [id], onDelete: SetNull)
   children     WorkflowNode[]         @relation("NodeTree")
+  waitingOnUser User?                 @relation("NodeWaitingOnUser", fields: [waitingOnUserId], references: [id], onDelete: SetNull)
+  approverUser User?                  @relation("NodeApproverUser", fields: [approverUserId], references: [id], onDelete: SetNull)
   assignees    WorkflowNodeAssignee[]
   edgesOut     WorkflowEdge[]         @relation("EdgeFrom")
   edgesIn      WorkflowEdge[]         @relation("EdgeTo")
@@ -603,8 +635,11 @@ model WorkflowNode {
   @@index([projectId])
   @@index([projectId, deletedAt, parentNodeId])
   @@index([projectId, deletedAt, status])
+  @@index([projectId, deletedAt, dueAt])
   @@index([layerId])
   @@index([parentNodeId])
+  @@index([waitingOnUserId])
+  @@index([approverUserId])
 }
 
 model WorkflowNodeAssignee {

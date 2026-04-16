@@ -6,15 +6,29 @@ import { t } from "@/lib/messages";
 import { markNotificationReadAction } from "@/app/actions/lifecycle";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { getUpcomingInboxReminders } from "@/lib/inbox-reminders";
+
+function formatReminderDate(when: Date, locale: "en" | "zh") {
+  return when.toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
 
 export default async function NotificationsPage() {
   const user = await requireUser();
   const locale = await getLocale();
-  const rows = await prisma.inAppNotification.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    take: 80,
-  });
+  const [rows, reminders] = await Promise.all([
+    prisma.inAppNotification.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 80,
+    }),
+    getUpcomingInboxReminders(user.id, { windowDays: 7, limitPerKind: 20 }),
+  ]);
 
   return (
     <div className="mx-auto max-w-[1280px] space-y-6">
@@ -44,6 +58,29 @@ export default async function NotificationsPage() {
                     </FormSubmitButton>
                   </form>
                 ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <Card className="rounded-[12px] border border-[hsl(var(--border))] p-5">
+        <CardTitle className="font-display mb-3 text-base font-bold">{t(locale, "notificationsUpcomingTitle")}</CardTitle>
+        {!reminders.length ? (
+          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "notificationsUpcomingEmpty")}</p>
+        ) : (
+          <ul className="divide-y divide-[hsl(var(--border))]">
+            {reminders.map((item) => (
+              <li key={`${item.kind}:${item.id}`} className="py-3 first:pt-0">
+                <p className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
+                  {item.kind === "TODO_DUE" ? t(locale, "notificationsReminderTodo") : t(locale, "notificationsReminderMeeting")}
+                </p>
+                <Link href={item.href} className="mt-1 inline-block text-sm font-medium text-[hsl(var(--foreground))] hover:underline">
+                  {item.title}
+                </Link>
+                <p className="mt-1 text-xs text-[hsl(var(--muted))]">
+                  {t(locale, "notificationsReminderAt")}: {formatReminderDate(item.at, locale)}
+                  {item.projectName ? ` · ${t(locale, "notificationsReminderProject")}: ${item.projectName}` : ""}
+                </p>
               </li>
             ))}
           </ul>

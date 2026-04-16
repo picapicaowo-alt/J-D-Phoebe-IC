@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { KnowledgeLayer, Priority, ProjectRelationType, ProjectStatus, WorkflowNodeStatus } from "@prisma/client";
+import { KnowledgeLayer, Priority, ProjectRelationType, ProjectStatus, WorkflowNodeLabel, WorkflowNodeStatus } from "@prisma/client";
 import { assignMultipleToProjectAction, removeProjectMembershipAction } from "@/app/actions/staff";
 import { softDeleteProjectAction } from "@/app/actions/trash";
 import {
@@ -21,11 +21,12 @@ import { softDeleteAttachmentAction } from "@/app/actions/attachment-trash";
 import { getAppSession, requireUser } from "@/lib/auth";
 import { canEditWorkflow, canManageProject, canViewProject, projectVisibilityWhere, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
-import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tProjectStatus } from "@/lib/messages";
+import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tProjectStatus, tWorkflowNodeStatus } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { calendarHref } from "@/lib/calendar-nav";
@@ -35,6 +36,17 @@ import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launche
 import { UserFace } from "@/components/user-face";
 import { DetailsHashOpener } from "@/components/details-hash-opener";
 import { type ProjectTaskRow } from "@/components/project-tasks-panel";
+import {
+  formatWorkflowNodeLabel,
+  getApprovalOwnerDisplay,
+  getOperationalNextAction,
+  getWaitingEscalation,
+  getWaitingOnDisplay,
+  isAtRiskNode,
+  isBlockedNode,
+  isOverdueNode,
+  isPendingApprovalNode,
+} from "@/lib/workflow-node-operations";
 import {
   ProjectProgressBar,
   ProjectProgressDisplay,
@@ -70,6 +82,25 @@ const KNOWLEDGE_LAYERS: KnowledgeLayer[] = [
   "REUSABLE_OUTPUT",
 ];
 
+const TASK_STATUS_OPTIONS: WorkflowNodeStatus[] = ["NOT_STARTED", "IN_PROGRESS", "WAITING", "BLOCKED", "APPROVED", "DONE", "SKIPPED"];
+const TASK_LABEL_OPTIONS: WorkflowNodeLabel[] = [
+  "WAITING_ON_RESPONSE",
+  "WAITING_ON_INTERNAL_TEAM_MEMBER",
+  "WAITING_ON_EXTERNAL_PARTY",
+  "WAITING_ON_CLIENT",
+  "WAITING_ON_VENDOR_PARTNER",
+  "WAITING_ON_DOCUMENT_MATERIAL",
+  "PENDING_APPROVAL",
+  "UNDER_REVIEW",
+  "APPROVED",
+  "NEEDS_REVISION",
+  "REJECTED",
+  "AT_RISK",
+  "BLOCKED",
+  "OVERDUE",
+  "PAUSED",
+];
+
 type TaskNodeRow = {
   id: string;
   title: string;
@@ -79,6 +110,18 @@ type TaskNodeRow = {
   sortOrder: number;
   dueAt: Date | null;
   description: string | null;
+  operationalLabels: WorkflowNodeLabel[];
+  waitingStartedAt: Date | null;
+  waitingOnUserId: string | null;
+  waitingOnExternalName: string | null;
+  waitingDetails: string | null;
+  approverUserId: string | null;
+  approvalRequestedAt: Date | null;
+  approvalCompletedAt: Date | null;
+  nextAction: string | null;
+  isProjectBottleneck: boolean;
+  waitingOnUser: { id: string; name: string } | null;
+  approverUser: { id: string; name: string } | null;
   assignees: { user: { id: string; name: string } }[];
 };
 
@@ -102,6 +145,18 @@ function buildProjectTaskRows(nodes: TaskNodeRow[]): ProjectTaskRow[] {
       assigneeId: n.assignees[0]?.user?.id ?? null,
       dueAt: n.dueAt ? n.dueAt.toISOString() : null,
       description: n.description ?? null,
+      operationalLabels: n.operationalLabels,
+      waitingStartedAt: n.waitingStartedAt ? n.waitingStartedAt.toISOString() : null,
+      waitingOnUserId: n.waitingOnUserId,
+      waitingOnUserName: n.waitingOnUser?.name ?? null,
+      waitingOnExternalName: n.waitingOnExternalName,
+      waitingDetails: n.waitingDetails,
+      approverId: n.approverUserId,
+      approverName: n.approverUser?.name ?? null,
+      approvalRequestedAt: n.approvalRequestedAt ? n.approvalRequestedAt.toISOString() : null,
+      approvalCompletedAt: n.approvalCompletedAt ? n.approvalCompletedAt.toISOString() : null,
+      nextAction: n.nextAction,
+      isProjectBottleneck: n.isProjectBottleneck,
       children: walk(n.id),
     }));
   }
@@ -126,6 +181,140 @@ function priorityTone(p: Priority): string {
     return "bg-amber-500/90 text-amber-950 ring-1 ring-amber-500/40";
   }
   return "bg-zinc-200 text-zinc-800 ring-1 ring-zinc-300 dark:bg-zinc-700 dark:text-zinc-100";
+}
+
+function findTaskById(rows: ProjectTaskRow[], taskId: string | null): ProjectTaskRow | null {
+  if (!taskId) return null;
+  for (const row of rows) {
+    if (row.id === taskId) return row;
+    const child = findTaskById(row.children, taskId);
+    if (child) return child;
+  }
+  return null;
+}
+
+function formatShortDate(dateLike: string | null, locale: Locale) {
+  if (!dateLike) return null;
+  const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-GB", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function TaskSpotlightCard({
+  task,
+  projectId,
+  projectName,
+  locale,
+}: {
+  task: ProjectTaskRow;
+  projectId: string;
+  projectName: string;
+  locale: Locale;
+}) {
+  const node = {
+    status: task.status,
+    dueAt: task.dueAt ? new Date(task.dueAt) : null,
+    operationalLabels: task.operationalLabels,
+    waitingStartedAt: task.waitingStartedAt ? new Date(task.waitingStartedAt) : null,
+    waitingOnUser: task.waitingOnUserName ? { name: task.waitingOnUserName } : null,
+    waitingOnExternalName: task.waitingOnExternalName,
+    waitingDetails: task.waitingDetails,
+    approverUser: task.approverName ? { name: task.approverName } : null,
+    approvalRequestedAt: task.approvalRequestedAt ? new Date(task.approvalRequestedAt) : null,
+    nextAction: task.nextAction,
+  };
+  const waitingEscalation = getWaitingEscalation(node);
+  const waitingOn = getWaitingOnDisplay(node) ?? "Not recorded";
+  const approver = getApprovalOwnerDisplay(node);
+  const issue =
+    isBlockedNode(node)
+      ? "This task is blocked."
+      : isPendingApprovalNode(node)
+        ? "This task is waiting on approval."
+        : waitingEscalation?.level === "warning"
+          ? "This task has been waiting long enough to need follow-up."
+          : isOverdueNode(node)
+            ? "This task is overdue."
+            : isAtRiskNode(node)
+              ? "This task has delivery risk."
+              : "This task needs operational follow-up.";
+
+  return (
+    <Card className="space-y-4 border-amber-300/70 bg-amber-50/70 p-5 dark:border-amber-900/60 dark:bg-amber-950/20">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <CardTitle className="text-base font-semibold">Task Spotlight</CardTitle>
+          <p className="mt-1 text-sm text-[hsl(var(--muted))]">{projectName}</p>
+        </div>
+        <Link href={`/projects/${projectId}#task-${task.id}`} className="text-sm font-medium text-[hsl(var(--primary))] hover:underline">
+          Jump to task
+        </Link>
+      </div>
+      <div className="space-y-3">
+        <div>
+          <p className="text-lg font-semibold text-[hsl(var(--foreground))]">{task.title}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Badge tone={isBlockedNode(node) ? "bad" : isPendingApprovalNode(node) ? "info" : isAtRiskNode(node) ? "warn" : "neutral"}>
+              {task.status.replaceAll("_", " ")}
+            </Badge>
+            {task.isProjectBottleneck ? <Badge tone="bad">Project bottleneck</Badge> : null}
+            {task.operationalLabels.map((label) => (
+              <Badge key={label} tone={label === "AT_RISK" ? "warn" : label === "BLOCKED" || label === "OVERDUE" ? "bad" : "neutral"}>
+                {formatWorkflowNodeLabel(label)}
+              </Badge>
+            ))}
+          </div>
+        </div>
+        <dl className="grid gap-3 md:grid-cols-2">
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">Issue</dt>
+            <dd className="mt-1 text-sm text-[hsl(var(--foreground))]">{issue}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">Belongs to</dt>
+            <dd className="mt-1 text-sm text-[hsl(var(--foreground))]">{projectName}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">Current state</dt>
+            <dd className="mt-1 text-sm text-[hsl(var(--foreground))]">
+              {isBlockedNode(node)
+                ? "Blocked"
+                : isPendingApprovalNode(node)
+                  ? "Pending approval"
+                  : waitingEscalation
+                    ? waitingEscalation.level === "warning"
+                      ? "Waiting / aging"
+                      : waitingEscalation.level === "blocked"
+                        ? "Waiting / escalated"
+                        : "Waiting"
+                    : task.status.replaceAll("_", " ")}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">Waiting on</dt>
+            <dd className="mt-1 text-sm text-[hsl(var(--foreground))]">{waitingOn}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">How long</dt>
+            <dd className="mt-1 text-sm text-[hsl(var(--foreground))]">
+              {waitingEscalation ? `${waitingEscalation.days} day${waitingEscalation.days === 1 ? "" : "s"} waiting` : "Not in waiting state"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">Next action</dt>
+            <dd className="mt-1 text-sm text-[hsl(var(--foreground))]">{getOperationalNextAction(node)}</dd>
+          </div>
+        </dl>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-[hsl(var(--muted))]">
+          {task.assigneeName ? <span>Assignee: {task.assigneeName}</span> : null}
+          {approver ? <span>Approver: {approver}</span> : null}
+          {task.dueAt ? <span>Due: {formatShortDate(task.dueAt, locale)}</span> : null}
+          {task.approvalRequestedAt ? <span>Approval requested: {formatShortDate(task.approvalRequestedAt, locale)}</span> : null}
+          {task.approvalCompletedAt ? <span>Approval completed: {formatShortDate(task.approvalCompletedAt, locale)}</span> : null}
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 const knowledgeAssetSelect = {
@@ -154,8 +343,14 @@ const projectAttachmentSelect = {
   createdAt: true,
 } as const;
 
-export default async function ProjectDetailPage({ params }: { params: Promise<{ projectId: string }> }) {
-  const [user, { projectId }] = await Promise.all([requireUser() as Promise<AccessUser>, params]);
+export default async function ProjectDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ task?: string }>;
+}) {
+  const [user, { projectId }, sp] = await Promise.all([requireUser() as Promise<AccessUser>, params, searchParams]);
   const localePromise = getLocale();
   const sessionPromise = getAppSession();
   const permissionPromise = Promise.all([
@@ -238,6 +433,18 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           sortOrder: true,
           dueAt: true,
           description: true,
+          operationalLabels: true,
+          waitingStartedAt: true,
+          waitingOnUserId: true,
+          waitingOnExternalName: true,
+          waitingDetails: true,
+          approverUserId: true,
+          approvalRequestedAt: true,
+          approvalCompletedAt: true,
+          nextAction: true,
+          isProjectBottleneck: true,
+          waitingOnUser: { select: { id: true, name: true } },
+          approverUser: { select: { id: true, name: true } },
           assignees: { select: { user: { select: { id: true, name: true } } } },
         },
       },
@@ -381,6 +588,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const knowledgeTotalCount = ownKnowledge.length + sharedKnowledgeInbound.length;
   const filesTotalCount = projectFiles.length + sharedAttachmentInbound.length;
   const taskRows = buildProjectTaskRows(project.nodes);
+  const focusedTask = findTaskById(taskRows, String(sp.task ?? "").trim() || null);
   const daysLeft = daysLeftLine(project.deadline, locale);
   const priorityClass = priorityTone(project.priority);
 
@@ -442,6 +650,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           ) : null}
         </div>
       </div>
+
+      {focusedTask ? <TaskSpotlightCard task={focusedTask} projectId={project.id} projectName={project.name} locale={locale} /> : null}
 
       <ProjectProgressProvider initialTasks={taskRows}>
         <div className="overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm">
@@ -586,6 +796,23 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             descriptionLabel: t(locale, "commonDescription"),
             editDetails: t(locale, "projTaskEditDetails"),
             dialogClose: t(locale, "kbDialogClose"),
+            statusLabel: t(locale, "commonStatus"),
+            labelsLabel: t(locale, "projTaskLabelsLabel"),
+            waitingStartedLabel: t(locale, "projTaskWaitingStartedLabel"),
+            waitingOnInternalLabel: t(locale, "projTaskWaitingInternalLabel"),
+            waitingOnExternalLabel: t(locale, "projTaskWaitingExternalLabel"),
+            waitingDetailsLabel: t(locale, "projTaskWaitingDetailsLabel"),
+            approvalRequestedLabel: t(locale, "projTaskApprovalRequestedLabel"),
+            approvalCompletedLabel: t(locale, "projTaskApprovalCompletedLabel"),
+            approverLabel: t(locale, "projTaskApproverLabel"),
+            nextActionLabel: t(locale, "projTaskNextActionLabel"),
+            bottleneckLabel: t(locale, "projTaskBottleneckLabel"),
+            showOperationalFields: t(locale, "projTaskOperationalToggle"),
+            statusOptions: TASK_STATUS_OPTIONS.map((value) => ({
+              value,
+              label: tWorkflowNodeStatus(locale, value),
+            })),
+            labelOptions: TASK_LABEL_OPTIONS.map((value) => ({ value, label: formatWorkflowNodeLabel(value) })),
           }}
         />
       </ProjectProgressProvider>
