@@ -18,6 +18,7 @@ import { statusFromAggregatedProgress } from "@/lib/project-task-progress";
 import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
@@ -375,7 +376,7 @@ function DropdownMenu({
   buttonContent,
   buttonAriaLabel,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode | ((args: { closeMenu: () => void }) => React.ReactNode);
   buttonContent: React.ReactNode;
   buttonAriaLabel?: string;
 }) {
@@ -383,6 +384,7 @@ function DropdownMenu({
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
+  const closeMenu = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     if (!open) return;
@@ -420,9 +422,10 @@ function DropdownMenu({
             ref={menuRef}
             style={{ position: "absolute", top: pos.top, left: pos.left, transform: "translateX(-100%)", zIndex: 9999 }}
             className="min-w-[180px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 shadow-md"
-            onClick={() => setOpen(false)}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
           >
-            {children}
+            {typeof children === "function" ? children({ closeMenu }) : children}
           </div>,
           document.body,
         )}
@@ -970,6 +973,7 @@ export function ProjectTasksPanel({
   const [, startToggleTransition] = useTransition();
   const [optimisticTasks, runOptimistic] = useOptimistic(tasks, applyTasksOptimistic);
   const [submittingKeys, setSubmittingKeys] = useState<Record<string, boolean>>({});
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newSubtaskTitles, setNewSubtaskTitles] = useState<Record<string, string>>({});
   const isBusy = isOtherPending || Object.values(submittingKeys).some(Boolean);
@@ -1021,8 +1025,16 @@ export function ProjectTasksPanel({
   const runTrackedMutation = useCallback(
     async (key: string, action: () => Promise<void>) => {
       setSubmitting(key, true);
+      setMutationError(null);
       try {
         await action();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Something went wrong";
+        console.error(`[project-tasks:${key}]`, error);
+        setMutationError(message);
+        if (typeof window !== "undefined") {
+          window.alert(message);
+        }
       } finally {
         setSubmitting(key, false);
         refreshRoute();
@@ -1184,6 +1196,7 @@ export function ProjectTasksPanel({
           </div>
         ) : null}
       </div>
+      {mutationError ? <p className="px-4 pt-3 text-sm text-rose-600 dark:text-rose-400">{mutationError}</p> : null}
 
       <div className="space-y-3 p-4">
         {!optimisticTasks.length ? (
@@ -1263,34 +1276,53 @@ export function ProjectTasksPanel({
                   </div>
                   {canEdit ? (
                     <DropdownMenu buttonContent={<IconMore />}>
-                      <OpenDialogButton
-                        dialogId={taskDetailsDialogId}
-                        className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                      >
-                        {copy.editDetails}
-                      </OpenDialogButton>
-                      <OpenDialogButton
-                        dialogId={taskLabelsDialogId}
-                        className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                      >
-                        {copy.editLabels}
-                      </OpenDialogButton>
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const fd = new FormData(e.currentTarget);
-                          startToggleTransition(() => {
-                            runOptimistic({ type: "delete", nodeId: task.id });
-                            void runTrackedMutation(`delete:${task.id}`, () => deleteProjectTaskAction(fd));
-                          });
-                        }}
-                      >
-                        <input type="hidden" name="projectId" value={projectId} />
-                        <input type="hidden" name="nodeId" value={task.id} />
-                        <FormSubmitButton type="submit" variant="ghost" className="h-8 w-full justify-start text-sm text-rose-600">
-                          {copy.deleteTask}
-                        </FormSubmitButton>
-                      </form>
+                      {({ closeMenu }) => (
+                        <>
+                          <div onClick={closeMenu}>
+                            <OpenDialogButton
+                              dialogId={taskDetailsDialogId}
+                              className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                            >
+                              {copy.editDetails}
+                            </OpenDialogButton>
+                          </div>
+                          <div onClick={closeMenu}>
+                            <OpenDialogButton
+                              dialogId={taskLabelsDialogId}
+                              className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                            >
+                              {copy.editLabels}
+                            </OpenDialogButton>
+                          </div>
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                            }}
+                          >
+                            <input type="hidden" name="projectId" value={projectId} />
+                            <input type="hidden" name="nodeId" value={task.id} />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="h-8 w-full justify-start text-sm text-rose-600"
+                              disabled={isSubmitting(`delete:${task.id}`)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                const fd = new FormData();
+                                fd.set("projectId", projectId);
+                                fd.set("nodeId", task.id);
+                                closeMenu();
+                                startToggleTransition(() => {
+                                  runOptimistic({ type: "delete", nodeId: task.id });
+                                  void runTrackedMutation(`delete:${task.id}`, () => deleteProjectTaskAction(fd));
+                                });
+                              }}
+                            >
+                              {copy.deleteTask}
+                            </Button>
+                          </form>
+                        </>
+                      )}
                     </DropdownMenu>
                   ) : null}
                 </div>
@@ -1403,34 +1435,53 @@ export function ProjectTasksPanel({
                             </div>
                             {canEdit ? (
                               <DropdownMenu buttonContent={<IconMore />}>
-                                <OpenDialogButton
-                                  dialogId={subDetailsDialogId}
-                                  className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                                >
-                                  {copy.editDetails}
-                                </OpenDialogButton>
-                                <OpenDialogButton
-                                  dialogId={subLabelsDialogId}
-                                  className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                                >
-                                  {copy.editLabels}
-                                </OpenDialogButton>
-                                <form
-                                  onSubmit={(e) => {
-                                    e.preventDefault();
-                                    const fd = new FormData(e.currentTarget);
-                                    startToggleTransition(() => {
-                                      runOptimistic({ type: "delete", nodeId: sub.id });
-                                      void runTrackedMutation(`delete:${sub.id}`, () => deleteProjectTaskAction(fd));
-                                    });
-                                  }}
-                                >
-                                  <input type="hidden" name="projectId" value={projectId} />
-                                  <input type="hidden" name="nodeId" value={sub.id} />
-                                  <FormSubmitButton type="submit" variant="ghost" className="h-8 w-full justify-start text-sm text-rose-600">
-                                    {copy.deleteTask}
-                                  </FormSubmitButton>
-                                </form>
+                                {({ closeMenu }) => (
+                                  <>
+                                    <div onClick={closeMenu}>
+                                      <OpenDialogButton
+                                        dialogId={subDetailsDialogId}
+                                        className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                                      >
+                                        {copy.editDetails}
+                                      </OpenDialogButton>
+                                    </div>
+                                    <div onClick={closeMenu}>
+                                      <OpenDialogButton
+                                        dialogId={subLabelsDialogId}
+                                        className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                                      >
+                                        {copy.editLabels}
+                                      </OpenDialogButton>
+                                    </div>
+                                    <form
+                                      onSubmit={(e) => {
+                                        e.preventDefault();
+                                      }}
+                                    >
+                                      <input type="hidden" name="projectId" value={projectId} />
+                                      <input type="hidden" name="nodeId" value={sub.id} />
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="h-8 w-full justify-start text-sm text-rose-600"
+                                        disabled={isSubmitting(`delete:${sub.id}`)}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          const fd = new FormData();
+                                          fd.set("projectId", projectId);
+                                          fd.set("nodeId", sub.id);
+                                          closeMenu();
+                                          startToggleTransition(() => {
+                                            runOptimistic({ type: "delete", nodeId: sub.id });
+                                            void runTrackedMutation(`delete:${sub.id}`, () => deleteProjectTaskAction(fd));
+                                          });
+                                        }}
+                                      >
+                                        {copy.deleteTask}
+                                      </Button>
+                                    </form>
+                                  </>
+                                )}
                               </DropdownMenu>
                             ) : null}
                           </div>
