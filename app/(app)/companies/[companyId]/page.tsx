@@ -19,9 +19,17 @@ import { t, tCompanyStatus, tKnowledgeLayer, tProjectStatus } from "@/lib/messag
 
 const COMPANY_STATUSES: CompanyStatus[] = ["ACTIVE", "ARCHIVED", "SUSPENDED"];
 
-export default async function CompanyDetailPage({ params }: { params: Promise<{ companyId: string }> }) {
+export default async function CompanyDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ companyId: string }>;
+  searchParams?: Promise<{ uploadError?: string | string[] }>;
+}) {
   const user = (await requireUser()) as AccessUser;
   const { companyId } = await params;
+  const sp = (await searchParams) ?? {};
+  const uploadError = Array.isArray(sp.uploadError) ? sp.uploadError[0] : sp.uploadError;
 
   const company = await prisma.company.findFirst({
     where: { id: companyId, deletedAt: null },
@@ -86,8 +94,14 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
           <div className="space-y-2 border-b border-[hsl(var(--border))] pb-4">
             <p className="text-xs font-medium">{t(locale, "profileLogoLabel")}</p>
             <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileLogoHelp")}</p>
+            {uploadError ? (
+              <p className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-900 dark:text-rose-100">
+                {uploadError}
+              </p>
+            ) : null}
             <form action={uploadCompanyLogoAction} encType="multipart/form-data" className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="companyId" value={company.id} />
+              <input type="hidden" name="returnTo" value={`/companies/${company.id}`} />
               <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" className="max-w-xs text-xs" />
               <FormSubmitButton type="submit" variant="secondary" className="h-9 text-xs">
                 {t(locale, "btnSave")}

@@ -98,7 +98,9 @@ export async function HomeSnapshotSection({ user, snapshot }: { user: AccessUser
                             ? "At risk"
                             : node.status.replaceAll("_", " ");
             const issue =
-              isBlockedNode(node)
+              node.waitingDetails?.trim()
+                ? node.waitingDetails.trim()
+                : isBlockedNode(node)
                 ? "This work is blocked and needs intervention."
                 : isPendingApprovalNode(node)
                   ? "This work is waiting for a review decision."

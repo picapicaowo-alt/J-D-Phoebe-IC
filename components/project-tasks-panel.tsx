@@ -91,9 +91,15 @@ export type ProjectTasksCopy = {
   approverLabel: string;
   nextActionLabel: string;
   bottleneckLabel: string;
-  showOperationalFields: string;
   statusOptions: { value: WorkflowNodeStatus; label: string }[];
   labelOptions: { value: WorkflowNodeLabel; label: string }[];
+  labelGroupWaiting: string;
+  labelGroupApproval: string;
+  labelGroupRisk: string;
+  mentionPlaceholder: string;
+  externalPlaceholder: string;
+  waitingDetailsPlaceholder: string;
+  nextActionPlaceholder: string;
 };
 
 type TaskOptimisticAction =
@@ -453,7 +459,7 @@ type TaskOperationalFormState = {
   status: WorkflowNodeStatus;
   operationalLabels: WorkflowNodeLabel[];
   waitingStartedAt: string | null;
-  waitingOnUserId: string | null;
+  waitingOnUserMention: string | null;
   waitingOnExternalName: string | null;
   waitingDetails: string | null;
   approverId: string | null;
@@ -468,12 +474,20 @@ function TaskOperationalFields({
   memberOptions,
   node,
   showStatus = true,
+  mentionListId,
 }: {
   copy: ProjectTasksCopy;
   memberOptions: { id: string; name: string }[];
   node: TaskOperationalFormState;
   showStatus?: boolean;
+  mentionListId: string;
 }) {
+  const waitingLabelOptions = copy.labelOptions.filter((option) => WAITING_LABELS.includes(option.value));
+  const approvalLabelOptions = copy.labelOptions.filter(
+    (option) => PENDING_APPROVAL_LABELS.includes(option.value) || ["APPROVED", "NEEDS_REVISION", "REJECTED"].includes(option.value),
+  );
+  const riskLabelOptions = copy.labelOptions.filter((option) => EXECUTION_RISK_LABELS.includes(option.value));
+
   return (
     <div className="space-y-3 rounded-lg border border-[hsl(var(--border))] bg-black/5 p-3 dark:bg-white/5">
       {showStatus ? (
@@ -490,21 +504,65 @@ function TaskOperationalFields({
       ) : null}
       <div className="space-y-1">
         <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.labelsLabel}</label>
-        <div className="grid gap-2 md:grid-cols-2">
-          {copy.labelOptions.map((option) => (
-            <label key={option.value} className="flex items-start gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm">
-              <input
-                type="checkbox"
-                name="operationalLabels"
-                value={option.value}
-                defaultChecked={node.operationalLabels.includes(option.value)}
-                className="mt-0.5"
-              />
-              <span>{option.label}</span>
-            </label>
-          ))}
+        <div className="space-y-3">
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[hsl(var(--muted))]">{copy.labelGroupWaiting}</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              {waitingLabelOptions.map((option) => (
+                <label key={option.value} className="flex items-start gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="operationalLabels"
+                    value={option.value}
+                    defaultChecked={node.operationalLabels.includes(option.value)}
+                    className="mt-0.5"
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[hsl(var(--muted))]">{copy.labelGroupApproval}</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              {approvalLabelOptions.map((option) => (
+                <label key={option.value} className="flex items-start gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="operationalLabels"
+                    value={option.value}
+                    defaultChecked={node.operationalLabels.includes(option.value)}
+                    className="mt-0.5"
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[hsl(var(--muted))]">{copy.labelGroupRisk}</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              {riskLabelOptions.map((option) => (
+                <label key={option.value} className="flex items-start gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="operationalLabels"
+                    value={option.value}
+                    defaultChecked={node.operationalLabels.includes(option.value)}
+                    className="mt-0.5"
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
+      <datalist id={mentionListId}>
+        {memberOptions.map((m) => (
+          <option key={m.id} value={`@${m.name}`} />
+        ))}
+      </datalist>
       <div className="grid gap-3 md:grid-cols-2">
         <div className="space-y-1">
           <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingStartedLabel}</label>
@@ -517,18 +575,22 @@ function TaskOperationalFields({
         </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingOnInternalLabel}</label>
-          <Select name="waitingOnUserId" className="h-10 text-sm" defaultValue={node.waitingOnUserId ?? ""}>
-            <option value="">—</option>
-            {memberOptions.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </Select>
+          <Input
+            name="waitingOnUserMention"
+            list={mentionListId}
+            defaultValue={node.waitingOnUserMention ?? ""}
+            placeholder={copy.mentionPlaceholder}
+            className="text-sm"
+          />
         </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingOnExternalLabel}</label>
-          <Input name="waitingOnExternalName" defaultValue={node.waitingOnExternalName ?? ""} className="text-sm" />
+          <Input
+            name="waitingOnExternalName"
+            defaultValue={node.waitingOnExternalName ?? ""}
+            placeholder={copy.externalPlaceholder}
+            className="text-sm"
+          />
         </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approverLabel}</label>
@@ -566,6 +628,7 @@ function TaskOperationalFields({
           name="waitingDetails"
           rows={2}
           defaultValue={node.waitingDetails ?? ""}
+          placeholder={copy.waitingDetailsPlaceholder}
           className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm outline-none ring-[hsl(var(--accent))] focus:ring-2"
         />
       </div>
@@ -575,6 +638,7 @@ function TaskOperationalFields({
           name="nextAction"
           rows={2}
           defaultValue={node.nextAction ?? ""}
+          placeholder={copy.nextActionPlaceholder}
           className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm outline-none ring-[hsl(var(--accent))] focus:ring-2"
         />
       </div>
@@ -656,7 +720,12 @@ function NodeMetaDialog({
             ))}
           </Select>
         </div>
-        <TaskOperationalFields copy={copy} memberOptions={memberOptions} node={node} />
+        <TaskOperationalFields
+          copy={copy}
+          memberOptions={memberOptions}
+          node={node}
+          mentionListId={`waiting-mention-${node.id}`}
+        />
         <div className="flex flex-wrap gap-2 pt-1">
           <FormSubmitButton type="submit" className="min-w-[120px]">
             {copy.saveMeta}
@@ -781,7 +850,7 @@ export function ProjectTasksPanel({
                 const approvalCompletedRaw = String(fd.get("approvalCompletedAt") ?? "").trim();
                 const status = (String(fd.get("status") ?? "").trim() || "NOT_STARTED") as WorkflowNodeStatus;
                 const operationalLabels = fd.getAll("operationalLabels").map((value) => String(value).trim()) as WorkflowNodeLabel[];
-                const waitingOnUserId = String(fd.get("waitingOnUserId") ?? "").trim() || null;
+                const waitingOnUserMention = String(fd.get("waitingOnUserMention") ?? "").trim() || null;
                 const approverId = String(fd.get("approverUserId") ?? "").trim() || null;
                 startOtherTransition(() => {
                   runOptimistic({
@@ -797,8 +866,8 @@ export function ProjectTasksPanel({
                       description: null,
                       operationalLabels,
                       waitingStartedAt: waitingStartedRaw ? new Date(waitingStartedRaw).toISOString() : null,
-                      waitingOnUserId,
-                      waitingOnUserName: waitingOnUserId ? (memberOptions.find((m) => m.id === waitingOnUserId)?.name ?? null) : null,
+                      waitingOnUserId: null,
+                      waitingOnUserName: waitingOnUserMention ? waitingOnUserMention.replace(/^@+/, "").trim() || null : null,
                       waitingOnExternalName: String(fd.get("waitingOnExternalName") ?? "").trim() || null,
                       waitingDetails: String(fd.get("waitingDetails") ?? "").trim() || null,
                       approverId,
@@ -843,29 +912,25 @@ export function ProjectTasksPanel({
                   {copy.addTask}
                 </FormSubmitButton>
               </div>
-              <details className="rounded-lg border border-[hsl(var(--border))] bg-black/5 p-2 dark:bg-white/5">
-                <summary className="cursor-pointer text-xs font-medium text-[hsl(var(--muted))]">{copy.showOperationalFields}</summary>
-                <div className="mt-2">
-                  <TaskOperationalFields
-                    copy={copy}
-                    memberOptions={memberOptions}
-                    showStatus={false}
-                    node={{
-                      status: "NOT_STARTED",
-                      operationalLabels: [],
-                      waitingStartedAt: null,
-                      waitingOnUserId: null,
-                      waitingOnExternalName: null,
-                      waitingDetails: null,
-                      approverId: null,
-                      approvalRequestedAt: null,
-                      approvalCompletedAt: null,
-                      nextAction: null,
-                      isProjectBottleneck: false,
-                    }}
-                  />
-                </div>
-              </details>
+              <TaskOperationalFields
+                copy={copy}
+                memberOptions={memberOptions}
+                showStatus={false}
+                mentionListId="waiting-mention-new-root"
+                node={{
+                  status: "NOT_STARTED",
+                  operationalLabels: [],
+                  waitingStartedAt: null,
+                  waitingOnUserMention: null,
+                  waitingOnExternalName: null,
+                  waitingDetails: null,
+                  approverId: null,
+                  approvalRequestedAt: null,
+                  approvalCompletedAt: null,
+                  nextAction: null,
+                  isProjectBottleneck: false,
+                }}
+              />
             </form>
           </div>
         ) : null}
@@ -985,7 +1050,7 @@ export function ProjectTasksPanel({
                       status: task.status,
                       operationalLabels: task.operationalLabels,
                       waitingStartedAt: task.waitingStartedAt,
-                      waitingOnUserId: task.waitingOnUserId,
+                      waitingOnUserMention: task.waitingOnUserName ? `@${task.waitingOnUserName}` : null,
                       waitingOnExternalName: task.waitingOnExternalName,
                       waitingDetails: task.waitingDetails,
                       approverId: task.approverId,
@@ -1106,7 +1171,7 @@ export function ProjectTasksPanel({
                                 status: sub.status,
                                 operationalLabels: sub.operationalLabels,
                                 waitingStartedAt: sub.waitingStartedAt,
-                                waitingOnUserId: sub.waitingOnUserId,
+                                waitingOnUserMention: sub.waitingOnUserName ? `@${sub.waitingOnUserName}` : null,
                                 waitingOnExternalName: sub.waitingOnExternalName,
                                 waitingDetails: sub.waitingDetails,
                                 approverId: sub.approverId,
@@ -1139,7 +1204,7 @@ export function ProjectTasksPanel({
                           const approvalCompletedRaw = String(fd.get("approvalCompletedAt") ?? "").trim();
                           const status = (String(fd.get("status") ?? "").trim() || "NOT_STARTED") as WorkflowNodeStatus;
                           const operationalLabels = fd.getAll("operationalLabels").map((value) => String(value).trim()) as WorkflowNodeLabel[];
-                          const waitingOnUserId = String(fd.get("waitingOnUserId") ?? "").trim() || null;
+                          const waitingOnUserMention = String(fd.get("waitingOnUserMention") ?? "").trim() || null;
                           const approverId = String(fd.get("approverUserId") ?? "").trim() || null;
                           startOtherTransition(() => {
                             runOptimistic({
@@ -1156,8 +1221,8 @@ export function ProjectTasksPanel({
                                 description: null,
                                 operationalLabels,
                                 waitingStartedAt: waitingStartedRaw ? new Date(waitingStartedRaw).toISOString() : null,
-                                waitingOnUserId,
-                                waitingOnUserName: waitingOnUserId ? (memberOptions.find((m) => m.id === waitingOnUserId)?.name ?? null) : null,
+                                waitingOnUserId: null,
+                                waitingOnUserName: waitingOnUserMention ? waitingOnUserMention.replace(/^@+/, "").trim() || null : null,
                                 waitingOnExternalName: String(fd.get("waitingOnExternalName") ?? "").trim() || null,
                                 waitingDetails: String(fd.get("waitingDetails") ?? "").trim() || null,
                                 approverId,
@@ -1202,31 +1267,25 @@ export function ProjectTasksPanel({
                             {copy.addSubtask}
                           </FormSubmitButton>
                         </div>
-                        <details className="rounded-lg border border-[hsl(var(--border))] bg-black/5 p-2 dark:bg-white/5">
-                          <summary className="cursor-pointer text-xs font-medium text-[hsl(var(--muted))]">
-                            {copy.showOperationalFields}
-                          </summary>
-                          <div className="mt-2">
-                            <TaskOperationalFields
-                              copy={copy}
-                              memberOptions={memberOptions}
-                              showStatus={false}
-                              node={{
-                                status: "NOT_STARTED",
-                                operationalLabels: [],
-                                waitingStartedAt: null,
-                                waitingOnUserId: null,
-                                waitingOnExternalName: null,
-                                waitingDetails: null,
-                                approverId: null,
-                                approvalRequestedAt: null,
-                                approvalCompletedAt: null,
-                                nextAction: null,
-                                isProjectBottleneck: false,
-                              }}
-                            />
-                          </div>
-                        </details>
+                        <TaskOperationalFields
+                          copy={copy}
+                          memberOptions={memberOptions}
+                          showStatus={false}
+                          mentionListId={`waiting-mention-sub-${task.id}`}
+                          node={{
+                            status: "NOT_STARTED",
+                            operationalLabels: [],
+                            waitingStartedAt: null,
+                            waitingOnUserMention: null,
+                            waitingOnExternalName: null,
+                            waitingDetails: null,
+                            approverId: null,
+                            approvalRequestedAt: null,
+                            approvalCompletedAt: null,
+                            nextAction: null,
+                            isProjectBottleneck: false,
+                          }}
+                        />
                       </form>
                     ) : null}
                   </div>

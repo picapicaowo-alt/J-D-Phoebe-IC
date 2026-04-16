@@ -134,9 +134,16 @@ export function isOverdueNode(node: WorkflowNodeOperationalShape, now = new Date
 }
 
 export function getWaitingOnDisplay(node: WorkflowNodeOperationalShape) {
-  if (node.waitingOnUser?.name) return `@${node.waitingOnUser.name}`;
-  if (node.waitingOnExternalName) return node.waitingOnExternalName;
-  if (node.waitingDetails) return node.waitingDetails;
+  const actor = node.waitingOnUser?.name
+    ? `@${node.waitingOnUser.name}`
+    : node.waitingOnExternalName
+      ? node.waitingOnExternalName
+      : null;
+  const detail = node.waitingDetails?.trim() || null;
+
+  if (actor && detail) return `${actor} — ${detail}`;
+  if (actor) return actor;
+  if (detail) return detail;
   return null;
 }
 

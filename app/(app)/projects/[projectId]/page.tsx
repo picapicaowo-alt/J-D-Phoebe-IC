@@ -227,7 +227,9 @@ function TaskSpotlightCard({
   const waitingOn = getWaitingOnDisplay(node) ?? "Not recorded";
   const approver = getApprovalOwnerDisplay(node);
   const issue =
-    isBlockedNode(node)
+    task.waitingDetails?.trim()
+      ? task.waitingDetails.trim()
+      : isBlockedNode(node)
       ? "This task is blocked."
       : isPendingApprovalNode(node)
         ? "This task is waiting on approval."
@@ -601,10 +603,13 @@ export default async function ProjectDetailPage({
     <div className="space-y-6">
       <DetailsHashOpener />
       <div className="text-xs text-[hsl(var(--muted))]">
-        <Link href="/projects">{t(locale, "projBreadcrumbProjects")}</Link> / {project.name}
+        <Link href="/home">{t(locale, "navHome")}</Link> / <Link href="/projects">{t(locale, "projBreadcrumbProjects")}</Link> / {project.name}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <Link href="/home" className={secondaryBtn}>
+          {t(locale, "navHome")}
+        </Link>
         {canManage ? (
           <a href="#section-edit-project" className={primaryBtn}>
             {t(locale, "projEditProject")}
@@ -807,12 +812,18 @@ export default async function ProjectDetailPage({
             approverLabel: t(locale, "projTaskApproverLabel"),
             nextActionLabel: t(locale, "projTaskNextActionLabel"),
             bottleneckLabel: t(locale, "projTaskBottleneckLabel"),
-            showOperationalFields: t(locale, "projTaskOperationalToggle"),
             statusOptions: TASK_STATUS_OPTIONS.map((value) => ({
               value,
               label: tWorkflowNodeStatus(locale, value),
             })),
             labelOptions: TASK_LABEL_OPTIONS.map((value) => ({ value, label: formatWorkflowNodeLabel(value) })),
+            labelGroupWaiting: t(locale, "projTaskLabelGroupWaiting"),
+            labelGroupApproval: t(locale, "projTaskLabelGroupApproval"),
+            labelGroupRisk: t(locale, "projTaskLabelGroupRisk"),
+            mentionPlaceholder: t(locale, "projTaskMentionPlaceholder"),
+            externalPlaceholder: t(locale, "projTaskExternalPlaceholder"),
+            waitingDetailsPlaceholder: t(locale, "projTaskWaitingDetailsPlaceholder"),
+            nextActionPlaceholder: t(locale, "projTaskNextActionPlaceholder"),
           }}
         />
       </ProjectProgressProvider>

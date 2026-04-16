@@ -37,9 +37,17 @@ import { AbilityRadar } from "@/components/ability-radar";
 import { UserFace } from "@/components/user-face";
 import { FeedbackSecondarySelect } from "@/components/feedback-secondary-select";
 
-export default async function StaffDetailPage({ params }: { params: Promise<{ userId: string }> }) {
+export default async function StaffDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ userId: string }>;
+  searchParams?: Promise<{ uploadError?: string | string[] }>;
+}) {
   const actor = (await requireUser()) as AccessUser;
   const { userId } = await params;
+  const sp = (await searchParams) ?? {};
+  const uploadError = Array.isArray(sp.uploadError) ? sp.uploadError[0] : sp.uploadError;
 
   const target = await prisma.user.findFirst({
     where: { id: userId, deletedAt: null },
@@ -195,8 +203,14 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ us
           <div className="space-y-2 border-b border-[hsl(var(--border))] pb-4">
             <p className="text-xs font-medium">{t(locale, "profileAvatarLabel")}</p>
             <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileAvatarHelp")}</p>
+            {uploadError ? (
+              <p className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-900 dark:text-rose-100">
+                {uploadError}
+              </p>
+            ) : null}
             <form action={uploadUserAvatarAction} encType="multipart/form-data" className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="userId" value={target.id} />
+              <input type="hidden" name="returnTo" value={`/staff/${target.id}`} />
               <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" className="max-w-xs text-xs" />
               <FormSubmitButton type="submit" variant="secondary" className="h-9 text-xs">
                 {t(locale, "btnSave")}

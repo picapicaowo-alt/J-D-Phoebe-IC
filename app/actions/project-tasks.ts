@@ -49,7 +49,27 @@ function parseNodeStatus(formData: FormData, key = "status") {
   return allowed.includes(raw as WorkflowNodeStatus) ? (raw as WorkflowNodeStatus) : WorkflowNodeStatus.NOT_STARTED;
 }
 
-function parseOperationalInput(formData: FormData, opts?: { nodeType?: WorkflowNodeType }) {
+async function resolveMentionedUserId(projectId: string, mentionRaw: string | null) {
+  const mention = mentionRaw?.trim();
+  if (!mention) return null;
+  const normalized = mention.replace(/^@+/, "").trim().toLowerCase();
+  if (!normalized) return null;
+
+  const memberships = await prisma.projectMembership.findMany({
+    where: { projectId },
+    select: { userId: true, user: { select: { id: true, name: true, email: true } } },
+  });
+
+  const match = memberships.find((membership) => {
+    const name = membership.user.name.trim().toLowerCase();
+    const email = membership.user.email.trim().toLowerCase();
+    return name === normalized || email === normalized || `@${name}` === `@${normalized}`;
+  });
+
+  return match?.userId ?? null;
+}
+
+async function parseOperationalInput(formData: FormData, projectId: string, opts?: { nodeType?: WorkflowNodeType }) {
   const status = parseNodeStatus(formData);
   const operationalLabels = normalizeOperationalLabels(formData.getAll("operationalLabels").map((value) => String(value).trim()));
   const hasWaitingState = status === "WAITING" || hasAnyOperationalLabel(operationalLabels, WAITING_LABELS);
@@ -59,7 +79,8 @@ function parseOperationalInput(formData: FormData, opts?: { nodeType?: WorkflowN
     hasAnyOperationalLabel(operationalLabels, APPROVAL_OUTCOME_LABELS);
 
   const waitingStartedAt = hasWaitingState ? parseOptionalDate(formData, "waitingStartedAt") ?? new Date() : null;
-  const waitingOnUserId = hasWaitingState ? String(formData.get("waitingOnUserId") ?? "").trim() || null : null;
+  const waitingOnUserMention = hasWaitingState ? String(formData.get("waitingOnUserMention") ?? "").trim() || null : null;
+  const waitingOnUserId = hasWaitingState ? await resolveMentionedUserId(projectId, waitingOnUserMention) : null;
   const waitingOnExternalName = hasWaitingState ? String(formData.get("waitingOnExternalName") ?? "").trim() || null : null;
   const waitingDetails = hasWaitingState ? String(formData.get("waitingDetails") ?? "").trim() || null : null;
 
@@ -118,7 +139,7 @@ export async function addProjectTaskAction(formData: FormData) {
   const title = requireString(formData, "title");
   const assigneeId = String(formData.get("assigneeId") ?? "").trim() || null;
   const dueAt = parseOptionalDate(formData, "dueAt");
-  const operationalInput = parseOperationalInput(formData, { nodeType: WorkflowNodeType.TASK });
+  const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: WorkflowNodeType.TASK });
 
   const layerId = await defaultLayerId(projectId);
   const maxSort = await prisma.workflowNode.aggregate({
@@ -174,7 +195,7 @@ export async function addProjectSubtaskAction(formData: FormData) {
   const title = requireString(formData, "title");
   const assigneeId = String(formData.get("assigneeId") ?? "").trim() || null;
   const dueAt = parseOptionalDate(formData, "dueAt");
-  const operationalInput = parseOperationalInput(formData, { nodeType: WorkflowNodeType.TASK });
+  const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: WorkflowNodeType.TASK });
 
   const parent = await prisma.workflowNode.findFirst({
     where: { id: parentNodeId, projectId, deletedAt: null },
@@ -242,7 +263,7 @@ export async function updateWorkflowNodeMetaAction(formData: FormData) {
   const description = String(formData.get("description") ?? "").trim() || null;
   const dueAt = parseOptionalDate(formData, "dueAt");
   const assigneeId = String(formData.get("assigneeId") ?? "").trim();
-  const operationalInput = parseOperationalInput(formData, { nodeType: node.nodeType });
+  const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: node.nodeType });
 
   await prisma.workflowNode.update({
     where: { id: nodeId },
