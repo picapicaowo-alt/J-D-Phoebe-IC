@@ -8,7 +8,9 @@ import {
   removeCompanyMembershipAction,
   removeProjectMembershipAction,
   updateCompanyMembershipDepartmentAction,
+  updateCompanyMembershipRoleAction,
   updateCompanyMembershipSupervisorAction,
+  updateProjectMembershipRoleAction,
   updateStaffAction,
 } from "@/app/actions/staff";
 import {
@@ -123,7 +125,12 @@ export default async function StaffDetailPage({
   });
   const projectRoles = await prisma.roleDefinition.findMany({
     where: { appliesScope: "PROJECT" },
+    orderBy: { displayName: "asc" },
   });
+  const defaultCompanyRoleId =
+    companyRoles.find((r) => r.key === "COMPANY_CONTRIBUTOR")?.id ?? companyRoles[0]?.id ?? "";
+  const defaultProjectRoleId =
+    projectRoles.find((r) => r.key === "PROJECT_CONTRIBUTOR")?.id ?? projectRoles[0]?.id ?? "";
 
   const canSoftDelete =
     (await userHasPermission(actor, "staff.soft_delete")) &&
@@ -393,7 +400,7 @@ export default async function StaffDetailPage({
                 </option>
               ))}
             </Select>
-            <Select name="roleDefinitionId" required className="min-w-[200px]">
+            <Select name="roleDefinitionId" required defaultValue={defaultCompanyRoleId} className="min-w-[200px]">
               {companyRoles.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.displayName}
@@ -478,7 +485,7 @@ export default async function StaffDetailPage({
                 </option>
               ))}
             </Select>
-            <Select name="roleDefinitionId" required className="min-w-[200px]">
+            <Select name="roleDefinitionId" required defaultValue={defaultProjectRoleId} className="min-w-[200px]">
               {projectRoles.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.displayName}
@@ -529,6 +536,25 @@ export default async function StaffDetailPage({
                     </form>
                   ) : null}
                 </div>
+                {canAssignCompanyUI ? (
+                  <form action={updateCompanyMembershipRoleAction} className="flex flex-wrap items-end gap-2 text-xs">
+                    <input type="hidden" name="userId" value={target.id} />
+                    <input type="hidden" name="companyId" value={m.companyId} />
+                    <div className="min-w-[180px] flex-1 space-y-1">
+                      <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "commonRole")}</label>
+                      <Select name="roleDefinitionId" defaultValue={m.roleDefinitionId} className="h-8 text-xs">
+                        {companyRoles.map((role) => (
+                          <option key={role.id} value={role.id}>
+                            {role.displayName}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                      {t(locale, "btnSave")}
+                    </FormSubmitButton>
+                  </form>
+                ) : null}
                 {canAssignCompanyUI ? (
                   <form action={updateCompanyMembershipDepartmentAction} className="flex flex-wrap items-end gap-2 text-xs">
                     <input type="hidden" name="userId" value={target.id} />
@@ -582,19 +608,40 @@ export default async function StaffDetailPage({
           <CardTitle>{t(locale, "projProjectMemberships")}</CardTitle>
           <ul className="mt-2 space-y-2 text-sm">
             {target.projectMemberships.map((m) => (
-              <li key={m.id} className="flex flex-wrap items-center justify-between gap-2">
-                <span>
-                  <Link className="hover:underline" href={`/projects/${m.projectId}`}>
-                    {m.project.company.name} · {m.project.name}
-                  </Link>{" "}
-                  — {m.roleDefinition.displayName}
-                </span>
+              <li key={m.id} className="space-y-2 rounded-md border border-[hsl(var(--border))] p-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    <Link className="hover:underline" href={`/projects/${m.projectId}`}>
+                      {m.project.company.name} · {m.project.name}
+                    </Link>{" "}
+                    — {m.roleDefinition.displayName}
+                  </span>
+                  {canAssignProjectUI ? (
+                    <form action={removeProjectMembershipAction}>
+                      <input type="hidden" name="userId" value={target.id} />
+                      <input type="hidden" name="projectId" value={m.projectId} />
+                      <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                        {t(locale, "btnRemove")}
+                      </FormSubmitButton>
+                    </form>
+                  ) : null}
+                </div>
                 {canAssignProjectUI ? (
-                  <form action={removeProjectMembershipAction}>
+                  <form action={updateProjectMembershipRoleAction} className="flex flex-wrap items-end gap-2 text-xs">
                     <input type="hidden" name="userId" value={target.id} />
                     <input type="hidden" name="projectId" value={m.projectId} />
-                    <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
-                      {t(locale, "btnRemove")}
+                    <div className="min-w-[180px] flex-1 space-y-1">
+                      <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "commonRole")}</label>
+                      <Select name="roleDefinitionId" defaultValue={m.roleDefinitionId} className="h-8 text-xs">
+                        {projectRoles.map((role) => (
+                          <option key={role.id} value={role.id}>
+                            {role.displayName}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                      {t(locale, "btnSave")}
                     </FormSubmitButton>
                   </form>
                 ) : null}

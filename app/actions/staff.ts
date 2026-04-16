@@ -190,6 +190,55 @@ export async function updateCompanyMembershipDepartmentAction(formData: FormData
   revalidatePath("/staff");
 }
 
+export async function updateCompanyMembershipRoleAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  await assertPermission(actor, "staff.assign_company");
+  const userId = requireString(formData, "userId");
+  const companyId = requireString(formData, "companyId");
+  const roleDefinitionId = requireString(formData, "roleDefinitionId");
+
+  const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
+  if (!company) throw new Error("Company not found");
+  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, company.orgGroupId) && !isCompanyAdmin(actor, companyId)) {
+    throw new Error("Forbidden");
+  }
+
+  const [membership, role] = await Promise.all([
+    prisma.companyMembership.findUnique({
+      where: { userId_companyId: { userId, companyId } },
+      include: { roleDefinition: true },
+    }),
+    prisma.roleDefinition.findFirst({
+      where: { id: roleDefinitionId, appliesScope: "COMPANY" },
+    }),
+  ]);
+  if (!membership) throw new Error("User is not a member of this company");
+  if (!role) throw new Error("Invalid company role");
+
+  if (membership.roleDefinitionId !== role.id) {
+    await writeAudit({
+      actorId: actor.id,
+      entityType: "USER",
+      entityId: userId,
+      action: "COMPANY_ROLE_UPDATE",
+      meta: JSON.stringify({
+        companyId,
+        oldRoleKey: membership.roleDefinition.key,
+        newRoleKey: role.key,
+      }),
+    });
+  }
+
+  await prisma.companyMembership.update({
+    where: { id: membership.id },
+    data: { roleDefinitionId: role.id },
+  });
+  invalidatePermissionCache(userId);
+  revalidatePath(`/staff/${userId}`);
+  revalidatePath(`/companies/${companyId}`);
+  revalidatePath("/staff");
+}
+
 export async function assignProjectAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
   await assertPermission(actor, "staff.assign_project");
@@ -218,6 +267,66 @@ export async function assignProjectAction(formData: FormData) {
     where: { userId_projectId: { userId, projectId } },
     create: { userId, projectId, roleDefinitionId },
     update: { roleDefinitionId },
+  });
+  invalidatePermissionCache(userId);
+  revalidatePath(`/staff/${userId}`);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function updateProjectMembershipRoleAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  await assertPermission(actor, "staff.assign_project");
+  const userId = requireString(formData, "userId");
+  const projectId = requireString(formData, "projectId");
+  const roleDefinitionId = requireString(formData, "roleDefinitionId");
+
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    include: { company: true },
+  });
+  if (!project) throw new Error("Project not found");
+
+  const isPmOnProject = actor.projectMemberships.some(
+    (m) => m.projectId === project.id && m.roleDefinition.key === "PROJECT_MANAGER",
+  );
+  if (
+    !isSuperAdmin(actor) &&
+    !isGroupAdmin(actor, project.company.orgGroupId) &&
+    !isCompanyAdmin(actor, project.companyId) &&
+    !isPmOnProject
+  ) {
+    throw new Error("Forbidden");
+  }
+
+  const [membership, role] = await Promise.all([
+    prisma.projectMembership.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+      include: { roleDefinition: true },
+    }),
+    prisma.roleDefinition.findFirst({
+      where: { id: roleDefinitionId, appliesScope: "PROJECT" },
+    }),
+  ]);
+  if (!membership) throw new Error("User is not a member of this project");
+  if (!role) throw new Error("Invalid project role");
+
+  if (membership.roleDefinitionId !== role.id) {
+    await writeAudit({
+      actorId: actor.id,
+      entityType: "USER",
+      entityId: userId,
+      action: "PROJECT_ROLE_UPDATE",
+      meta: JSON.stringify({
+        projectId,
+        oldRoleKey: membership.roleDefinition.key,
+        newRoleKey: role.key,
+      }),
+    });
+  }
+
+  await prisma.projectMembership.update({
+    where: { id: membership.id },
+    data: { roleDefinitionId: role.id },
   });
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);

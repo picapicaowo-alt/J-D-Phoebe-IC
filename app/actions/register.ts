@@ -20,6 +20,8 @@ export type RegisterActionResult =
     }
   | null;
 
+const DEFAULT_REGISTER_ROLE_KEY = "COMPANY_CONTRIBUTOR";
+
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -60,7 +62,7 @@ export async function registerAction(formData: FormData): Promise<RegisterAction
   });
 
   const role = await prisma.roleDefinition.findUnique({
-    where: { key: "COMPANY_CONTRIBUTOR" },
+    where: { key: DEFAULT_REGISTER_ROLE_KEY },
   });
 
   if (!company || !role) {
