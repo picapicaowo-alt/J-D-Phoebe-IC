@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { loginAction } from "@/app/actions/auth";
 import { isClerkEnabled } from "@/lib/clerk-config";
+import { getLocale } from "@/lib/locale";
+import { t } from "@/lib/messages";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,12 +11,14 @@ import { Input } from "@/components/ui/input";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; reset?: string }>;
 }) {
   if (isClerkEnabled()) redirect("/sign-in");
 
+  const locale = await getLocale();
   const sp = await searchParams;
   const err = sp.error;
+  const reset = sp.reset;
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-16">
@@ -38,6 +42,11 @@ export default async function LoginPage({
               This account uses SSO. Sign in with the configured provider instead.
             </p>
           ) : null}
+          {reset === "success" ? (
+            <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+              {t(locale, "passwordResetSuccess")}
+            </p>
+          ) : null}
           <div className="space-y-1">
             <label className="text-xs font-medium text-[hsl(var(--muted))]" htmlFor="email">
               Email
@@ -50,12 +59,22 @@ export default async function LoginPage({
             </label>
             <Input id="password" name="password" type="password" autoComplete="current-password" required />
           </div>
+          <div className="flex justify-end">
+            <Link href="/forgot-password" className="text-xs font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline">
+              {t(locale, "passwordForgotLink")}
+            </Link>
+          </div>
           <FormSubmitButton type="submit" className="w-full" pendingLabel="Signing in…">
             Continue
           </FormSubmitButton>
         </form>
         <p className="text-xs text-[hsl(var(--muted))]">
           Demo accounts use password <span className="font-mono text-[hsl(var(--foreground))]">demo1234</span> after seed.
+        </p>
+        <p className="text-sm text-[hsl(var(--muted))]">
+          <Link className="underline" href="/register">
+            {t(locale, "homeRegisterLink")}
+          </Link>
         </p>
       </Card>
 

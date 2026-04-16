@@ -4,6 +4,7 @@ import { removeUserAvatarAction, uploadUserAvatarAction } from "@/app/actions/pr
 import { updateStaffAction } from "@/app/actions/staff";
 import { requireUser } from "@/lib/auth";
 import type { AccessUser } from "@/lib/access";
+import { isClerkEnabled } from "@/lib/clerk-config";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { prisma } from "@/lib/prisma";
@@ -95,6 +96,18 @@ export default async function ProfileSettingsPage() {
             {t(locale, "staffSave")}
           </FormSubmitButton>
         </form>
+      </Card>
+
+      <Card className="space-y-3 p-5">
+        <CardTitle className="text-base">{t(locale, "profileSecurityTitle")}</CardTitle>
+        <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "profileSecurityLead")}</p>
+        {isClerkEnabled() ? (
+          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "profilePasswordManagedBySso")}</p>
+        ) : (
+          <Link href="/settings/change-password" className="inline-block text-sm font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline">
+            {t(locale, "settingsChangePasswordManage")}
+          </Link>
+        )}
       </Card>
 
       <Card className="space-y-3 p-5">
