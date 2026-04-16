@@ -31,7 +31,12 @@ function redirectWithUploadError(formData: FormData, fallbackPath: string, error
 }
 
 async function persistImage(buf: Buffer, mime: string, folder: string): Promise<string> {
-  if (!ALLOWED.has(mime)) throw new Error("Only JPEG, PNG, WebP, or GIF images are allowed.");
+  if (!ALLOWED.has(mime)) {
+    if (mime === "image/heic" || mime === "image/heif") {
+      throw new Error("HEIC/HEIF is not supported yet. Please convert to JPEG, PNG, WebP, or GIF.");
+    }
+    throw new Error("Only JPEG, PNG, WebP, or GIF images are allowed.");
+  }
   if (buf.length > MAX_BYTES) throw new Error("Image is too large (max 6MB).");
 
   if (process.env.BLOB_READ_WRITE_TOKEN) {

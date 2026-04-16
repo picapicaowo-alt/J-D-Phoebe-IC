@@ -7,12 +7,11 @@ import { getEmailDeliveryMode, sendTransactionalEmail } from "@/lib/email";
 import { createPasswordResetToken, getAppBaseUrl, parsePasswordResetToken, verifyPasswordResetToken } from "@/lib/password-reset";
 import { prisma } from "@/lib/prisma";
 
-export async function loginAction(formData: FormData) {
-  const email = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase();
-  const password = String(formData.get("password") ?? "");
+type LoginCheckResult =
+  | { ok: true; userId: string; redirectTo: string }
+  | { ok: false; reason: "invalid" | "sso" };
 
+async function verifyLoginCredentials(email: string, password: string): Promise<LoginCheckResult> {
   const user = await prisma.user.findFirst({
     where: { email, deletedAt: null },
     select: {
@@ -24,26 +23,45 @@ export async function loginAction(formData: FormData) {
     },
   });
   if (!user || !user.active) {
-    redirect("/login?error=invalid");
+    return { ok: false, reason: "invalid" };
   }
 
   if (!user.passwordHash) {
-    redirect("/login?error=sso");
+    return { ok: false, reason: "sso" };
   }
 
   const ok = await compare(password, user.passwordHash);
   if (!ok) {
-    redirect("/login?error=invalid");
+    return { ok: false, reason: "invalid" };
   }
 
+  return {
+    ok: true,
+    userId: user.id,
+    redirectTo: user.mustChangePassword ? "/settings/change-password" : user.companionIntroCompletedAt ? "/home" : "/onboarding/companion",
+  };
+}
+
+export async function loginWithPassword(emailInput: string, password: string): Promise<LoginCheckResult> {
+  const email = emailInput.trim().toLowerCase();
+  return verifyLoginCredentials(email, password);
+}
+
+async function persistLoginSession(userId: string) {
   const session = await getAppSession();
-  session.userId = user.id;
+  session.userId = userId;
   session.isLoggedIn = true;
   await session.save();
-  if (user.mustChangePassword) {
-    redirect("/settings/change-password");
+}
+
+export async function loginAction(formData: FormData) {
+  const result = await loginWithPassword(String(formData.get("email") ?? ""), String(formData.get("password") ?? ""));
+  if (!result.ok) {
+    redirect(`/login?error=${result.reason}`);
   }
-  redirect(user.companionIntroCompletedAt ? "/home" : "/onboarding/companion");
+
+  await persistLoginSession(result.userId);
+  redirect(result.redirectTo);
 }
 
 export async function logoutAction() {
