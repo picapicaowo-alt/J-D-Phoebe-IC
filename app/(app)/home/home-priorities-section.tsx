@@ -77,7 +77,7 @@ export async function HomePrioritiesSection({ user }: { user: AccessUser }) {
     .slice(0, 5);
 
   return (
-    <Card className="space-y-4 border-zinc-200/90 p-5 lg:col-span-2">
+    <Card className="space-y-4 border-zinc-200/90 p-5 lg:col-span-2 lg:flex lg:h-[calc(100vh-13rem)] lg:min-h-0 lg:flex-col">
       <div className="flex items-start gap-2">
         <span className="mt-0.5 text-amber-500" aria-hidden>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -90,7 +90,7 @@ export async function HomePrioritiesSection({ user }: { user: AccessUser }) {
         </div>
       </div>
       {priorities.length ? (
-        <ul className="space-y-4">
+        <ul className="space-y-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
           {priorities.map((p) => {
             const pct = Math.max(0, Math.min(100, p.progressPercent));
             const health = priorityHealth(p, locale);

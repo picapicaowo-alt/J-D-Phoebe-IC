@@ -297,6 +297,83 @@ export async function updateWorkflowNodeMetaAction(formData: FormData) {
   scheduleTaskRollupRevalidate(projectId);
 }
 
+export async function updateWorkflowNodeDetailsAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  await assertPermission(user, "project.workflow.update");
+  const projectId = requireString(formData, "projectId");
+  await requireProjectForTasks(user, projectId);
+  const nodeId = requireString(formData, "nodeId");
+
+  const node = await prisma.workflowNode.findFirst({
+    where: { id: nodeId, projectId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!node) throw new Error("Not found");
+
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const dueAt = parseOptionalDate(formData, "dueAt");
+  const assigneeId = String(formData.get("assigneeId") ?? "").trim();
+  const status = parseNodeStatus(formData);
+
+  await prisma.workflowNode.update({
+    where: { id: nodeId },
+    data: {
+      description,
+      dueAt,
+      status,
+    },
+  });
+
+  await prisma.workflowNodeAssignee.deleteMany({ where: { workflowNodeId: nodeId } });
+  if (assigneeId) {
+    await prisma.workflowNodeAssignee.create({
+      data: { workflowNodeId: nodeId, userId: assigneeId, responsibility: null },
+    });
+  }
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/projects");
+  revalidatePath("/calendar");
+  scheduleTaskRollupRevalidate(projectId);
+}
+
+export async function updateWorkflowNodeOperationalAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  await assertPermission(user, "project.workflow.update");
+  const projectId = requireString(formData, "projectId");
+  await requireProjectForTasks(user, projectId);
+  const nodeId = requireString(formData, "nodeId");
+
+  const node = await prisma.workflowNode.findFirst({
+    where: { id: nodeId, projectId, deletedAt: null },
+    select: { id: true, nodeType: true },
+  });
+  if (!node) throw new Error("Not found");
+
+  const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: node.nodeType });
+
+  await prisma.workflowNode.update({
+    where: { id: nodeId },
+    data: {
+      operationalLabels: operationalInput.operationalLabels,
+      waitingStartedAt: operationalInput.waitingStartedAt,
+      waitingOnUserId: operationalInput.waitingOnUserId,
+      waitingOnExternalName: operationalInput.waitingOnExternalName,
+      waitingDetails: operationalInput.waitingDetails,
+      approverUserId: operationalInput.approverUserId,
+      approvalRequestedAt: operationalInput.approvalRequestedAt,
+      approvalCompletedAt: operationalInput.approvalCompletedAt,
+      nextAction: operationalInput.nextAction,
+      isProjectBottleneck: operationalInput.isProjectBottleneck,
+    },
+  });
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/projects");
+  revalidatePath("/calendar");
+  scheduleTaskRollupRevalidate(projectId);
+}
+
 /** All leaf nodes under `rootId` (including `rootId` when it has no children). */
 async function collectLeafIdsInSubtree(projectId: string, rootId: string): Promise<string[]> {
   const all = await prisma.workflowNode.findMany({

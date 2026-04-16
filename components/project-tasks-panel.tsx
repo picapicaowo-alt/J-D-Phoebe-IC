@@ -11,7 +11,8 @@ import {
   deleteProjectTaskAction,
   toggleProjectTaskLeafAction,
   undoLastProjectTaskDeletionAction,
-  updateWorkflowNodeMetaAction,
+  updateWorkflowNodeDetailsAction,
+  updateWorkflowNodeOperationalAction,
 } from "@/app/actions/project-tasks";
 import { statusFromAggregatedProgress } from "@/lib/project-task-progress";
 import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
@@ -20,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
+  APPROVAL_OUTCOME_LABELS,
   EXECUTION_RISK_LABELS,
   PENDING_APPROVAL_LABELS,
   WAITING_LABELS,
@@ -75,13 +77,17 @@ export type ProjectTasksCopy = {
   assignSubOptional: string;
   metaTitle: string;
   metaLead: string;
+  labelsTitle: string;
+  labelsLead: string;
   saveMeta: string;
   dueShort: string;
   descriptionLabel: string;
   editDetails: string;
+  editLabels: string;
   dialogClose: string;
   statusLabel: string;
   labelsLabel: string;
+  categoryLabel: string;
   waitingStartedLabel: string;
   waitingOnInternalLabel: string;
   waitingOnExternalLabel: string;
@@ -100,6 +106,10 @@ export type ProjectTasksCopy = {
   externalPlaceholder: string;
   waitingDetailsPlaceholder: string;
   nextActionPlaceholder: string;
+  summaryWaiting: string;
+  summaryApproval: string;
+  summaryRisk: string;
+  summaryBottleneck: string;
 };
 
 type TaskOptimisticAction =
@@ -228,25 +238,6 @@ function fmtShortDate(iso: string | null, locale: "en" | "zh") {
   return d.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-GB", { year: "numeric", month: "short", day: "numeric" });
 }
 
-function formatWaitAge(waitingStartedAt: string | null) {
-  if (!waitingStartedAt) return null;
-  const escalation = getWaitingEscalation({
-    status: "WAITING",
-    operationalLabels: WAITING_LABELS,
-    waitingStartedAt: new Date(waitingStartedAt),
-  });
-  if (!escalation) return null;
-  if (escalation.days === 0) return "0d";
-  return `${escalation.days}d`;
-}
-
-function badgeToneForLabel(label: WorkflowNodeLabel) {
-  if (PENDING_APPROVAL_LABELS.includes(label)) return "info" as const;
-  if (EXECUTION_RISK_LABELS.includes(label)) return label === "AT_RISK" ? ("warn" as const) : ("bad" as const);
-  if (WAITING_LABELS.includes(label)) return "warn" as const;
-  return "neutral" as const;
-}
-
 function statusTone(status: WorkflowNodeStatus) {
   if (status === "BLOCKED") return "bad" as const;
   if (status === "WAITING") return "warn" as const;
@@ -255,19 +246,19 @@ function statusTone(status: WorkflowNodeStatus) {
   return "neutral" as const;
 }
 
-function taskSummaryBadges(task: ProjectTaskRow) {
-  const labels = task.operationalLabels.slice(0, 3);
-  const waitAge = formatWaitAge(task.waitingStartedAt);
-  return { labels, waitAge };
+function hasWaitingOperationalData(task: TaskOperationalFormState) {
+  return !!(task.waitingStartedAt || task.waitingOnUserMention || task.waitingOnExternalName || task.waitingDetails);
 }
 
-function TaskOperationalSummary({
-  task,
-  locale,
-}: {
-  task: ProjectTaskRow;
-  locale: "en" | "zh";
-}) {
+function hasApprovalOperationalData(task: Pick<TaskOperationalFormState, "approverId" | "approvalRequestedAt" | "approvalCompletedAt">) {
+  return !!(task.approverId || task.approvalRequestedAt || task.approvalCompletedAt);
+}
+
+function hasRiskOperationalData(task: Pick<TaskOperationalFormState, "nextAction" | "isProjectBottleneck">) {
+  return !!(task.nextAction || task.isProjectBottleneck);
+}
+
+function TaskOperationalSummary({ task, copy }: { task: ProjectTaskRow; copy: ProjectTasksCopy }) {
   const node = {
     status: task.status,
     dueAt: task.dueAt ? new Date(task.dueAt) : null,
@@ -280,43 +271,39 @@ function TaskOperationalSummary({
     approvalRequestedAt: task.approvalRequestedAt ? new Date(task.approvalRequestedAt) : null,
     nextAction: task.nextAction,
   };
-  const waitingOn = getWaitingOnDisplay(node);
-  const approver = getApprovalOwnerDisplay(node);
-  const waitEscalation = getWaitingEscalation(node);
-  const badges = taskSummaryBadges(task);
+  const waitingBadge =
+    task.operationalLabels.some((label) => WAITING_LABELS.includes(label)) ||
+    hasWaitingOperationalData({
+      status: task.status,
+      operationalLabels: task.operationalLabels,
+      waitingStartedAt: task.waitingStartedAt,
+      waitingOnUserMention: task.waitingOnUserName ? `@${task.waitingOnUserName}` : null,
+      waitingOnExternalName: task.waitingOnExternalName,
+      waitingDetails: task.waitingDetails,
+      approverId: task.approverId,
+      approvalRequestedAt: task.approvalRequestedAt,
+      approvalCompletedAt: task.approvalCompletedAt,
+      nextAction: task.nextAction,
+      isProjectBottleneck: task.isProjectBottleneck,
+    });
+  const approvalBadge =
+    task.operationalLabels.some((label) => PENDING_APPROVAL_LABELS.includes(label) || APPROVAL_OUTCOME_LABELS.includes(label)) ||
+    hasApprovalOperationalData({
+      approverId: task.approverId,
+      approvalRequestedAt: task.approvalRequestedAt,
+      approvalCompletedAt: task.approvalCompletedAt,
+    });
+  const riskBadge = isBlockedNode(node) || isAtRiskNode(node) || isOverdueNode(node) || task.operationalLabels.some((label) => EXECUTION_RISK_LABELS.includes(label));
 
   return (
-    <div className="mt-2 space-y-2">
-      <div className="flex flex-wrap gap-1.5">
-        <Badge tone={statusTone(task.status)}>{task.status.replaceAll("_", " ")}</Badge>
-        {task.isProjectBottleneck ? <Badge tone="bad">Bottleneck</Badge> : null}
-        {labelsToBadges(badges.labels)}
-        {waitEscalation ? (
-          <Badge tone={waitEscalation.level === "blocked" ? "bad" : waitEscalation.level === "warning" ? "warn" : "neutral"}>
-            Waiting {badges.waitAge}
-          </Badge>
-        ) : null}
-        {isOverdueNode(node) ? <Badge tone="bad">Overdue</Badge> : null}
-        {isAtRiskNode(node) ? <Badge tone="warn">At Risk</Badge> : null}
-      </div>
-      {(waitingOn || approver || task.nextAction || task.dueAt) && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[hsl(var(--muted))]">
-          {waitingOn ? <span>Waiting on {waitingOn}</span> : null}
-          {approver ? <span>Approver {approver}</span> : null}
-          {task.dueAt ? <span>Due {fmtShortDate(task.dueAt, locale)}</span> : null}
-          {task.nextAction ? <span>Next {task.nextAction}</span> : null}
-        </div>
-      )}
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      <Badge tone={statusTone(task.status)}>{task.status.replaceAll("_", " ")}</Badge>
+      {waitingBadge ? <Badge tone="warn">{copy.summaryWaiting}</Badge> : null}
+      {approvalBadge ? <Badge tone="info">{copy.summaryApproval}</Badge> : null}
+      {riskBadge ? <Badge tone={isBlockedNode(node) ? "bad" : "warn"}>{copy.summaryRisk}</Badge> : null}
+      {task.isProjectBottleneck ? <Badge tone="bad">{copy.summaryBottleneck}</Badge> : null}
     </div>
   );
-}
-
-function labelsToBadges(labels: WorkflowNodeLabel[]) {
-  return labels.map((label) => (
-    <Badge key={label} tone={badgeToneForLabel(label)}>
-      {formatWorkflowNodeLabel(label)}
-    </Badge>
-  ));
 }
 
 function ChevronDown({ className }: { className?: string }) {
