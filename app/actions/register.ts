@@ -3,9 +3,12 @@
 import { hash } from "bcryptjs";
 import { redirect } from "next/navigation";
 import { OrgGroupStatus, CompanyStatus, Prisma } from "@prisma/client";
-import { getAppSession } from "@/lib/auth";
+import { getAppSession, invalidateAccessUserCache } from "@/lib/auth";
 import { isClerkEnabled } from "@/lib/clerk-config";
+import { ensureMemberOnboardingForCompany } from "@/lib/member-onboarding";
+import { invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { canReuseDeletedUser, findReusableUserCandidateByEmail, reprovisionDeletedUser } from "@/lib/user-account-reuse";
 
 export type RegisterActionResult =
   | {
@@ -47,8 +50,9 @@ export async function registerAction(formData: FormData): Promise<RegisterAction
     return { ok: false, messageKey: "homeRegisterErrorGeneric" };
   }
 
-  const existing = await prisma.user.findFirst({ where: { email, deletedAt: null } });
-  if (existing) {
+  const existing = await findReusableUserCandidateByEmail(email);
+  const reusableExisting = canReuseDeletedUser(existing) ? existing : null;
+  if (existing && !reusableExisting) {
     return { ok: false, messageKey: "registerEmailTaken" };
   }
 
@@ -73,23 +77,41 @@ export async function registerAction(formData: FormData): Promise<RegisterAction
 
   try {
     const user = await prisma.$transaction(async (tx) => {
-      const u = await tx.user.create({
-        data: {
-          email,
-          passwordHash,
-          name,
-          active: true,
-        },
-      });
-      await tx.companyMembership.create({
-        data: {
+      const u = reusableExisting
+        ? await reprovisionDeletedUser(tx, {
+            userId: reusableExisting.id,
+            name,
+            passwordHash,
+            mustChangePassword: false,
+          })
+        : await tx.user.create({
+            data: {
+              email,
+              passwordHash,
+              name,
+              active: true,
+            },
+          });
+
+      await tx.companyMembership.upsert({
+        where: { userId_companyId: { userId: u.id, companyId: company.id } },
+        create: {
           userId: u.id,
           companyId: company.id,
           roleDefinitionId: role.id,
         },
+        update: {
+          roleDefinitionId: role.id,
+          departmentId: null,
+          supervisorUserId: null,
+        },
       });
       return u;
     });
+
+    invalidateAccessUserCache(user);
+    invalidatePermissionCache(user.id);
+    await ensureMemberOnboardingForCompany(user.id, company.id);
 
     const session = await getAppSession();
     session.userId = user.id;

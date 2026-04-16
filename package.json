@@ -9,6 +9,7 @@
     "lint": "next lint",
     "db:push": "node scripts/prisma-env.mjs db push",
     "db:seed": "node scripts/prisma-env.mjs db seed",
+    "db:superadmins": "tsx scripts/upsert-demo-superadmins.ts",
     "db:push:vercel": "PRISMA_ENV_FILE=.env.production.local node scripts/prisma-env.mjs db push",
     "db:seed:vercel": "PRISMA_ENV_FILE=.env.production.local node scripts/prisma-env.mjs db seed",
     "db:studio": "prisma studio"

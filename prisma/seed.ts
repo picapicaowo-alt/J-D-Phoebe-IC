@@ -222,6 +222,12 @@ async function main() {
 
   const passwordPlain = "demo1234";
   const passwordHash = await hash(passwordPlain, 10);
+  const demoSuperAdminAccounts = [
+    { email: "admin@jdphoebe.local", name: "Group Super Admin" },
+    { email: "admin2@jdphoebe.local", name: "Group Super Admin 2" },
+    { email: "admin3@jdphoebe.local", name: "Group Super Admin 3" },
+    { email: "admin4@jdphoebe.local", name: "Group Super Admin 4" },
+  ];
 
   const group = await prisma.orgGroup.create({
     data: {
@@ -267,13 +273,24 @@ async function main() {
 
   const superAdmin = await prisma.user.create({
     data: {
-      email: "admin@jdphoebe.local",
+      email: demoSuperAdminAccounts[0]!.email,
       passwordHash,
-      name: "Group Super Admin",
+      name: demoSuperAdminAccounts[0]!.name,
       title: "Group Office",
       isSuperAdmin: true,
       active: true,
     },
+  });
+
+  await prisma.user.createMany({
+    data: demoSuperAdminAccounts.slice(1).map((account) => ({
+      email: account.email,
+      passwordHash,
+      name: account.name,
+      title: "Group Office",
+      isSuperAdmin: true,
+      active: true,
+    })),
   });
 
   const groupAdmin = await prisma.user.create({
