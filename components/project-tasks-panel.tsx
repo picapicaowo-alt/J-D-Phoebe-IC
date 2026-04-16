@@ -54,6 +54,7 @@ export type ProjectTaskRow = {
   nextAction: string | null;
   isProjectBottleneck: boolean;
   children: ProjectTaskRow[];
+  optimistic?: boolean;
 };
 
 export type ProjectTasksCopy = {
@@ -119,6 +120,8 @@ type TaskOptimisticAction =
   | { type: "toggle"; nodeId: string }
   | { type: "delete"; nodeId: string }
   | { type: "clear-all" };
+
+const CLIENT_TASK_STATUSES: WorkflowNodeStatus[] = ["NOT_STARTED", "IN_PROGRESS", "WAITING", "BLOCKED", "APPROVED", "DONE", "SKIPPED"];
 
 function clampProgressPercent(progressPercent: number) {
   return Math.max(0, Math.min(100, progressPercent));
@@ -222,6 +225,47 @@ function applyTasksOptimistic(prev: ProjectTaskRow[], action: TaskOptimisticActi
 
 function tempOptimId() {
   return `optim:${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function parseClientTaskStatus(raw: string): WorkflowNodeStatus {
+  return CLIENT_TASK_STATUSES.includes(raw as WorkflowNodeStatus) ? (raw as WorkflowNodeStatus) : "NOT_STARTED";
+}
+
+function isOptimisticTaskRow(task: ProjectTaskRow) {
+  return !!task.optimistic || task.id.startsWith("optim:");
+}
+
+function buildOptimisticTaskRow(formData: FormData, memberOptions: { id: string; name: string }[]): ProjectTaskRow {
+  const assigneeId = String(formData.get("assigneeId") ?? "").trim() || null;
+  const assigneeName = assigneeId ? (memberOptions.find((member) => member.id === assigneeId)?.name ?? null) : null;
+  const dueRaw = String(formData.get("dueAt") ?? "").trim();
+
+  return {
+    id: tempOptimId(),
+    title: String(formData.get("title") ?? "").trim(),
+    progressPercent: 0,
+    status: parseClientTaskStatus(String(formData.get("status") ?? "").trim()),
+    assigneeName,
+    assigneeId,
+    dueAt: dueRaw ? new Date(dueRaw).toISOString() : null,
+    description: null,
+    operationalLabels: [],
+    waitingStartedAt: null,
+    waitingOnUserIds: [],
+    waitingOnUserNames: [],
+    waitingOnUserId: null,
+    waitingOnUserName: null,
+    waitingOnExternalName: null,
+    waitingDetails: null,
+    approverId: null,
+    approverName: null,
+    approvalRequestedAt: null,
+    approvalCompletedAt: null,
+    nextAction: null,
+    isProjectBottleneck: false,
+    children: [],
+    optimistic: true,
+  };
 }
 
 function preventSubmitWhileComposing(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -973,12 +1017,12 @@ export function ProjectTasksPanel({
   onOptimisticTasksChange?: (tasks: ProjectTaskRow[]) => void;
 }) {
   const router = useRouter();
-  const [isOtherPending, startOtherTransition] = useTransition();
   const [, startRefreshTransition] = useTransition();
-  const [, startToggleTransition] = useTransition();
+  const [visibleTasks, setVisibleTasks] = useState(tasks);
+  const visibleTasksRef = useRef(tasks);
   const [submittingKeys, setSubmittingKeys] = useState<Record<string, boolean>>({});
   const [mutationError, setMutationError] = useState<string | null>(null);
-  const isBusy = isOtherPending || Object.values(submittingKeys).some(Boolean);
+  const isBusy = Object.values(submittingKeys).some(Boolean);
 
   const [open, setOpen] = useState(() => {
     const o: Record<string, boolean> = {};
@@ -989,14 +1033,20 @@ export function ProjectTasksPanel({
   });
 
   useEffect(() => {
+    visibleTasksRef.current = tasks;
+    setVisibleTasks(tasks);
+    onOptimisticTasksChange?.(tasks);
+  }, [onOptimisticTasksChange, tasks]);
+
+  useEffect(() => {
     setOpen((current) => {
       const next = { ...current };
-      for (const task of tasks) {
+      for (const task of visibleTasks) {
         if (task.children.length && next[task.id] === undefined) next[task.id] = true;
       }
       return next;
     });
-  }, [tasks]);
+  }, [visibleTasks]);
 
   const setSubmitting = useCallback((key: string, pending: boolean) => {
     setSubmittingKeys((current) => {
@@ -1013,13 +1063,37 @@ export function ProjectTasksPanel({
     });
   }, [router, startRefreshTransition]);
 
+  const commitVisibleTasks = useCallback(
+    (next: ProjectTaskRow[]) => {
+      visibleTasksRef.current = next;
+      setVisibleTasks(next);
+      onOptimisticTasksChange?.(next);
+    },
+    [onOptimisticTasksChange],
+  );
+
+  const applyOptimisticMutation = useCallback(
+    (action: TaskOptimisticAction) => {
+      const previous = visibleTasksRef.current;
+      const next = applyTasksOptimistic(previous, action);
+      commitVisibleTasks(next);
+      return () => {
+        commitVisibleTasks(previous);
+      };
+    },
+    [commitVisibleTasks],
+  );
+
   const runTrackedMutation = useCallback(
-    async (key: string, action: () => Promise<void>) => {
+    async (key: string, action: () => Promise<void>, optimisticAction?: TaskOptimisticAction) => {
       setSubmitting(key, true);
       setMutationError(null);
+      const rollback = optimisticAction ? applyOptimisticMutation(optimisticAction) : null;
       try {
         await action();
+        refreshRoute();
       } catch (error) {
+        rollback?.();
         const message = error instanceof Error ? error.message : "Something went wrong";
         console.error(`[project-tasks:${key}]`, error);
         setMutationError(message);
@@ -1028,10 +1102,9 @@ export function ProjectTasksPanel({
         }
       } finally {
         setSubmitting(key, false);
-        refreshRoute();
       }
     },
-    [refreshRoute, setSubmitting],
+    [applyOptimisticMutation, refreshRoute, setSubmitting],
   );
 
   const isSubmitting = useCallback((key: string) => !!submittingKeys[key], [submittingKeys]);
@@ -1053,9 +1126,7 @@ export function ProjectTasksPanel({
               onSubmit={(e) => {
                 e.preventDefault();
                 const fd = new FormData(e.currentTarget);
-                startOtherTransition(() => {
-                  void runTrackedMutation("undo", () => undoLastProjectTaskDeletionAction(fd));
-                });
+                void runTrackedMutation("undo", () => undoLastProjectTaskDeletionAction(fd));
               }}
               title={undoAvailable ? copy.undoHint : copy.undoDisabledHint}
             >
@@ -1078,9 +1149,7 @@ export function ProjectTasksPanel({
                 }
                 e.preventDefault();
                 const fd = new FormData(e.currentTarget);
-                startOtherTransition(() => {
-                  void runTrackedMutation("clear-all", () => deleteAllProjectTasksAction(fd));
-                });
+                void runTrackedMutation("clear-all", () => deleteAllProjectTasksAction(fd), { type: "clear-all" });
               }}
             >
               <input type="hidden" name="projectId" value={projectId} />
@@ -1102,13 +1171,8 @@ export function ProjectTasksPanel({
                 const title = String(fd.get("title") ?? "").trim();
                 if (!title) return;
                 const mutationKey = "add-root";
-                const assigneeId = String(fd.get("assigneeId") ?? "").trim();
-                const assigneeName = assigneeId ? (memberOptions.find((m) => m.id === assigneeId)?.name ?? null) : null;
-                const dueRaw = String(fd.get("dueAt") ?? "").trim();
-                const dueAt = dueRaw ? new Date(dueRaw).toISOString() : null;
-                startOtherTransition(() => {
-                  void runTrackedMutation(mutationKey, () => addProjectTaskAction(fd));
-                });
+                const optimisticRow = buildOptimisticTaskRow(fd, memberOptions);
+                void runTrackedMutation(mutationKey, () => addProjectTaskAction(fd), { type: "add-root", row: optimisticRow });
                 form.reset();
               }}
               className="space-y-2"
@@ -1158,25 +1222,31 @@ export function ProjectTasksPanel({
       {mutationError ? <p className="px-4 pt-3 text-sm text-rose-600 dark:text-rose-400">{mutationError}</p> : null}
 
       <div className="space-y-3 p-4">
-        {!tasks.length ? (
+        {!visibleTasks.length ? (
           <p className="text-sm text-[hsl(var(--muted))]">{copy.empty}</p>
         ) : (
-          tasks.map((task) => {
+          visibleTasks.map((task) => {
             const expanded = open[task.id] ?? false;
             const hasKids = task.children.length > 0;
             const taskDetailsDialogId = `task-details-${task.id}`;
             const taskLabelsDialogId = `task-labels-${task.id}`;
             const taskDone = isComplete(task.status);
+            const taskIsOptimistic = isOptimisticTaskRow(task);
             return (
-              <div key={task.id} id={`task-${task.id}`} className="rounded-[10px] border border-[hsl(var(--border))] p-px">
+              <div
+                key={task.id}
+                id={`task-${task.id}`}
+                className={`rounded-[10px] border border-[hsl(var(--border))] p-px ${taskIsOptimistic ? "opacity-80" : ""}`}
+              >
                 <div className="flex flex-wrap items-center gap-3 px-3 py-3 md:flex-nowrap">
                   {canEdit ? (
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
                         const fd = new FormData(e.currentTarget);
-                        startToggleTransition(() => {
-                          void runTrackedMutation(`toggle:${task.id}`, () => toggleProjectTaskLeafAction(fd));
+                        void runTrackedMutation(`toggle:${task.id}`, () => toggleProjectTaskLeafAction(fd), {
+                          type: "toggle",
+                          nodeId: task.id,
                         });
                       }}
                       className="shrink-0"
@@ -1185,6 +1255,7 @@ export function ProjectTasksPanel({
                       <input type="hidden" name="nodeId" value={task.id} />
                       <button
                         type="submit"
+                        disabled={taskIsOptimistic || isSubmitting(`toggle:${task.id}`)}
                         className={`flex h-4 w-4 items-center justify-center rounded border shadow-sm ${
                           taskDone
                             ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
@@ -1232,7 +1303,7 @@ export function ProjectTasksPanel({
                     <span className="text-sm font-semibold tabular-nums text-[hsl(var(--foreground))]">{task.progressPercent}%</span>
                     <ProgressTrack pct={task.progressPercent} thick />
                   </div>
-                  {canEdit ? (
+                  {canEdit && !taskIsOptimistic ? (
                     <DropdownMenu buttonContent={<IconMore />}>
                       {({ closeMenu }) => (
                         <>
@@ -1270,8 +1341,9 @@ export function ProjectTasksPanel({
                                 fd.set("projectId", projectId);
                                 fd.set("nodeId", task.id);
                                 closeMenu();
-                                startToggleTransition(() => {
-                                  void runTrackedMutation(`delete:${task.id}`, () => deleteProjectTaskAction(fd));
+                                void runTrackedMutation(`delete:${task.id}`, () => deleteProjectTaskAction(fd), {
+                                  type: "delete",
+                                  nodeId: task.id,
                                 });
                               }}
                             >
@@ -1283,7 +1355,7 @@ export function ProjectTasksPanel({
                     </DropdownMenu>
                   ) : null}
                 </div>
-                {canEdit ? (
+                {canEdit && !taskIsOptimistic ? (
                   <>
                     <NodeDetailsDialog
                       dialogId={taskDetailsDialogId}
@@ -1328,16 +1400,22 @@ export function ProjectTasksPanel({
                       const done = isComplete(sub.status);
                       const subDetailsDialogId = `task-details-${sub.id}`;
                       const subLabelsDialogId = `task-labels-${sub.id}`;
+                      const subIsOptimistic = isOptimisticTaskRow(sub);
                       return (
                         <div key={sub.id} id={`task-${sub.id}`}>
-                          <div className="flex flex-wrap items-center gap-3 rounded-[10px] bg-slate-50 px-3 py-3 dark:bg-zinc-900/60 sm:ml-16 lg:ml-24 md:flex-nowrap">
+                          <div
+                            className={`flex flex-wrap items-center gap-3 rounded-[10px] bg-slate-50 px-3 py-3 dark:bg-zinc-900/60 sm:ml-16 lg:ml-24 md:flex-nowrap ${
+                              subIsOptimistic ? "opacity-80" : ""
+                            }`}
+                          >
                             {canEdit ? (
                               <form
                                 onSubmit={(e) => {
                                   e.preventDefault();
                                   const fd = new FormData(e.currentTarget);
-                                  startToggleTransition(() => {
-                                    void runTrackedMutation(`toggle:${sub.id}`, () => toggleProjectTaskLeafAction(fd));
+                                  void runTrackedMutation(`toggle:${sub.id}`, () => toggleProjectTaskLeafAction(fd), {
+                                    type: "toggle",
+                                    nodeId: sub.id,
                                   });
                                 }}
                                 className="shrink-0"
@@ -1346,6 +1424,7 @@ export function ProjectTasksPanel({
                                 <input type="hidden" name="nodeId" value={sub.id} />
                                 <button
                                   type="submit"
+                                  disabled={subIsOptimistic || isSubmitting(`toggle:${sub.id}`)}
                                   className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border shadow-sm ${
                                     done
                                       ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
@@ -1389,7 +1468,7 @@ export function ProjectTasksPanel({
                             <div className="w-24 shrink-0">
                               <ProgressTrack pct={sub.progressPercent} />
                             </div>
-                            {canEdit ? (
+                            {canEdit && !subIsOptimistic ? (
                               <DropdownMenu buttonContent={<IconMore />}>
                                 {({ closeMenu }) => (
                                   <>
@@ -1427,8 +1506,9 @@ export function ProjectTasksPanel({
                                           fd.set("projectId", projectId);
                                           fd.set("nodeId", sub.id);
                                           closeMenu();
-                                          startToggleTransition(() => {
-                                            void runTrackedMutation(`delete:${sub.id}`, () => deleteProjectTaskAction(fd));
+                                          void runTrackedMutation(`delete:${sub.id}`, () => deleteProjectTaskAction(fd), {
+                                            type: "delete",
+                                            nodeId: sub.id,
                                           });
                                         }}
                                       >
@@ -1440,7 +1520,7 @@ export function ProjectTasksPanel({
                               </DropdownMenu>
                             ) : null}
                           </div>
-                          {canEdit ? (
+                          {canEdit && !subIsOptimistic ? (
                             <>
                               <NodeDetailsDialog
                                 dialogId={subDetailsDialogId}
@@ -1480,7 +1560,7 @@ export function ProjectTasksPanel({
                         </div>
                       );
                     })}
-                    {canEdit ? (
+                    {canEdit && !taskIsOptimistic ? (
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
@@ -1489,12 +1569,12 @@ export function ProjectTasksPanel({
                           const title = String(fd.get("title") ?? "").trim();
                           if (!title) return;
                           const mutationKey = `add-sub:${task.id}`;
-                          const assigneeId = String(fd.get("assigneeId") ?? "").trim();
-                          const assigneeName = assigneeId ? (memberOptions.find((m) => m.id === assigneeId)?.name ?? null) : null;
-                          const dueRaw = String(fd.get("dueAt") ?? "").trim();
-                          startOtherTransition(() => {
-                            setOpen((current) => ({ ...current, [task.id]: true }));
-                            void runTrackedMutation(mutationKey, () => addProjectSubtaskAction(fd));
+                          const optimisticRow = buildOptimisticTaskRow(fd, memberOptions);
+                          setOpen((current) => ({ ...current, [task.id]: true }));
+                          void runTrackedMutation(mutationKey, () => addProjectSubtaskAction(fd), {
+                            type: "add-sub",
+                            parentId: task.id,
+                            row: optimisticRow,
                           });
                           form.reset();
                         }}
