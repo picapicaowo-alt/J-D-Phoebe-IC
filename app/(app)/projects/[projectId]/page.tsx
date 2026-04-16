@@ -35,7 +35,8 @@ import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launche
 import { UserFace } from "@/components/user-face";
 import { DetailsHashOpener } from "@/components/details-hash-opener";
 import { clampProjectProgressPercent } from "@/lib/project-health";
-import { ProjectTasksPanel, type ProjectTaskRow } from "@/components/project-tasks-panel";
+import { type ProjectTaskRow } from "@/components/project-tasks-panel";
+import { ProjectProgressDisplay, ProjectProgressBar, ProjectTasksPanelWithProgress } from "@/components/project-progress-bridge";
 import type { Locale } from "@/lib/locale";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
@@ -465,7 +466,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           </div>
           <div className="space-y-1">
             <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projProgressOverall")}</p>
-            <p className="text-sm font-semibold tabular-nums text-[hsl(var(--foreground))]">{progressPct}%</p>
+            <ProjectProgressDisplay
+              initialProgressPct={progressPct}
+              initialTasks={taskRows}
+            />
           </div>
           <div className="space-y-1">
             <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonOwner")}</p>
@@ -489,9 +493,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </p>
           </div>
         </div>
-        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[rgba(3,2,19,0.2)] dark:bg-white/20">
-          <div className="h-full rounded-full bg-zinc-900 dark:bg-zinc-100" style={{ width: `${progressPct}%` }} />
-        </div>
+        <ProjectProgressBar initialProgressPct={progressPct} initialTasks={taskRows} />
       </div>
 
       {canReadCalendar ? (
@@ -552,7 +554,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         </Card>
       ) : null}
 
-      <ProjectTasksPanel
+      <ProjectTasksPanelWithProgress
         projectId={project.id}
         tasks={taskRows}
         canEdit={canEditTasks}

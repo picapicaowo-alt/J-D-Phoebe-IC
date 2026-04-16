@@ -1,14 +1,14 @@
-import { getCurrentUser } from "@/lib/auth";
-import { getPermissionKeysForUser } from "@/lib/permissions";
+import { getCurrentShellUser } from "@/lib/auth";
+import { getPermissionKeysForShell } from "@/lib/permissions";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { AppShellNav, type ShellNavDropdown, type ShellNavLink } from "@/components/app-shell-nav";
 
 export async function AppShellPrimaryNav() {
-  const user = await getCurrentUser();
+  const user = await getCurrentShellUser();
   if (!user) return null;
 
-  const keys = await getPermissionKeysForUser(user.id, user.isSuperAdmin);
+  const keys = await getPermissionKeysForShell(user.id, user.isSuperAdmin);
   const locale = await getLocale();
 
   const primaryLinks: ShellNavLink[] = [];

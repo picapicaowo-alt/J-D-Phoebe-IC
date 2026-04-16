@@ -13,6 +13,7 @@ export async function GET() {
       ok: true,
       query: "SELECT 1",
       hasUserRow: Boolean(hasUser),
+      region: process.env.VERCEL_REGION ?? null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

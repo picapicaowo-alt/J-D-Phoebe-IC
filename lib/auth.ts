@@ -1,6 +1,7 @@
 import { getIronSession } from "iron-session";
 import type { Prisma } from "@prisma/client";
 import { cookies } from "next/headers";
+import { unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import type { AccessUser } from "@/lib/access";
@@ -60,9 +61,22 @@ const userSelect = {
   },
 } as const;
 
+const shellUserSelect = {
+  id: true,
+  name: true,
+  avatarUrl: true,
+  isSuperAdmin: true,
+  groupMemberships: {
+    select: {
+      roleDefinition: { select: { key: true } },
+    },
+  },
+} as const;
+
 const USER_CACHE_TTL_MS = 30_000;
 
 type LoadedUser = Prisma.UserGetPayload<{ select: typeof userSelect }> | null;
+export type ShellUser = Prisma.UserGetPayload<{ select: typeof shellUserSelect }> | null;
 type UserCacheEntry = { user: LoadedUser; expiresAt: number };
 
 const userByIdCache = new Map<string, UserCacheEntry>();
@@ -115,6 +129,26 @@ async function loadUserByClerkId(clerkId: string) {
   return writeUserCache(user);
 }
 
+const loadShellUserByIdCached = unstable_cache(
+  async (id: string) =>
+    prisma.user.findFirst({
+      where: { id, deletedAt: null, active: true },
+      select: shellUserSelect,
+    }),
+  ["shell-user-by-id"],
+  { revalidate: 60 },
+);
+
+const loadShellUserByClerkIdCached = unstable_cache(
+  async (clerkId: string) =>
+    prisma.user.findFirst({
+      where: { clerkId, deletedAt: null, active: true },
+      select: shellUserSelect,
+    }),
+  ["shell-user-by-clerk-id"],
+  { revalidate: 60 },
+);
+
 export async function getAppSession() {
   return getIronSession<AppSessionData>(await cookies(), sessionOptions);
 }
@@ -151,6 +185,23 @@ async function getCurrentUserImpl() {
 
 /** Per-request dedupe so layouts and streamed children do not repeat the same Prisma load. */
 export const getCurrentUser = cache(getCurrentUserImpl);
+
+/**
+ * Lightweight user payload for the app shell. This is safe to cache briefly because
+ * it only drives display chrome, not authorization decisions.
+ */
+export const getCurrentShellUser = cache(async function getCurrentShellUser(): Promise<ShellUser> {
+  if (isClerkEnabled()) {
+    const { auth } = await import("@clerk/nextjs/server");
+    const { userId } = await auth();
+    if (!userId) return null;
+    return loadShellUserByClerkIdCached(userId);
+  }
+
+  const session = await getAppSession();
+  if (!session.userId) return null;
+  return loadShellUserByIdCached(session.userId);
+});
 
 export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
   if (isClerkEnabled()) {

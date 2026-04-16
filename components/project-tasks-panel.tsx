@@ -1,6 +1,6 @@
 "use client";
 
-import { useOptimistic, useState, useTransition, useEffect, useRef } from "react";
+import { useOptimistic, useState, useTransition, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { WorkflowNodeStatus } from "@prisma/client";
@@ -385,6 +385,7 @@ export function ProjectTasksPanel({
   memberOptions,
   copy,
   locale,
+  onOptimisticTasksChange,
 }: {
   projectId: string;
   tasks: ProjectTaskRow[];
@@ -393,12 +394,24 @@ export function ProjectTasksPanel({
   memberOptions: { id: string; name: string }[];
   copy: ProjectTasksCopy;
   locale: "en" | "zh";
+  onOptimisticTasksChange?: (tasks: ProjectTaskRow[]) => void;
 }) {
   const router = useRouter();
   const [isOtherPending, startOtherTransition] = useTransition();
   const [, startToggleTransition] = useTransition();
   const [optimisticTasks, runOptimistic] = useOptimistic(tasks, applyTasksOptimistic);
   const isBusy = isOtherPending;
+
+  const notifyChange = useCallback(
+    (nextTasks: ProjectTaskRow[]) => {
+      onOptimisticTasksChange?.(nextTasks);
+    },
+    [onOptimisticTasksChange],
+  );
+
+  useEffect(() => {
+    notifyChange(optimisticTasks);
+  }, [optimisticTasks, notifyChange]);
 
   const [open, setOpen] = useState(() => {
     const o: Record<string, boolean> = {};

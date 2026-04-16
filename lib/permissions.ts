@@ -1,6 +1,7 @@
 import type { AccessUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { ALL_PERMISSION_KEYS, type PermissionKey } from "@/lib/permission-keys";
+import { unstable_cache } from "next/cache";
 import { cache as reactCache } from "react";
 
 const permissionKeyMemCache = new Map<string, Set<string>>();
@@ -42,8 +43,48 @@ async function getPermissionKeysForUserImpl(userId: string, isSuperAdmin: boolea
   return set;
 }
 
+const getPermissionKeysForShellImpl = unstable_cache(
+  async (userId: string): Promise<string[]> => {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: {
+        groupMemberships: { select: { roleDefinitionId: true } },
+        companyMemberships: { select: { roleDefinitionId: true } },
+        projectMemberships: { select: { roleDefinitionId: true } },
+      },
+    });
+    if (!user) return [];
+
+    const roleIds = [
+      ...user.groupMemberships.map((m) => m.roleDefinitionId),
+      ...user.companyMemberships.map((m) => m.roleDefinitionId),
+      ...user.projectMemberships.map((m) => m.roleDefinitionId),
+    ];
+    const uniqueRoleIds = [...new Set(roleIds)];
+    if (!uniqueRoleIds.length) return [];
+
+    const rows = await prisma.rolePermission.findMany({
+      where: { roleDefinitionId: { in: uniqueRoleIds }, allowed: true },
+      include: { permissionDefinition: { select: { key: true } } },
+    });
+
+    return [...new Set(rows.map((r) => r.permissionDefinition.key))];
+  },
+  ["shell-permission-keys"],
+  { revalidate: 60 },
+);
+
 /** Dedupes permission lookups within a single request (layout + pages). */
 export const getPermissionKeysForUser = reactCache(getPermissionKeysForUserImpl);
+
+/**
+ * Short-lived cache for app-shell navigation only. Authorization checks should keep
+ * using getPermissionKeysForUser()/userHasPermission().
+ */
+export async function getPermissionKeysForShell(userId: string, isSuperAdmin: boolean): Promise<Set<string>> {
+  if (isSuperAdmin) return new Set(ALL_PERMISSION_KEYS);
+  return new Set(await getPermissionKeysForShellImpl(userId));
+}
 
 export function invalidatePermissionCache(userId: string) {
   permissionKeyMemCache.delete(userId);
