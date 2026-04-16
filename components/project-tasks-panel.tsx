@@ -349,7 +349,7 @@ export function ProjectTasksPanel({
 
   return (
     <div
-      className={`overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm transition-opacity duration-150 ${
+      className={`overflow-visible rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm transition-opacity duration-150 ${
         isBusy ? "opacity-90" : ""
       }`}
     >

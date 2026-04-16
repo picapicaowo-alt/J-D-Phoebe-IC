@@ -131,7 +131,7 @@ export function ProjectsGroupedBoard({
         }`}
       >
         <div className="min-w-0 flex-1">
-          <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
+          <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`} prefetch={false}>
             {p.name}
           </Link>
           <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
@@ -157,7 +157,7 @@ export function ProjectsGroupedBoard({
             ) : null}
           </div>
         </div>
-        <Link className="shrink-0 text-sm text-[hsl(var(--accent))] hover:underline" href={`/projects/${p.id}`}>
+        <Link className="shrink-0 text-sm text-[hsl(var(--accent))] hover:underline" href={`/projects/${p.id}`} prefetch={false}>
           {copy.detail}
         </Link>
       </div>

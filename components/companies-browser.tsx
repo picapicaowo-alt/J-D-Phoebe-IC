@@ -142,7 +142,7 @@ function CompanyPreviewCard({ c, index, locale }: { c: CompanyRow; index: number
           <div className="px-5 py-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{t(locale, "companyPreviewActiveProjects")}</h3>
-              <Link href={`/projects/new?companyId=${c.id}`} onClick={() => dialogRef.current?.close()}>
+              <Link href={`/projects/new?companyId=${c.id}`} onClick={() => dialogRef.current?.close()} prefetch={false}>
                 <Button type="button" className="h-8 rounded-lg px-3 text-xs">
                   + {t(locale, "companyNewProjectHere")}
                 </Button>
@@ -157,6 +157,7 @@ function CompanyPreviewCard({ c, index, locale }: { c: CompanyRow; index: number
                       <div className="flex items-start justify-between gap-2">
                         <Link
                           href={`/projects/${p.id}`}
+                          prefetch={false}
                           className="text-sm font-semibold text-zinc-900 hover:underline dark:text-zinc-50"
                           onClick={() => dialogRef.current?.close()}
                         >
@@ -178,7 +179,7 @@ function CompanyPreviewCard({ c, index, locale }: { c: CompanyRow; index: number
               )}
             </ul>
             <div className="mt-5 flex justify-end border-t border-zinc-100 pt-4 dark:border-zinc-800">
-              <Link href={`/companies/${c.id}`} onClick={() => dialogRef.current?.close()}>
+              <Link href={`/companies/${c.id}`} onClick={() => dialogRef.current?.close()} prefetch={false}>
                 <Button type="button" variant="secondary" className="text-xs">
                   {t(locale, "companyPreviewOpenFull")}
                 </Button>

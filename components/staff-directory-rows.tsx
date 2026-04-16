@@ -101,7 +101,7 @@ export function StaffDirectoryRows({ rows, copy }: { rows: StaffDirectoryRowDTO[
               </label>
               <UserFace name={s.name} avatarUrl={s.avatarUrl} size={48} className="shrink-0" />
               <div className="min-w-0 flex-1">
-                <Link className="text-base font-semibold text-[hsl(var(--foreground))] hover:underline" href={`/staff/${s.id}`}>
+                <Link className="text-base font-semibold text-[hsl(var(--foreground))] hover:underline" href={`/staff/${s.id}`} prefetch={false}>
                   {s.name}
                 </Link>
                 {s.title ? <p className="text-sm text-[hsl(var(--muted))]">{s.title}</p> : <p className="text-sm text-[hsl(var(--muted))]">{s.email}</p>}

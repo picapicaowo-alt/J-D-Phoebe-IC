@@ -187,7 +187,7 @@ export async function KnowledgeHubBody() {
           </div>
         </div>
         {canCreate ? (
-          <Link href="/knowledge/browse#knowledge-create">
+          <Link href="/knowledge/browse#knowledge-create" prefetch={false}>
             <Button type="button" className="rounded-[10px] px-5">
               + {t(locale, "knowledgeAddNew")}
             </Button>
@@ -215,7 +215,7 @@ export async function KnowledgeHubBody() {
             const style = LAYER_CARD[layer];
             const n = countByLayer[layer];
             return (
-              <Link key={layer} href={`/knowledge/browse?layer=${layer}`} className="group block">
+              <Link key={layer} href={`/knowledge/browse?layer=${layer}`} className="group block" prefetch={false}>
                 <div className="flex h-full flex-col rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 shadow-sm transition hover:border-[hsl(var(--foreground))]/15 hover:shadow-md">
                   <div className={`flex h-11 w-11 items-center justify-center rounded-lg ${style.iconWrap}`}>{LAYER_ICON[layer]}</div>
                   <h3 className="mt-4 text-base font-semibold text-[hsl(var(--foreground))]">{tKnowledgeLayer(locale, layer)}</h3>
@@ -242,6 +242,7 @@ export async function KnowledgeHubBody() {
                   <div className="min-w-0">
                     <Link
                       href={`/knowledge/browse?layer=${a.layer}&q=${encodeURIComponent(a.title)}`}
+                      prefetch={false}
                       className="font-semibold text-[hsl(var(--foreground))] hover:underline"
                     >
                       {a.title}

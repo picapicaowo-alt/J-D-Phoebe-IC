@@ -26,7 +26,6 @@ import {
   updateProjectGroupAction,
 } from "@/app/actions/project-group";
 import { ProjectsGroupedBoard, type GroupedProjectCard, type ProjectGroupRow } from "@/components/projects-grouped-board";
-import { RoutePrefetcher } from "@/components/route-prefetcher";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const STATUSES: ProjectStatus[] = [
@@ -187,7 +186,6 @@ export async function ProjectsPageBody({
 
   return (
     <div className="space-y-6">
-      <RoutePrefetcher hrefs={projectDetailHrefs} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t(locale, "projectsTitle")}</h1>

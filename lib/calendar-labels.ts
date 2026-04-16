@@ -7,6 +7,9 @@ export const DEFAULT_CALENDAR_LABELS = [
 ] as const;
 
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+const globalForCalendarLabels = globalThis as typeof globalThis & {
+  defaultCalendarLabelsPromise?: Promise<void>;
+};
 
 export function normalizeCalendarLabelColor(raw: FormDataEntryValue | string | null | undefined) {
   const value = String(raw ?? "").trim();
@@ -14,21 +17,38 @@ export function normalizeCalendarLabelColor(raw: FormDataEntryValue | string | n
 }
 
 export async function ensureDefaultCalendarLabels() {
-  await Promise.all(
-    DEFAULT_CALENDAR_LABELS.map((label) =>
-      prisma.calendarLabel.upsert({
-        where: { key: label.key },
-        create: {
-          key: label.key,
-          name: label.name,
-          color: label.color,
-          sortOrder: label.sortOrder,
-          isDefault: true,
-        },
-        update: {},
-      }),
-    ),
-  );
+  if (!globalForCalendarLabels.defaultCalendarLabelsPromise) {
+    globalForCalendarLabels.defaultCalendarLabelsPromise = (async () => {
+      const existing = await prisma.calendarLabel.findMany({
+        where: { key: { in: DEFAULT_CALENDAR_LABELS.map((label) => label.key) } },
+        select: { key: true },
+      });
+      const existingKeys = new Set(existing.map((label) => label.key));
+      const missing = DEFAULT_CALENDAR_LABELS.filter((label) => !existingKeys.has(label.key));
+      if (!missing.length) return;
+
+      await Promise.all(
+        missing.map((label) =>
+          prisma.calendarLabel.upsert({
+            where: { key: label.key },
+            create: {
+              key: label.key,
+              name: label.name,
+              color: label.color,
+              sortOrder: label.sortOrder,
+              isDefault: true,
+            },
+            update: {},
+          }),
+        ),
+      );
+    })().catch((error) => {
+      globalForCalendarLabels.defaultCalendarLabelsPromise = undefined;
+      throw error;
+    });
+  }
+
+  await globalForCalendarLabels.defaultCalendarLabelsPromise;
 }
 
 export async function getDefaultCalendarLabelId(key: (typeof DEFAULT_CALENDAR_LABELS)[number]["key"]) {

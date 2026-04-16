@@ -9,7 +9,7 @@ export type ShellNavLink = { href: string; label: string; description?: string }
 export type ShellNavDropdown = { id: string; label: string; items: ShellNavLink[] };
 
 const shouldPrefetchRoutes = process.env.NODE_ENV === "production";
-const linkPrefetch = shouldPrefetchRoutes ? undefined : false;
+const linkPrefetch = false;
 
 function isActive(pathname: string, href: string) {
   if (href === "/home") return pathname === "/home" || pathname === "/";
@@ -191,42 +191,16 @@ export function AppShellNav({
   const pathname = usePathname() || "";
   const router = useRouter();
   const [openId, setOpenId] = useState<string | null>(null);
+  const prefetchedRef = useRef(new Set<string>());
   const warmRoute = useCallback(
     (href: string) => {
       if (!shouldPrefetchRoutes) return;
+      if (prefetchedRef.current.has(href)) return;
+      prefetchedRef.current.add(href);
       router.prefetch(href);
     },
     [router],
   );
-
-  useEffect(() => {
-    if (!shouldPrefetchRoutes) return;
-    const hrefs = [...new Set([...primaryLinks.map((i) => i.href), ...dropdowns.flatMap((d) => d.items.map((i) => i.href))])];
-    if (!hrefs.length) return;
-
-    let cancelled = false;
-    const warmAll = () => {
-      hrefs.forEach((href, index) => {
-        window.setTimeout(() => {
-          if (!cancelled) router.prefetch(href);
-        }, index * 60);
-      });
-    };
-
-    if ("requestIdleCallback" in window) {
-      const idleId = window.requestIdleCallback(warmAll, { timeout: 1200 });
-      return () => {
-        cancelled = true;
-        window.cancelIdleCallback(idleId);
-      };
-    }
-
-    const timer = globalThis.setTimeout(warmAll, 250);
-    return () => {
-      cancelled = true;
-      globalThis.clearTimeout(timer);
-    };
-  }, [dropdowns, primaryLinks, router]);
 
   return (
     <nav
