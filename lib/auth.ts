@@ -1,4 +1,5 @@
 import { getIronSession } from "iron-session";
+import type { Prisma } from "@prisma/client";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
@@ -59,11 +60,59 @@ const userSelect = {
   },
 } as const;
 
+const USER_CACHE_TTL_MS = 30_000;
+
+type LoadedUser = Prisma.UserGetPayload<{ select: typeof userSelect }> | null;
+type UserCacheEntry = { user: LoadedUser; expiresAt: number };
+
+const userByIdCache = new Map<string, UserCacheEntry>();
+const userByClerkIdCache = new Map<string, UserCacheEntry>();
+
+function readUserCache(cacheMap: Map<string, UserCacheEntry>, key: string) {
+  const hit = cacheMap.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    cacheMap.delete(key);
+    return null;
+  }
+  return hit.user;
+}
+
+function writeUserCache(user: LoadedUser) {
+  if (!user) return user;
+  const entry = { user, expiresAt: Date.now() + USER_CACHE_TTL_MS };
+  userByIdCache.set(user.id, entry);
+  if (user.clerkId) userByClerkIdCache.set(user.clerkId, entry);
+  return user;
+}
+
+function invalidateUserCache(user: { id: string; clerkId?: string | null } | string, clerkId?: string | null) {
+  const id = typeof user === "string" ? user : user.id;
+  const cid = typeof user === "string" ? clerkId : user.clerkId;
+  userByIdCache.delete(id);
+  if (cid) userByClerkIdCache.delete(cid);
+}
+
 async function loadUserById(id: string) {
-  return prisma.user.findFirst({
+  const cached = readUserCache(userByIdCache, id);
+  if (cached !== null) return cached;
+
+  const user = await prisma.user.findFirst({
     where: { id, deletedAt: null },
     select: userSelect,
   });
+  return writeUserCache(user);
+}
+
+async function loadUserByClerkId(clerkId: string) {
+  const cached = readUserCache(userByClerkIdCache, clerkId);
+  if (cached !== null) return cached;
+
+  const user = await prisma.user.findFirst({
+    where: { clerkId, deletedAt: null },
+    select: userSelect,
+  });
+  return writeUserCache(user);
 }
 
 export async function getAppSession() {
@@ -76,10 +125,7 @@ async function getCurrentUserImpl() {
     const { userId } = await auth();
     if (!userId) return null;
 
-    let user = await prisma.user.findFirst({
-      where: { clerkId: userId, deletedAt: null },
-      select: userSelect,
-    });
+    let user = await loadUserByClerkId(userId);
     if (!user) {
       const cu = await currentUser();
       const email = cu?.primaryEmailAddress?.emailAddress?.trim().toLowerCase();
@@ -89,6 +135,7 @@ async function getCurrentUserImpl() {
           select: userSelect,
         });
         if (byEmail) {
+          invalidateUserCache(byEmail);
           await prisma.user.update({ where: { id: byEmail.id }, data: { clerkId: userId } });
           user = await loadUserById(byEmail.id);
         }
@@ -113,6 +160,7 @@ export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
     const user = await getCurrentUser();
     if (!user || !user.active) redirect("/pending-access");
     if (!user.firstSignInAt) {
+      invalidateUserCache(user);
       await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
       return (await loadUserById(user.id)) as AccessUser;
     }
@@ -122,6 +170,7 @@ export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
   const user = await getCurrentUser();
   if (!user || !user.active) redirect("/login");
   if (!user.firstSignInAt) {
+    invalidateUserCache(user);
     await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
     return (await loadUserById(user.id)) as AccessUser;
   }
