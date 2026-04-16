@@ -32,6 +32,7 @@ export default async function IntegrationsSettingsPage() {
         <CardTitle className="font-display text-base font-bold">{t(locale, "integrationsEmailTitle")}</CardTitle>
         <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "integrationsEmailBody")}</p>
         <p className="text-sm leading-relaxed text-[hsl(var(--muted))]">{t(locale, "integrationsEmailEnv")}</p>
+        <p className="text-sm leading-relaxed text-[hsl(var(--muted))]">{t(locale, "integrationsEmailEnvSmtp")}</p>
       </Card>
     </div>
   );
