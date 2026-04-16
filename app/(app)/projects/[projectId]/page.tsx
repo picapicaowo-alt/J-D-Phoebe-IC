@@ -356,26 +356,8 @@ const projectAttachmentSelect = {
   createdAt: true,
 } as const;
 
-export default async function ProjectDetailPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ task?: string; section?: string }>;
-}) {
-  const [user, { projectId }, sp] = await Promise.all([requireUser() as Promise<AccessUser>, params, searchParams]);
-  const localePromise = getLocale();
-  const sessionPromise = getAppSession();
-  const permissionPromise = Promise.all([
-    userHasPermission(user, "project.soft_delete"),
-    userHasPermission(user, "project.member.manage"),
-    userHasPermission(user, "project.workflow.update"),
-    userHasPermission(user, "knowledge.create"),
-    userHasPermission(user, "knowledge.read"),
-    userHasPermission(user, "project.read"),
-  ]);
-
-  const project = await prisma.project.findFirst({
+async function loadProjectCore(projectId: string) {
+  return prisma.project.findFirst({
     where: { id: projectId, deletedAt: null },
     select: {
       id: true,
@@ -400,6 +382,83 @@ export default async function ProjectDetailPage({
           roleDefinition: { select: { displayName: true } },
         },
       },
+      nodes: {
+        where: { deletedAt: null },
+        orderBy: { sortOrder: "asc" },
+        select: {
+          id: true,
+          title: true,
+          parentNodeId: true,
+          progressPercent: true,
+          status: true,
+          sortOrder: true,
+          dueAt: true,
+          description: true,
+          operationalLabels: true,
+          waitingStartedAt: true,
+          waitingOnUserId: true,
+          waitingOnUsers: { orderBy: { createdAt: "asc" }, select: { user: { select: { id: true, name: true } } } },
+          waitingOnExternalName: true,
+          waitingDetails: true,
+          approverUserId: true,
+          approvalRequestedAt: true,
+          approvalCompletedAt: true,
+          nextAction: true,
+          isProjectBottleneck: true,
+          waitingOnUser: { select: { id: true, name: true } },
+          approverUser: { select: { id: true, name: true } },
+          assignees: { select: { user: { select: { id: true, name: true } } } },
+        },
+      },
+    },
+  });
+}
+
+export default async function ProjectDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ task?: string; section?: string }>;
+}) {
+  const [user, { projectId }, sp] = await Promise.all([requireUser() as Promise<AccessUser>, params, searchParams]);
+  const localePromise = getLocale();
+  const sessionPromise = getAppSession();
+  const permissionPromise = Promise.all([
+    userHasPermission(user, "project.soft_delete"),
+    userHasPermission(user, "project.member.manage"),
+    userHasPermission(user, "project.workflow.update"),
+    userHasPermission(user, "knowledge.create"),
+    userHasPermission(user, "knowledge.read"),
+    userHasPermission(user, "project.read"),
+  ]);
+  const projectPromise = loadProjectCore(projectId);
+  const projectCalendarEventsPromise = Promise.all([projectPromise, permissionPromise]).then(([project, permissions]) => {
+    const canReadCalendar = permissions[5];
+    if (!project || !canReadCalendar) return [];
+    return prisma.calendarEvent.findMany({
+      where: { projectId: project.id },
+      select: {
+        id: true,
+        title: true,
+        startsAt: true,
+        label: { select: { name: true, color: true } },
+        organizer: { select: { id: true, name: true } },
+      },
+      orderBy: { startsAt: "desc" },
+      take: 30,
+    });
+  });
+
+  const project = await projectPromise;
+  if (!project) notFound();
+  if (!canViewProject(user, project)) notFound();
+
+  const canManage = canManageProject(user, project);
+  const mustIncludeUserIds = [...new Set([project.ownerId, ...project.memberships.map((m) => m.userId)])];
+  const projectRelationsPromise = prisma.project.findFirstOrThrow({
+    where: { id: project.id, deletedAt: null },
+    select: {
       outgoingRelations: {
         select: {
           id: true,
@@ -434,154 +493,140 @@ export default async function ProjectDetailPage({
           sharedAttachments: { select: { attachment: { select: { id: true } } } },
         },
       },
-      nodes: {
-        where: { deletedAt: null },
-        orderBy: { sortOrder: "asc" },
-        select: {
-          id: true,
-          title: true,
-          parentNodeId: true,
-          progressPercent: true,
-          status: true,
-          sortOrder: true,
-          dueAt: true,
-          description: true,
-          operationalLabels: true,
-          waitingStartedAt: true,
-          waitingOnUserId: true,
-          waitingOnUsers: { orderBy: { createdAt: "asc" }, select: { user: { select: { id: true, name: true } } } },
-          waitingOnExternalName: true,
-          waitingDetails: true,
-          approverUserId: true,
-          approvalRequestedAt: true,
-          approvalCompletedAt: true,
-          nextAction: true,
-          isProjectBottleneck: true,
-          waitingOnUser: { select: { id: true, name: true } },
-          approverUser: { select: { id: true, name: true } },
-          assignees: { select: { user: { select: { id: true, name: true } } } },
-        },
-      },
     },
   });
-  if (!project) notFound();
-  if (!canViewProject(user, project)) notFound();
-
-  const canManage = canManageProject(user, project);
-  const mustIncludeUserIds = [...new Set([project.ownerId, ...project.memberships.map((m) => m.userId)])];
-
+  const projectFilesPromise = prisma.attachment.findMany({
+    where: {
+      projectId: project.id,
+      deletedAt: null,
+      workflowNodeId: null,
+      knowledgeAssetId: null,
+      memberOutputId: null,
+    },
+    orderBy: { createdAt: "desc" },
+    select: projectAttachmentSelect,
+  });
+  const ownKnowledgePromise = prisma.knowledgeAsset.findMany({
+    where: { projectId: project.id, deletedAt: null },
+    select: knowledgeAssetSelect,
+    orderBy: { updatedAt: "desc" },
+    take: 100,
+  });
+  const sharedKnowledgeInboundPromise = prisma.projectRelationSharedKnowledge.findMany({
+    where: { relation: { toProjectId: project.id } },
+    select: {
+      id: true,
+      relation: {
+        select: {
+          fromProject: {
+            select: {
+              id: true,
+              name: true,
+              company: { select: { id: true, name: true } },
+            },
+          },
+        },
+      },
+      knowledgeAsset: { select: knowledgeAssetSelect },
+    },
+  });
+  const sharedAttachmentInboundPromise = prisma.projectRelationSharedAttachment.findMany({
+    where: { relation: { toProjectId: project.id } },
+    select: {
+      id: true,
+      relation: {
+        select: {
+          fromProject: {
+            select: {
+              id: true,
+              name: true,
+              company: { select: { id: true, name: true } },
+            },
+          },
+        },
+      },
+      attachment: { select: projectAttachmentSelect },
+    },
+  });
+  const projectDeptsPromise: Promise<{ id: string; name: string }[]> = canManage
+    ? prisma.department.findMany({
+        where: { companyId: project.companyId },
+        orderBy: { sortOrder: "asc" },
+        select: { id: true, name: true },
+      })
+    : Promise.resolve([]);
+  const projectGroupListPromise: Promise<{ id: string; name: string }[]> = canManage
+    ? prisma.projectGroup.findMany({
+        where: { companyId: project.companyId },
+        orderBy: { sortOrder: "asc" },
+        select: { id: true, name: true },
+      })
+    : Promise.resolve([]);
+  const staffPromise: Promise<{ id: string; name: string }[]> = canManage
+    ? prisma.user.findMany({
+        where: {
+          deletedAt: null,
+          OR: [
+            { id: { in: mustIncludeUserIds } },
+            {
+              active: true,
+              OR: [
+                { groupMemberships: { some: { orgGroupId: project.company.orgGroupId } } },
+                { companyMemberships: { some: { company: { orgGroupId: project.company.orgGroupId } } } },
+                { projectMemberships: { some: { project: { company: { orgGroupId: project.company.orgGroupId } } } } },
+              ],
+            },
+          ],
+        },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+    : Promise.resolve([]);
+  const projectRolesPromise: Promise<{ id: string; displayName: string }[]> = canManage
+    ? prisma.roleDefinition.findMany({
+        where: { appliesScope: "PROJECT" },
+        orderBy: { displayName: "asc" },
+        select: { id: true, displayName: true },
+      })
+    : Promise.resolve([]);
+  const relationTargetProjectsPromise: Promise<{ id: string; name: string; company: { id: string; name: string } }[]> = canManage
+    ? prisma.project.findMany({
+        where: { deletedAt: null, id: { not: project.id }, ...projectVisibilityWhere(user) },
+        select: { id: true, name: true, company: { select: { id: true, name: true } } },
+        orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
+        take: 120,
+      })
+    : Promise.resolve([]);
   const [
+    [canSoftDeletePermission, canMemberManagePermission, canEditTasksPermission, canEditKnowledge, canReadKnowledge, canReadCalendar],
+    locale,
+    session,
+    projectCalendarEvents,
+    projectRelations,
     projectFiles,
     ownKnowledge,
     sharedKnowledgeInbound,
     sharedAttachmentInbound,
     projectDepts,
     projectGroupList,
-    projectCalendarEvents,
     staff,
     projectRoles,
     relationTargetProjects,
-    [canSoftDeletePermission, canMemberManagePermission, canEditTasksPermission, canEditKnowledge, canReadKnowledge, canReadCalendar],
-    locale,
-    session,
   ] = await Promise.all([
-    prisma.attachment.findMany({
-      where: {
-        projectId: project.id,
-        deletedAt: null,
-        workflowNodeId: null,
-        knowledgeAssetId: null,
-        memberOutputId: null,
-      },
-      orderBy: { createdAt: "desc" },
-      select: projectAttachmentSelect,
-    }),
-    prisma.knowledgeAsset.findMany({
-      where: { projectId: project.id, deletedAt: null },
-      select: knowledgeAssetSelect,
-      orderBy: { updatedAt: "desc" },
-      take: 100,
-    }),
-    prisma.projectRelationSharedKnowledge.findMany({
-      where: { relation: { toProjectId: project.id } },
-      select: {
-        id: true,
-        relation: {
-          select: {
-            fromProject: {
-              select: {
-                id: true,
-                name: true,
-                company: { select: { id: true, name: true } },
-              },
-            },
-          },
-        },
-        knowledgeAsset: { select: knowledgeAssetSelect },
-      },
-    }),
-    prisma.projectRelationSharedAttachment.findMany({
-      where: { relation: { toProjectId: project.id } },
-      select: {
-        id: true,
-        relation: {
-          select: {
-            fromProject: {
-              select: {
-                id: true,
-                name: true,
-                company: { select: { id: true, name: true } },
-              },
-            },
-          },
-        },
-        attachment: { select: projectAttachmentSelect },
-      },
-    }),
-    prisma.department.findMany({
-      where: { companyId: project.companyId },
-      orderBy: { sortOrder: "asc" },
-      select: { id: true, name: true },
-    }),
-    prisma.projectGroup.findMany({
-      where: { companyId: project.companyId },
-      orderBy: { sortOrder: "asc" },
-      select: { id: true, name: true },
-    }),
-    prisma.calendarEvent.findMany({
-      where: { projectId: project.id },
-      select: {
-        id: true,
-        title: true,
-        startsAt: true,
-        label: { select: { name: true, color: true } },
-        organizer: { select: { id: true, name: true } },
-      },
-      orderBy: { startsAt: "desc" },
-      take: 30,
-    }),
-    prisma.user.findMany({
-      where: {
-        deletedAt: null,
-        OR: [{ id: { in: mustIncludeUserIds } }, { active: true }],
-      },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
-    prisma.roleDefinition.findMany({
-      where: { appliesScope: "PROJECT" },
-      orderBy: { displayName: "asc" },
-      select: { id: true, displayName: true },
-    }),
-    prisma.project.findMany({
-      where: { deletedAt: null, id: { not: project.id }, ...projectVisibilityWhere(user) },
-      select: { id: true, name: true, company: { select: { id: true, name: true } } },
-      orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
-      take: 120,
-    }),
     permissionPromise,
     localePromise,
     sessionPromise,
+    projectCalendarEventsPromise,
+    projectRelationsPromise,
+    projectFilesPromise,
+    ownKnowledgePromise,
+    sharedKnowledgeInboundPromise,
+    sharedAttachmentInboundPromise,
+    projectDeptsPromise,
+    projectGroupListPromise,
+    staffPromise,
+    projectRolesPromise,
+    relationTargetProjectsPromise,
   ]);
 
   const canSoftDeleteProject =
@@ -598,7 +643,7 @@ export default async function ProjectDetailPage({
       canEditWorkflow(user, project) ||
       user.projectMemberships.some((m) => m.projectId === project.id));
 
-  const relationCount = project.outgoingRelations.length + project.incomingRelations.length;
+  const relationCount = projectRelations.outgoingRelations.length + projectRelations.incomingRelations.length;
   const knowledgeTotalCount = ownKnowledge.length + sharedKnowledgeInbound.length;
   const filesTotalCount = projectFiles.length + sharedAttachmentInbound.length;
   const taskRows = buildProjectTaskRows(project.nodes);
@@ -892,7 +937,7 @@ export default async function ProjectDetailPage({
               </form>
             ) : null}
             <ul className="space-y-3 text-sm">
-              {project.outgoingRelations.map((rel) => {
+              {projectRelations.outgoingRelations.map((rel) => {
                 const sharedKIds = new Set(rel.sharedKnowledge.map((s) => s.knowledgeAsset.id));
                 const sharedAIds = new Set(rel.sharedAttachments.map((s) => s.attachment.id));
                 const canRelManage = canManageProject(user, project) || canManageProject(user, rel.toProject);
@@ -969,7 +1014,7 @@ export default async function ProjectDetailPage({
                   </li>
                 );
               })}
-              {project.incomingRelations.map((rel) => {
+              {projectRelations.incomingRelations.map((rel) => {
                 const sharedKIds = new Set(rel.sharedKnowledge.map((s) => s.knowledgeAsset.id));
                 const sharedAIds = new Set(rel.sharedAttachments.map((s) => s.attachment.id));
                 const canRelManage = canManageProject(user, rel.fromProject) || canManageProject(user, project);
@@ -1047,7 +1092,7 @@ export default async function ProjectDetailPage({
                   </li>
                 );
               })}
-              {!project.outgoingRelations.length && !project.incomingRelations.length ? (
+              {!projectRelations.outgoingRelations.length && !projectRelations.incomingRelations.length ? (
                 <li className="text-sm text-[hsl(var(--muted))]">{t(locale, "projNoRelations")}</li>
               ) : null}
             </ul>
