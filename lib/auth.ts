@@ -1,7 +1,7 @@
 import { getIronSession } from "iron-session";
 import type { Prisma } from "@prisma/client";
 import { cookies } from "next/headers";
-import { unstable_cache } from "next/cache";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import type { AccessUser } from "@/lib/access";
@@ -13,23 +13,15 @@ import { sessionOptions } from "@/lib/session";
 const userSelect = {
   id: true,
   email: true,
-  passwordHash: true,
   clerkId: true,
   name: true,
   title: true,
-  contactEmails: true,
-  phone: true,
-  timezone: true,
   active: true,
   mustChangePassword: true,
   isSuperAdmin: true,
   avatarUrl: true,
   companionIntroCompletedAt: true,
   firstSignInAt: true,
-  positiveAttentionUntil: true,
-  deletedAt: true,
-  createdAt: true,
-  updatedAt: true,
   groupMemberships: {
     select: {
       orgGroupId: true,
@@ -74,6 +66,7 @@ const shellUserSelect = {
 } as const;
 
 const USER_CACHE_TTL_MS = 30_000;
+const ACCESS_USER_CACHE_TAG = "access-user";
 
 type LoadedUser = Prisma.UserGetPayload<{ select: typeof userSelect }> | null;
 export type ShellUser = Prisma.UserGetPayload<{ select: typeof shellUserSelect }> | null;
@@ -107,14 +100,36 @@ function invalidateUserCache(user: { id: string; clerkId?: string | null } | str
   if (cid) userByClerkIdCache.delete(cid);
 }
 
+export function invalidateAccessUserCache(user: { id: string; clerkId?: string | null } | string, clerkId?: string | null) {
+  invalidateUserCache(user, clerkId);
+  revalidateTag(ACCESS_USER_CACHE_TAG, "max");
+}
+
+const loadAccessUserByIdCached = unstable_cache(
+  async (id: string) =>
+    prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      select: userSelect,
+    }),
+  ["access-user-by-id"],
+  { revalidate: 15, tags: [ACCESS_USER_CACHE_TAG] },
+);
+
+const loadAccessUserByClerkIdCached = unstable_cache(
+  async (clerkId: string) =>
+    prisma.user.findFirst({
+      where: { clerkId, deletedAt: null },
+      select: userSelect,
+    }),
+  ["access-user-by-clerk-id"],
+  { revalidate: 15, tags: [ACCESS_USER_CACHE_TAG] },
+);
+
 async function loadUserById(id: string) {
   const cached = readUserCache(userByIdCache, id);
   if (cached !== null) return cached;
 
-  const user = await prisma.user.findFirst({
-    where: { id, deletedAt: null },
-    select: userSelect,
-  });
+  const user = await loadAccessUserByIdCached(id);
   return writeUserCache(user);
 }
 
@@ -122,10 +137,7 @@ async function loadUserByClerkId(clerkId: string) {
   const cached = readUserCache(userByClerkIdCache, clerkId);
   if (cached !== null) return cached;
 
-  const user = await prisma.user.findFirst({
-    where: { clerkId, deletedAt: null },
-    select: userSelect,
-  });
+  const user = await loadAccessUserByClerkIdCached(clerkId);
   return writeUserCache(user);
 }
 
@@ -169,7 +181,7 @@ async function getCurrentUserImpl() {
           select: userSelect,
         });
         if (byEmail) {
-          invalidateUserCache(byEmail);
+          invalidateAccessUserCache(byEmail);
           await prisma.user.update({ where: { id: byEmail.id }, data: { clerkId: userId } });
           user = await loadUserById(byEmail.id);
         }
@@ -211,7 +223,7 @@ export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
     const user = await getCurrentUser();
     if (!user || !user.active) redirect("/pending-access");
     if (!user.firstSignInAt) {
-      invalidateUserCache(user);
+      invalidateAccessUserCache(user);
       await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
       return (await loadUserById(user.id)) as AccessUser;
     }
@@ -221,7 +233,7 @@ export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
   const user = await getCurrentUser();
   if (!user || !user.active) redirect("/login");
   if (!user.firstSignInAt) {
-    invalidateUserCache(user);
+    invalidateAccessUserCache(user);
     await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
     return (await loadUserById(user.id)) as AccessUser;
   }

@@ -187,7 +187,7 @@ export async function KnowledgeHubBody() {
           </div>
         </div>
         {canCreate ? (
-          <Link href="/knowledge/browse#knowledge-create" prefetch={false}>
+          <Link href="/knowledge/browse?create=1" prefetch={false}>
             <Button type="button" className="rounded-[10px] px-5">
               + {t(locale, "knowledgeAddNew")}
             </Button>

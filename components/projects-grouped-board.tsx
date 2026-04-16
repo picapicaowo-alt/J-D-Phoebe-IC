@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useOptimistic, useState, useTransition } from "react";
+import { useCallback, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { setProjectGroupMembershipAction } from "@/app/actions/project-group";
 export type ProjectGroupRow = { id: string; name: string; sortOrder: number };
 
@@ -60,6 +60,7 @@ export function ProjectsGroupedBoard({
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+  const prefetchedHrefsRef = useRef(new Set<string>());
   const movable = useMemo(() => new Set(movableProjectIds), [movableProjectIds]);
   const [optimisticProjects, moveOptimistic] = useOptimistic(projects, applyProjectMove);
 
@@ -119,6 +120,16 @@ export function ProjectsGroupedBoard({
     moveProject(id, groupId);
   };
 
+  const prefetchProject = useCallback(
+    (projectId: string) => {
+      const href = `/projects/${projectId}`;
+      if (prefetchedHrefsRef.current.has(href)) return;
+      prefetchedHrefsRef.current.add(href);
+      router.prefetch(href);
+    },
+    [router],
+  );
+
   const renderCard = (p: GroupedProjectCard) => {
     const draggable = movable.has(p.id);
     return (
@@ -126,12 +137,14 @@ export function ProjectsGroupedBoard({
         key={p.id}
         draggable={draggable}
         onDragStart={(ev) => onDragStart(ev, p.id)}
+        onMouseEnter={() => prefetchProject(p.id)}
+        onFocusCapture={() => prefetchProject(p.id)}
         className={`flex flex-wrap items-center justify-between gap-4 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-sm ${
           draggable ? "cursor-grab active:cursor-grabbing" : ""
         }`}
       >
         <div className="min-w-0 flex-1">
-          <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`} prefetch={false}>
+          <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
             {p.name}
           </Link>
           <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
@@ -157,7 +170,7 @@ export function ProjectsGroupedBoard({
             ) : null}
           </div>
         </div>
-        <Link className="shrink-0 text-sm text-[hsl(var(--accent))] hover:underline" href={`/projects/${p.id}`} prefetch={false}>
+        <Link className="shrink-0 text-sm text-[hsl(var(--accent))] hover:underline" href={`/projects/${p.id}`}>
           {copy.detail}
         </Link>
       </div>

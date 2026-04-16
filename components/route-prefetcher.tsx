@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-const shouldPrefetchRoutes = process.env.NODE_ENV === "production";
+const shouldPrefetchRoutes = process.env.NODE_ENV !== "test";
 
 export function RoutePrefetcher({ hrefs, limit = 24 }: { hrefs: string[]; limit?: number }) {
   const router = useRouter();

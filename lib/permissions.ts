@@ -1,10 +1,11 @@
 import type { AccessUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { ALL_PERMISSION_KEYS, type PermissionKey } from "@/lib/permission-keys";
-import { unstable_cache } from "next/cache";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { cache as reactCache } from "react";
 
 const permissionKeyMemCache = new Map<string, Set<string>>();
+const PERMISSION_KEYS_CACHE_TAG = "permission-keys";
 
 async function getPermissionKeysForUserImpl(userId: string, isSuperAdmin: boolean): Promise<Set<string>> {
   if (isSuperAdmin) return new Set(ALL_PERMISSION_KEYS);
@@ -12,36 +13,47 @@ async function getPermissionKeysForUserImpl(userId: string, isSuperAdmin: boolea
   const hit = permissionKeyMemCache.get(userId);
   if (hit) return hit;
 
-  const user = await prisma.user.findFirst({
-    where: { id: userId, deletedAt: null },
-    include: {
-      groupMemberships: { select: { roleDefinitionId: true } },
-      companyMemberships: { select: { roleDefinitionId: true } },
-      projectMemberships: { select: { roleDefinitionId: true } },
-    },
-  });
-  if (!user) return new Set();
-
-  const roleIds = [
-    ...user.groupMemberships.map((m) => m.roleDefinitionId),
-    ...user.companyMemberships.map((m) => m.roleDefinitionId),
-    ...user.projectMemberships.map((m) => m.roleDefinitionId),
-  ];
-  const uniqueRoleIds = [...new Set(roleIds)];
-  if (!uniqueRoleIds.length) {
+  const keys = await getPermissionKeysForUserCached(userId);
+  if (!keys.length) {
     permissionKeyMemCache.set(userId, new Set());
     return new Set();
   }
 
-  const rows = await prisma.rolePermission.findMany({
-    where: { roleDefinitionId: { in: uniqueRoleIds }, allowed: true },
-    include: { permissionDefinition: { select: { key: true } } },
-  });
-
-  const set = new Set(rows.map((r) => r.permissionDefinition.key));
+  const set = new Set(keys);
   permissionKeyMemCache.set(userId, set);
   return set;
 }
+
+const getPermissionKeysForUserCached = unstable_cache(
+  async (userId: string): Promise<string[]> => {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: {
+        groupMemberships: { select: { roleDefinitionId: true } },
+        companyMemberships: { select: { roleDefinitionId: true } },
+        projectMemberships: { select: { roleDefinitionId: true } },
+      },
+    });
+    if (!user) return [];
+
+    const roleIds = [
+      ...user.groupMemberships.map((m) => m.roleDefinitionId),
+      ...user.companyMemberships.map((m) => m.roleDefinitionId),
+      ...user.projectMemberships.map((m) => m.roleDefinitionId),
+    ];
+    const uniqueRoleIds = [...new Set(roleIds)];
+    if (!uniqueRoleIds.length) return [];
+
+    const rows = await prisma.rolePermission.findMany({
+      where: { roleDefinitionId: { in: uniqueRoleIds }, allowed: true },
+      include: { permissionDefinition: { select: { key: true } } },
+    });
+
+    return [...new Set(rows.map((r) => r.permissionDefinition.key))];
+  },
+  ["permission-keys-by-user"],
+  { revalidate: 15, tags: [PERMISSION_KEYS_CACHE_TAG] },
+);
 
 const getPermissionKeysForShellImpl = unstable_cache(
   async (userId: string): Promise<string[]> => {
@@ -88,6 +100,7 @@ export async function getPermissionKeysForShell(userId: string, isSuperAdmin: bo
 
 export function invalidatePermissionCache(userId: string) {
   permissionKeyMemCache.delete(userId);
+  revalidateTag(PERMISSION_KEYS_CACHE_TAG, "max");
 }
 
 export async function userHasPermission(user: AccessUser, key: PermissionKey) {

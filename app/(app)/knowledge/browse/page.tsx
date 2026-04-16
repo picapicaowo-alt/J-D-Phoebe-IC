@@ -17,6 +17,7 @@ export default async function KnowledgeBrowsePage({
     companyId?: string;
     authorId?: string;
     tag?: string;
+    create?: string;
   }>;
 }) {
   const user = (await requireUser()) as AccessUser;

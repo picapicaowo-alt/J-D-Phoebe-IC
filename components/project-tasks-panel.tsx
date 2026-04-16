@@ -64,6 +64,34 @@ type TaskOptimisticAction =
   | { type: "delete"; nodeId: string }
   | { type: "clear-all" };
 
+function clampProgressPercent(progressPercent: number) {
+  return Math.max(0, Math.min(100, progressPercent));
+}
+
+function syncTaskForestRollups(forest: ProjectTaskRow[]): ProjectTaskRow[] {
+  return forest.map(syncTaskNodeRollup);
+}
+
+function syncTaskNodeRollup(node: ProjectTaskRow): ProjectTaskRow {
+  const children = node.children.map(syncTaskNodeRollup);
+  if (!children.length) {
+    const progressPercent = clampProgressPercent(node.progressPercent);
+    return {
+      ...node,
+      children,
+      progressPercent,
+      status: statusFromAggregatedProgress(progressPercent),
+    };
+  }
+  const progressPercent = Math.round(children.reduce((sum, child) => sum + child.progressPercent, 0) / children.length);
+  return {
+    ...node,
+    children,
+    progressPercent,
+    status: statusFromAggregatedProgress(progressPercent),
+  };
+}
+
 function findNodeInForest(forest: ProjectTaskRow[], id: string): ProjectTaskRow | null {
   for (const t of forest) {
     if (t.id === id) return t;
@@ -116,9 +144,9 @@ function removeNode(forest: ProjectTaskRow[], nodeId: string): ProjectTaskRow[] 
 function applyTasksOptimistic(prev: ProjectTaskRow[], action: TaskOptimisticAction): ProjectTaskRow[] {
   switch (action.type) {
     case "add-root":
-      return [...prev, action.row];
+      return syncTaskForestRollups([...prev, action.row]);
     case "add-sub":
-      return addSubToParent(prev, action.parentId, action.row);
+      return syncTaskForestRollups(addSubToParent(prev, action.parentId, action.row));
     case "toggle": {
       const target = findNodeInForest(prev, action.nodeId);
       if (!target) return prev;
@@ -129,7 +157,7 @@ function applyTasksOptimistic(prev: ProjectTaskRow[], action: TaskOptimisticActi
       return applyDeepToggle(prev, leafSet, !allDone);
     }
     case "delete":
-      return removeNode(prev, action.nodeId);
+      return syncTaskForestRollups(removeNode(prev, action.nodeId));
     case "clear-all":
       return [];
     default:
