@@ -929,7 +929,7 @@ const M = {
     profileCompanionCardLead:
       "Mood and level follow your activity in the app. Your species choice is permanent after onboarding unless a superadmin updates it.",
     profileCompanionManage: "Choose companion",
-    homeCompanionEncouragement: "Today’s encouragement",
+    homeCompanionEncouragement: "Today’s Reflection",
     profileLogoLabel: "Company logo",
     profileLogoHelp: "Shown on company and project surfaces. JPEG / PNG / WebP.",
     profileLogoRemove: "Remove logo",
@@ -1917,7 +1917,7 @@ const M = {
     profileCompanionCardLead:
       "心情与等级会随你在应用中的活动变化；完成入职形象选择后，物种不可自行更换，除非超级管理员协助调整。",
     profileCompanionManage: "选择伙伴",
-    homeCompanionEncouragement: "今日鼓励",
+    homeCompanionEncouragement: "今日反思",
     profileLogoLabel: "公司标志",
     profileLogoHelp: "显示在公司与项目相关位置。JPEG / PNG / WebP。",
     profileLogoRemove: "移除标志",

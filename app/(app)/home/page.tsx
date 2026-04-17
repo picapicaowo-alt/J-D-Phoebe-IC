@@ -45,7 +45,6 @@ export default async function HomePage({
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{t(locale, "homeTitle")}</h1>
         <p className="mt-2 text-base text-zinc-500 dark:text-zinc-400">{t(locale, "homeSubtitle")}</p>
-        <p className="mt-2 max-w-2xl text-base leading-relaxed text-zinc-500 dark:text-zinc-400">{t(locale, "homePhilosophy")}</p>
       </div>
 
       <Suspense fallback={<HomeAlertsFallback />}>
