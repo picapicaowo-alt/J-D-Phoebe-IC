@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
 import { getLocale, type Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
+import { getZodiacSignLabel } from "@/lib/profile-labels";
 import { StaffDirectoryRows } from "@/components/staff-directory-rows";
 import { StaffDirectoryFilters } from "@/components/staff-directory-filters";
 
@@ -254,33 +255,42 @@ export async function StaffDirectoryBody({
       </p>
 
       <StaffDirectoryRows
-        rows={staff.map((s) => ({
-          id: s.id,
-          name: s.name,
-          email: s.email,
-          title: s.title,
-          signature: readOptionalString(s, "signature"),
-          avatarUrl: s.avatarUrl,
-          active: s.active,
-          isSuperAdmin: s.isSuperAdmin,
-          activeProjectCount: s.projectMemberships.length,
-          onboarding: onboardingBadgeText(s.memberOnboardings, locale),
-          onboardingTimeline: showOnboardingTimeline
-            ? [...s.memberOnboardings]
-                .sort((a, b) => a.company.name.localeCompare(b.company.name))
-                .map((ob) => ({
-                  key: `${ob.companyId}:${ob.completedAt?.toISOString() ?? "pending"}`,
-                  label: ob.completedAt
-                    ? `${ob.company.name} · ${t(locale, "onboardingCompletedAtLabel")}: ${formatOnboardingTimestamp(ob.completedAt)}`
-                    : `${ob.company.name} · ${t(locale, "staffOnboardingPending")}`,
-                }))
-            : [],
-          companies: s.companyMemberships.map((m) => ({
-            key: m.id,
-            label: `${m.company.name}${m.department ? ` · ${m.department.name}` : ""}`,
-          })),
-          contactLine: [readOptionalString(s, "contactEmails"), readOptionalString(s, "phone")].filter(Boolean).join(" · ").trim() || null,
-        }))}
+        rows={staff.map((s) => {
+          const zodiacLabel = getZodiacSignLabel(readOptionalString(s, "birthday"), locale);
+          const mbti = readOptionalString(s, "mbti");
+          return {
+            id: s.id,
+            name: s.name,
+            email: s.email,
+            title: s.title,
+            signature: readOptionalString(s, "signature"),
+            avatarUrl: s.avatarUrl,
+            active: s.active,
+            isSuperAdmin: s.isSuperAdmin,
+            activeProjectCount: s.projectMemberships.length,
+            onboarding: onboardingBadgeText(s.memberOnboardings, locale),
+            onboardingTimeline: showOnboardingTimeline
+              ? [...s.memberOnboardings]
+                  .sort((a, b) => a.company.name.localeCompare(b.company.name))
+                  .map((ob) => ({
+                    key: `${ob.companyId}:${ob.completedAt?.toISOString() ?? "pending"}`,
+                    label: ob.completedAt
+                      ? `${ob.company.name} · ${t(locale, "onboardingCompletedAtLabel")}: ${formatOnboardingTimestamp(ob.completedAt)}`
+                      : `${ob.company.name} · ${t(locale, "staffOnboardingPending")}`,
+                  }))
+              : [],
+            companies: s.companyMemberships.map((m) => ({
+              key: m.id,
+              label: `${m.company.name}${m.department ? ` · ${m.department.name}` : ""}`,
+            })),
+            contactLine:
+              [readOptionalString(s, "contactEmails"), readOptionalString(s, "phone")].filter(Boolean).join(" · ").trim() || null,
+            labels: [
+              ...(zodiacLabel ? [{ key: "zodiac", label: zodiacLabel, tone: "info" as const }] : []),
+              ...(mbti ? [{ key: `mbti:${mbti}`, label: mbti, tone: "neutral" as const }] : []),
+            ],
+          };
+        })}
         copy={{
           active: t(locale, "staffStatusActive"),
           inactive: t(locale, "staffStatusInactive"),

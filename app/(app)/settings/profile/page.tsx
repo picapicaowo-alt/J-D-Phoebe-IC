@@ -7,6 +7,7 @@ import type { AccessUser } from "@/lib/access";
 import { isClerkEnabled } from "@/lib/clerk-config";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
+import { getZodiacSignLabel, MBTI_OPTIONS } from "@/lib/profile-labels";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/access";
 import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/companion-manifest";
@@ -33,6 +34,7 @@ export default async function ProfileSettingsPage({
   });
   if (!user) redirect("/login");
   const timeZoneOptions = getTimeZoneInputOptions();
+  const zodiacLabel = getZodiacSignLabel(user.birthday, locale);
 
   const companion = user.companionProfile;
   const asset = companion ? getCompanionManifest().find((e) => e.species === companion.species) : null;
@@ -115,6 +117,38 @@ export default async function ProfileSettingsPage({
             <label className="text-sm font-medium">{t(locale, "profilePhoneLabel")}</label>
             <Input name="phone" defaultValue={user.phone ?? ""} className="text-sm" placeholder="+1 …" />
           </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="profile-birthday">
+                {t(locale, "profileBirthdayLabel")}
+              </label>
+              <Input id="profile-birthday" name="birthday" type="date" defaultValue={user.birthday ?? ""} className="text-sm" />
+              <p className="text-xs text-[hsl(var(--muted))]">
+                {zodiacLabel
+                  ? t(locale, "profileBirthdayHelpWithZodiac").replace("{zodiac}", zodiacLabel)
+                  : t(locale, "profileBirthdayHelp")}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="profile-mbti">
+                {t(locale, "profileMbtiLabel")}
+              </label>
+              <Select id="profile-mbti" name="mbti" defaultValue={user.mbti ?? ""} className="text-sm">
+                <option value="">{t(locale, "commonOptional")}</option>
+                {MBTI_OPTIONS.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileMbtiHelp")}</p>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="birthdayHidden" defaultChecked={user.birthdayHidden} />
+            {t(locale, "profileBirthdayHiddenLabel")}
+          </label>
+          <p className="-mt-2 text-xs text-[hsl(var(--muted))]">{t(locale, "profileBirthdayHiddenHelp")}</p>
           <div className="space-y-1">
             <label className="text-sm font-medium" htmlFor="profile-timezone">
               {t(locale, "profileTimezoneLabel")}

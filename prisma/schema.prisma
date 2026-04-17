@@ -360,6 +360,12 @@ model User {
   /// Extra contact emails (comma / semicolon separated); login email stays in `email`.
   contactEmails             String?
   phone                     String?
+  /// Optional birthday stored as YYYY-MM-DD to avoid timezone shifts on date-only values.
+  birthday                  String?
+  /// When true, exact birthday is hidden from non-superadmins, but zodiac may still be shown.
+  birthdayHidden            Boolean   @default(false)
+  /// Optional Myers-Briggs type indicator (for example INFP, ENTJ).
+  mbti                      String?
   timezone                  String    @default("UTC")
   active                    Boolean   @default(true)
   /// When true, user must change password at /settings/change-password before using the app.

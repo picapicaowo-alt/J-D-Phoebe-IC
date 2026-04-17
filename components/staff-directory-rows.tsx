@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { StaffAvatarPreview } from "@/components/staff-avatar-preview";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 export type StaffDirectoryRowDTO = {
@@ -20,6 +21,7 @@ export type StaffDirectoryRowDTO = {
   onboarding: { label: string; tone: "done" | "pending" | "none" };
   onboardingTimeline?: { key: string; label: string }[];
   companies: { key: string; label: string }[];
+  labels?: { key: string; label: string; tone?: "neutral" | "good" | "warn" | "bad" | "info" }[];
 };
 
 type Copy = {
@@ -109,6 +111,15 @@ export function StaffDirectoryRows({ rows, copy }: { rows: StaffDirectoryRowDTO[
                 {s.title ? <p className="text-sm text-[hsl(var(--muted))]">{s.title}</p> : <p className="text-sm text-[hsl(var(--muted))]">{s.email}</p>}
                 {s.contactLine ? <p className="text-sm text-[hsl(var(--muted))]">{s.contactLine}</p> : null}
                 {s.signature ? <p className="mt-2 line-clamp-2 whitespace-pre-line text-sm text-[hsl(var(--foreground))]">{s.signature}</p> : null}
+                {s.labels?.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {s.labels.map((label) => (
+                      <Badge key={label.key} tone={label.tone ?? "neutral"}>
+                        {label.label}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="mt-2 flex flex-wrap gap-2">
                   {s.companies.length ? (
                     s.companies.map((m) => (

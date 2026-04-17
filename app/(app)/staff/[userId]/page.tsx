@@ -25,6 +25,7 @@ import { canManageProject, isAnyAdmin, isSuperAdmin, staffVisibilityWhere, type 
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { tLedgerReason } from "@/lib/ledger-labels";
+import { formatBirthdayLabel, getZodiacSignLabel, MBTI_OPTIONS } from "@/lib/profile-labels";
 import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/companion-manifest";
 import { sumAbilityByUser } from "@/lib/scoring";
 import { userHasPermission } from "@/lib/permissions";
@@ -43,6 +44,7 @@ import { AbilityRadar } from "@/components/ability-radar";
 import { StaffAssignCompanyForm } from "@/components/staff-assign-company-form";
 import { StaffAvatarPreview } from "@/components/staff-avatar-preview";
 import { StaffObservationsPanel } from "@/components/staff-observations-panel";
+import { Badge } from "@/components/ui/badge";
 
 function formatOnboardingTimestamp(when: Date) {
   return when.toISOString().slice(0, 16).replace("T", " ");
@@ -152,6 +154,9 @@ async function loadStaffDetailTarget(actor: AccessUser, userId: string) {
       contactEmails: null,
       phone: null,
       signature: null,
+      birthday: null,
+      birthdayHidden: false,
+      mbti: null,
       companionIntroCompletedAt: null,
       memberOnboardings: [],
       companionProfile: null,
@@ -308,6 +313,9 @@ export default async function StaffDetailPage({
       [],
     ),
   ]);
+  const zodiacLabel = getZodiacSignLabel(target.birthday, locale);
+  const formattedBirthday = formatBirthdayLabel(target.birthday, locale);
+  const canSeeExactBirthday = !!target.birthday && (!target.birthdayHidden || actor.id === target.id || isSuperAdmin(actor));
   const projectAssignmentRoleIds = mergeRoleIdSets(
     actorRoleIdsByPermission.get("staff.assign_project"),
     actorRoleIdsByPermission.get("project.member.manage"),
@@ -400,6 +408,12 @@ export default async function StaffDetailPage({
           <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
           {target.title ? <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">{target.title}</p> : null}
           <p className={`text-sm text-[hsl(var(--foreground))] ${target.title ? "mt-1" : "mt-0.5"}`}>{target.email}</p>
+          {zodiacLabel || target.mbti ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {zodiacLabel ? <Badge tone="info">{zodiacLabel}</Badge> : null}
+              {target.mbti ? <Badge>{target.mbti}</Badge> : null}
+            </div>
+          ) : null}
           {target.contactEmails ? (
             <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
               {t(locale, "profileContactEmailsLabel")}: {target.contactEmails}
@@ -408,6 +422,11 @@ export default async function StaffDetailPage({
           {target.phone ? (
             <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
               {t(locale, "profilePhoneLabel")}: {target.phone}
+            </p>
+          ) : null}
+          {canSeeExactBirthday && formattedBirthday ? (
+            <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
+              {t(locale, "profileBirthdayLabel")}: {formattedBirthday}
             </p>
           ) : null}
           {target.signature ? <p className="mt-2 max-w-2xl whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]">{target.signature}</p> : null}
@@ -476,6 +495,38 @@ export default async function StaffDetailPage({
               <label className="text-xs font-medium">{t(locale, "profilePhoneLabel")}</label>
               <Input name="phone" defaultValue={target.phone ?? ""} />
             </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium" htmlFor="staff-birthday">
+                  {t(locale, "profileBirthdayLabel")}
+                </label>
+                <Input id="staff-birthday" name="birthday" type="date" defaultValue={target.birthday ?? ""} />
+                <p className="text-xs text-[hsl(var(--muted))]">
+                  {zodiacLabel
+                    ? t(locale, "profileBirthdayHelpWithZodiac").replace("{zodiac}", zodiacLabel)
+                    : t(locale, "profileBirthdayHelp")}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium" htmlFor="staff-mbti">
+                  {t(locale, "profileMbtiLabel")}
+                </label>
+                <Select id="staff-mbti" name="mbti" defaultValue={target.mbti ?? ""}>
+                  <option value="">{t(locale, "commonOptional")}</option>
+                  {MBTI_OPTIONS.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </Select>
+                <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileMbtiHelp")}</p>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="birthdayHidden" defaultChecked={target.birthdayHidden} />
+              {t(locale, "profileBirthdayHiddenLabel")}
+            </label>
+            <p className="-mt-2 text-xs text-[hsl(var(--muted))]">{t(locale, "profileBirthdayHiddenHelp")}</p>
             {isSuperAdmin(actor) ? (
               <>
                 <label className="flex items-center gap-2 text-sm">

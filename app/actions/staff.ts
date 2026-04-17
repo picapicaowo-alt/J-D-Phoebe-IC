@@ -6,6 +6,7 @@ import { writeAudit } from "@/lib/audit";
 import { isSuperAdmin, type AccessUser } from "@/lib/access";
 import { assertPermission, invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { normalizeBirthday, normalizeMbti } from "@/lib/profile-labels";
 import { canManageCompanyMemberships, canManageProjectMemberships } from "@/lib/scoped-role-access";
 import { normalizeTimeZone } from "@/lib/timezone";
 
@@ -29,6 +30,10 @@ export async function updateStaffAction(formData: FormData) {
   const name = requireString(formData, "name");
   const title = String(formData.get("title") ?? "").trim() || null;
   const signature = String(formData.get("signature") ?? "").trim() || null;
+  const birthday = formData.has("birthday") ? normalizeBirthday(String(formData.get("birthday") ?? "")) : undefined;
+  const birthdayHidden =
+    formData.has("birthday") || formData.has("birthdayHidden") ? String(formData.get("birthdayHidden") ?? "") === "on" : undefined;
+  const mbti = formData.has("mbti") ? normalizeMbti(String(formData.get("mbti") ?? "")) : undefined;
   const active = String(formData.get("active") ?? "") === "on";
   const nextIsSuperAdmin = isSuperAdmin(actor) ? String(formData.get("isSuperAdmin") ?? "") === "on" : target.isSuperAdmin;
 
@@ -64,6 +69,9 @@ export async function updateStaffAction(formData: FormData) {
     isSuperAdmin?: boolean;
     contactEmails?: string | null;
     phone?: string | null;
+    birthday?: string | null;
+    birthdayHidden?: boolean;
+    mbti?: string | null;
     timezone?: string;
   } = {
     name,
@@ -78,6 +86,15 @@ export async function updateStaffAction(formData: FormData) {
   }
   if (formData.has("phone")) {
     data.phone = String(formData.get("phone") ?? "").trim() || null;
+  }
+  if (birthday !== undefined) {
+    data.birthday = birthday;
+  }
+  if (birthdayHidden !== undefined) {
+    data.birthdayHidden = birthdayHidden;
+  }
+  if (mbti !== undefined) {
+    data.mbti = mbti;
   }
   if (formData.has("timezone")) {
     data.timezone = normalizeTimeZone(String(formData.get("timezone") ?? ""));
