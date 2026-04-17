@@ -135,11 +135,11 @@ export async function KnowledgeBrowseBody({
               </select>
             </div>
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "commonSummary")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonSummary")}</label>
               <Input name="summary" />
             </div>
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "commonContent")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonContent")}</label>
               <textarea
                 name="content"
                 rows={4}
@@ -148,11 +148,11 @@ export async function KnowledgeBrowseBody({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonLabels")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonLabels")}</label>
               <Input name="tags" placeholder={t(locale, "kbTagsPlaceholder")} />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonSourceUrl")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonSourceUrl")}</label>
               <Input name="sourceUrl" type="url" placeholder="https://drive.google.com/..." />
             </div>
             <div className="md:col-span-2">
@@ -613,11 +613,11 @@ export async function KnowledgeBrowseBody({
               </select>
             </div>
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "commonSummary")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonSummary")}</label>
               <Input name="summary" />
             </div>
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "commonContent")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonContent")}</label>
               <textarea
                 name="content"
                 rows={4}
@@ -626,11 +626,11 @@ export async function KnowledgeBrowseBody({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonLabels")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonLabels")}</label>
               <Input name="tags" placeholder={t(locale, "kbTagsPlaceholder")} />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonSourceUrl")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonSourceUrl")}</label>
               <Input name="sourceUrl" type="url" placeholder="https://drive.google.com/..." />
             </div>
             <div className="md:col-span-2">
@@ -790,11 +790,11 @@ export async function KnowledgeBrowseBody({
                         <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-4 py-3">
                           <div>
                             <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">{t(locale, "kbEditKnowledge")}</h3>
-                            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbEditDialogSubtitle")}</p>
+                            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "kbEditDialogSubtitle")}</p>
                           </div>
                           <CloseDialogButton
                             dialogId={`kb-edit-${a.id}`}
-                            className="rounded-lg px-2 py-1 text-xs text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
+                            className="rounded-lg px-2 py-1 text-sm text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
                             label={t(locale, "kbDialogClose")}
                           />
                         </div>
@@ -804,15 +804,15 @@ export async function KnowledgeBrowseBody({
                           <input type="hidden" name="titleZh" value={a.titleZh ?? ""} />
                           <textarea name="content" defaultValue={a.content} className="sr-only" readOnly rows={1} tabIndex={-1} aria-hidden />
                           <div className="space-y-1">
-                            <label className="text-xs font-medium">{t(locale, "kbEditTitle")}</label>
+                            <label className="text-sm font-medium">{t(locale, "kbEditTitle")}</label>
                             <Input name="title" defaultValue={a.title} required className="text-sm" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-xs font-medium">{t(locale, "kbEditSummary")}</label>
+                            <label className="text-sm font-medium">{t(locale, "kbEditSummary")}</label>
                             <Input name="summary" defaultValue={a.summary ?? ""} className="text-sm" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-xs font-medium">{t(locale, "commonLayer")}</label>
+                            <label className="text-sm font-medium">{t(locale, "commonLayer")}</label>
                             <select
                               name="layer"
                               defaultValue={a.layer}
@@ -826,15 +826,15 @@ export async function KnowledgeBrowseBody({
                             </select>
                           </div>
                           <div className="space-y-1">
-                            <label className="text-xs font-medium">{t(locale, "commonSourceUrl")}</label>
+                            <label className="text-sm font-medium">{t(locale, "commonSourceUrl")}</label>
                             <Input name="sourceUrl" type="url" defaultValue={a.sourceUrl ?? ""} className="text-sm" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-xs font-medium">{t(locale, "kbTagsField")}</label>
+                            <label className="text-sm font-medium">{t(locale, "kbTagsField")}</label>
                             <Input name="tags" defaultValue={a.tags ?? ""} className="text-sm" placeholder={t(locale, "kbTagsPlaceholder")} />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-xs font-medium">
+                            <label className="text-sm font-medium">
                               {t(locale, "commonProject")} ({t(locale, "commonOptional")})
                             </label>
                             <select
@@ -851,7 +851,7 @@ export async function KnowledgeBrowseBody({
                             </select>
                           </div>
                           <div className="space-y-1">
-                            <label className="text-xs font-medium">
+                            <label className="text-sm font-medium">
                               {t(locale, "commonCompany")} ({t(locale, "commonOptional")})
                             </label>
                             <select
@@ -884,23 +884,23 @@ export async function KnowledgeBrowseBody({
                       <form action={updateKnowledgeAssetAction} className="mt-2 grid gap-2 rounded-md border border-[hsl(var(--border))] p-2 md:grid-cols-2">
                         <input type="hidden" name="id" value={a.id} />
                         <div className="space-y-1 md:col-span-2">
-                          <label className="text-xs font-medium">{t(locale, "kbEditTitle")}</label>
+                          <label className="text-sm font-medium">{t(locale, "kbEditTitle")}</label>
                           <Input name="title" defaultValue={a.title} required />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-xs font-medium">{t(locale, "commonTitleEn")}</label>
+                          <label className="text-sm font-medium">{t(locale, "commonTitleEn")}</label>
                           <Input name="titleEn" defaultValue={a.titleEn ?? ""} />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-xs font-medium">{t(locale, "commonTitleZh")}</label>
+                          <label className="text-sm font-medium">{t(locale, "commonTitleZh")}</label>
                           <Input name="titleZh" defaultValue={a.titleZh ?? ""} />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-xs font-medium">{t(locale, "commonLayer")}</label>
+                          <label className="text-sm font-medium">{t(locale, "commonLayer")}</label>
                           <select
                             name="layer"
                             defaultValue={a.layer}
-                            className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                            className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm"
                           >
                             {ORDER.map((layerOpt) => (
                               <option key={layerOpt} value={layerOpt}>
@@ -910,13 +910,13 @@ export async function KnowledgeBrowseBody({
                           </select>
                         </div>
                         <div className="space-y-1">
-                          <label className="text-xs font-medium">
+                          <label className="text-sm font-medium">
                             {t(locale, "commonProject")} ({t(locale, "commonOptional")})
                           </label>
                           <select
                             name="projectId"
                             defaultValue={a.projectId ?? ""}
-                            className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                            className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm"
                           >
                             <option value="">{t(locale, "kbGeneralProject")}</option>
                             {projects.map((p) => (
@@ -927,13 +927,13 @@ export async function KnowledgeBrowseBody({
                           </select>
                         </div>
                         <div className="space-y-1 md:col-span-2">
-                          <label className="text-xs font-medium">
+                          <label className="text-sm font-medium">
                             {t(locale, "commonCompany")} ({t(locale, "commonOptional")})
                           </label>
                           <select
                             name="companyId"
                             defaultValue={a.companyId ?? ""}
-                            className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                            className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm"
                           >
                             <option value="">{t(locale, "kbInferCompany")}</option>
                             {companies.map((c) => (
@@ -944,11 +944,11 @@ export async function KnowledgeBrowseBody({
                           </select>
                         </div>
                         <div className="space-y-1 md:col-span-2">
-                          <label className="text-xs font-medium">{t(locale, "kbEditSummary")}</label>
+                          <label className="text-sm font-medium">{t(locale, "kbEditSummary")}</label>
                           <Input name="summary" defaultValue={a.summary ?? ""} />
                         </div>
                         <div className="space-y-1 md:col-span-2">
-                          <label className="text-xs font-medium">{t(locale, "kbEditContent")}</label>
+                          <label className="text-sm font-medium">{t(locale, "kbEditContent")}</label>
                           <textarea
                             name="content"
                             defaultValue={a.content}
@@ -957,15 +957,15 @@ export async function KnowledgeBrowseBody({
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-xs font-medium">{t(locale, "kbTagsField")}</label>
+                          <label className="text-sm font-medium">{t(locale, "kbTagsField")}</label>
                           <Input name="tags" defaultValue={a.tags ?? ""} />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-xs font-medium">{t(locale, "commonSourceUrl")}</label>
+                          <label className="text-sm font-medium">{t(locale, "commonSourceUrl")}</label>
                           <Input name="sourceUrl" defaultValue={a.sourceUrl ?? ""} />
                         </div>
                         <div className="md:col-span-2">
-                          <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                          <FormSubmitButton type="submit" variant="secondary" className="h-10 text-sm">
                             {t(locale, "kbSaveEdits")}
                           </FormSubmitButton>
                         </div>
@@ -973,12 +973,12 @@ export async function KnowledgeBrowseBody({
                     ) : null}
                     {canMutateKb ? (
                       hubEntryLayout ? (
-                        <details className="mt-2 rounded-md border border-dashed border-[hsl(var(--border))] text-xs">
+                        <details className="mt-2 rounded-md border border-dashed border-[hsl(var(--border))] text-sm">
                           <summary className="cursor-pointer select-none px-3 py-2 font-medium text-[hsl(var(--foreground))]">
                             {t(locale, "kbAttachments")} ({a.attachments.length})
                           </summary>
                           <div className="space-y-2 border-t border-[hsl(var(--border))] p-2">
-                            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbAttachHelp")}</p>
+                            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "kbAttachHelp")}</p>
                             {a.attachments.length ? (
                               <AttachmentVersionTree
                                 attachments={a.attachments.map((f) => ({
@@ -1002,7 +1002,7 @@ export async function KnowledgeBrowseBody({
                                 showTrash={canMutateKb}
                               />
                             ) : (
-                              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
+                              <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
                             )}
                             <form
                               action={uploadKnowledgeAttachmentAction}
@@ -1011,18 +1011,18 @@ export async function KnowledgeBrowseBody({
                             >
                               <input type="hidden" name="knowledgeAssetId" value={a.id} />
                               <div className="space-y-1 md:col-span-2">
-                                <label className="text-xs font-medium">{t(locale, "kbUploadFile")}</label>
-                                <input type="file" name="file" required className="text-xs" />
+                                <label className="text-sm font-medium">{t(locale, "kbUploadFile")}</label>
+                                <input type="file" name="file" required className="text-sm" />
                               </div>
                               <div className="space-y-1 md:col-span-2">
-                                <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
-                                <Input name="description" className="text-xs" />
+                                <label className="text-sm font-medium">{t(locale, "commonDescription")}</label>
+                                <Input name="description" className="text-sm" />
                               </div>
                               <div className="space-y-1 md:col-span-2">
-                                <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
+                                <label className="text-sm font-medium">{t(locale, "wfPrevVersion")}</label>
                                 <select
                                   name="previousVersionId"
-                                  className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                                  className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm"
                                   defaultValue=""
                                 >
                                   <option value="">{t(locale, "wfNewVersionNone")}</option>
@@ -1034,7 +1034,7 @@ export async function KnowledgeBrowseBody({
                                 </select>
                               </div>
                               <div className="md:col-span-2">
-                                <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                                <FormSubmitButton type="submit" variant="secondary" className="h-10 text-sm">
                                   {t(locale, "kbUploadFile")}
                                 </FormSubmitButton>
                               </div>
@@ -1045,22 +1045,22 @@ export async function KnowledgeBrowseBody({
                             >
                               <input type="hidden" name="knowledgeAssetId" value={a.id} />
                               <div className="space-y-1 md:col-span-2">
-                                <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
-                                <Input name="externalUrl" type="url" required placeholder="https://drive.google.com/..." className="text-xs" />
+                                <label className="text-sm font-medium">{t(locale, "resExternalUrl")}</label>
+                                <Input name="externalUrl" type="url" required placeholder="https://drive.google.com/..." className="text-sm" />
                               </div>
                               <div className="space-y-1 md:col-span-2">
-                                <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
-                                <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
+                                <label className="text-sm font-medium">{t(locale, "resLinkLabel")}</label>
+                                <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-sm" />
                               </div>
                               <div className="space-y-1 md:col-span-2">
-                                <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
-                                <Input name="description" className="text-xs" />
+                                <label className="text-sm font-medium">{t(locale, "commonDescription")}</label>
+                                <Input name="description" className="text-sm" />
                               </div>
                               <div className="space-y-1 md:col-span-2">
-                                <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
+                                <label className="text-sm font-medium">{t(locale, "wfPrevVersion")}</label>
                                 <select
                                   name="previousVersionId"
-                                  className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                                  className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm"
                                   defaultValue=""
                                 >
                                   <option value="">{t(locale, "wfNewVersionNone")}</option>
@@ -1072,7 +1072,7 @@ export async function KnowledgeBrowseBody({
                                 </select>
                               </div>
                               <div className="md:col-span-2">
-                                <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                                <FormSubmitButton type="submit" variant="secondary" className="h-10 text-sm">
                                   {t(locale, "resAddLink")}
                                 </FormSubmitButton>
                               </div>
@@ -1081,8 +1081,8 @@ export async function KnowledgeBrowseBody({
                         </details>
                       ) : (
                         <div className="mt-2 space-y-2 rounded-md border border-dashed border-[hsl(var(--border))] p-2">
-                          <p className="text-xs font-medium">{t(locale, "kbAttachments")}</p>
-                          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "kbAttachHelp")}</p>
+                          <p className="text-sm font-medium">{t(locale, "kbAttachments")}</p>
+                          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "kbAttachHelp")}</p>
                           {a.attachments.length ? (
                             <AttachmentVersionTree
                               attachments={a.attachments.map((f) => ({
@@ -1106,7 +1106,7 @@ export async function KnowledgeBrowseBody({
                               showTrash={canMutateKb}
                             />
                           ) : (
-                            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
+                            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
                           )}
                           <form
                             action={uploadKnowledgeAttachmentAction}
@@ -1115,18 +1115,18 @@ export async function KnowledgeBrowseBody({
                           >
                             <input type="hidden" name="knowledgeAssetId" value={a.id} />
                             <div className="space-y-1 md:col-span-2">
-                              <label className="text-xs font-medium">{t(locale, "kbUploadFile")}</label>
-                              <input type="file" name="file" required className="text-xs" />
+                              <label className="text-sm font-medium">{t(locale, "kbUploadFile")}</label>
+                              <input type="file" name="file" required className="text-sm" />
                             </div>
                             <div className="space-y-1 md:col-span-2">
-                              <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
-                              <Input name="description" className="text-xs" />
+                              <label className="text-sm font-medium">{t(locale, "commonDescription")}</label>
+                              <Input name="description" className="text-sm" />
                             </div>
                             <div className="space-y-1 md:col-span-2">
-                              <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
+                              <label className="text-sm font-medium">{t(locale, "wfPrevVersion")}</label>
                               <select
                                 name="previousVersionId"
-                                className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                                className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm"
                                 defaultValue=""
                               >
                                 <option value="">{t(locale, "wfNewVersionNone")}</option>
@@ -1138,7 +1138,7 @@ export async function KnowledgeBrowseBody({
                               </select>
                             </div>
                             <div className="md:col-span-2">
-                              <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                              <FormSubmitButton type="submit" variant="secondary" className="h-10 text-sm">
                                 {t(locale, "kbUploadFile")}
                               </FormSubmitButton>
                             </div>
@@ -1149,22 +1149,22 @@ export async function KnowledgeBrowseBody({
                           >
                             <input type="hidden" name="knowledgeAssetId" value={a.id} />
                             <div className="space-y-1 md:col-span-2">
-                              <label className="text-xs font-medium">{t(locale, "resExternalUrl")}</label>
-                              <Input name="externalUrl" type="url" required placeholder="https://drive.google.com/..." className="text-xs" />
+                              <label className="text-sm font-medium">{t(locale, "resExternalUrl")}</label>
+                              <Input name="externalUrl" type="url" required placeholder="https://drive.google.com/..." className="text-sm" />
                             </div>
                             <div className="space-y-1 md:col-span-2">
-                              <label className="text-xs font-medium">{t(locale, "resLinkLabel")}</label>
-                              <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-xs" />
+                              <label className="text-sm font-medium">{t(locale, "resLinkLabel")}</label>
+                              <Input name="label" placeholder={t(locale, "resLinkLabelPh")} className="text-sm" />
                             </div>
                             <div className="space-y-1 md:col-span-2">
-                              <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
-                              <Input name="description" className="text-xs" />
+                              <label className="text-sm font-medium">{t(locale, "commonDescription")}</label>
+                              <Input name="description" className="text-sm" />
                             </div>
                             <div className="space-y-1 md:col-span-2">
-                              <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
+                              <label className="text-sm font-medium">{t(locale, "wfPrevVersion")}</label>
                               <select
                                 name="previousVersionId"
-                                className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                                className="h-10 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 text-sm"
                                 defaultValue=""
                               >
                                 <option value="">{t(locale, "wfNewVersionNone")}</option>
@@ -1176,7 +1176,7 @@ export async function KnowledgeBrowseBody({
                               </select>
                             </div>
                             <div className="md:col-span-2">
-                              <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                              <FormSubmitButton type="submit" variant="secondary" className="h-10 text-sm">
                                 {t(locale, "resAddLink")}
                               </FormSubmitButton>
                             </div>
