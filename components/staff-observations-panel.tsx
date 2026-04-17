@@ -117,9 +117,9 @@ export function StaffObservationsPanel({
     <Card className="space-y-4 p-4">
       <div className="space-y-1">
         <CardTitle>{t(locale, showGrowthContext ? "staffObservationsTitle" : "staffRecognitionOnlyTitle")}</CardTitle>
-        <p className="text-sm text-[hsl(var(--muted))]">
-          {t(locale, showGrowthContext ? "staffObservationsHint" : "staffRecognitionOnlyHint")}
-        </p>
+        {showGrowthContext ? (
+          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffObservationsHint")}</p>
+        ) : null}
       </div>
 
       {canCreateAny ? (
