@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Prisma } from "@prisma/client";
 import { updateCompanionAction } from "@/app/actions/companion";
 import { softDeleteUserAction } from "@/app/actions/trash";
 import {
@@ -47,6 +48,125 @@ function formatOnboardingTimestamp(when: Date) {
   return when.toISOString().slice(0, 16).replace("T", " ");
 }
 
+function isMissingColumnError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022";
+}
+
+async function withMissingColumnFallback<T>(label: string, query: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await query();
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+    console.warn(`[staff detail] ${label} falling back after missing-column error`, error);
+    return fallback;
+  }
+}
+
+function defaultAbilityScores() {
+  return {
+    EXECUTION: 50,
+    COLLABORATION: 50,
+    JUDGMENT: 50,
+    CREATIVITY: 50,
+    KNOWLEDGE: 50,
+    RELIABILITY: 50,
+    GUIDANCE: 50,
+  };
+}
+
+async function loadStaffDetailTarget(actor: AccessUser, userId: string) {
+  const where: Prisma.UserWhereInput = {
+    AND: [{ id: userId, deletedAt: null }, staffVisibilityWhere(actor)],
+  };
+
+  try {
+    return await prisma.user.findFirst({
+      where,
+      include: {
+        groupMemberships: { include: { roleDefinition: true, orgGroup: true } },
+        companyMemberships: { include: { company: true, roleDefinition: true, department: true, supervisor: true } },
+        memberOnboardings: {
+          include: { company: { select: { name: true } } },
+          orderBy: [{ deadlineAt: "asc" }, { createdAt: "asc" }],
+        },
+        projectMemberships: { include: { project: { include: { company: true } }, roleDefinition: true } },
+        companionProfile: true,
+        performanceSnapshots: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
+    });
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+    console.warn("[staff detail] using legacy-compatible staff target query", error);
+
+    const legacyTarget = await prisma.user.findFirst({
+      where,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        title: true,
+        active: true,
+        isSuperAdmin: true,
+        groupMemberships: {
+          select: {
+            id: true,
+            orgGroupId: true,
+            roleDefinitionId: true,
+            roleDefinition: { select: { id: true, key: true, displayName: true } },
+            orgGroup: { select: { id: true, name: true } },
+          },
+        },
+        companyMemberships: {
+          select: {
+            id: true,
+            companyId: true,
+            roleDefinitionId: true,
+            company: { select: { id: true, name: true, orgGroupId: true } },
+            roleDefinition: { select: { id: true, key: true, displayName: true } },
+          },
+        },
+        projectMemberships: {
+          select: {
+            id: true,
+            projectId: true,
+            roleDefinitionId: true,
+            roleDefinition: { select: { id: true, key: true, displayName: true } },
+            project: {
+              select: {
+                id: true,
+                name: true,
+                companyId: true,
+                company: { select: { id: true, name: true, orgGroupId: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!legacyTarget) return null;
+
+    return {
+      ...legacyTarget,
+      avatarUrl: null,
+      contactEmails: null,
+      phone: null,
+      signature: null,
+      companionIntroCompletedAt: null,
+      memberOnboardings: [],
+      companionProfile: null,
+      performanceSnapshots: [],
+      companyMemberships: legacyTarget.companyMemberships.map((membership) => ({
+        ...membership,
+        departmentId: null,
+        department: null,
+        supervisorUserId: null,
+        supervisor: null,
+      })),
+    };
+  }
+}
+
 export default async function StaffDetailPage({
   params,
   searchParams,
@@ -58,55 +178,39 @@ export default async function StaffDetailPage({
   const { userId } = await params;
   const sp = (await searchParams) ?? {};
   const uploadError = Array.isArray(sp.uploadError) ? sp.uploadError[0] : sp.uploadError;
-  const canReadStaff = actor.id === userId || (await userHasPermission(actor, "staff.read"));
+  const [
+    canReadStaffPermission,
+    canCreateRecognitionPermission,
+    canReadRecognitionPermission,
+    canCreateFeedbackPermission,
+    canReadFeedbackPermission,
+    canUpdateStaffPermission,
+    canSoftDeletePermission,
+  ] = await Promise.all([
+    userHasPermission(actor, "staff.read"),
+    userHasPermission(actor, "recognition.create"),
+    userHasPermission(actor, "recognition.read"),
+    userHasPermission(actor, "feedback.submit"),
+    userHasPermission(actor, "feedback.read"),
+    userHasPermission(actor, "staff.update"),
+    userHasPermission(actor, "staff.soft_delete"),
+  ]);
+
+  const canReadStaff = actor.id === userId || canReadStaffPermission;
   if (!canReadStaff) notFound();
-  const canCreateRecognitionPermission = await userHasPermission(actor, "recognition.create");
-  const canViewRecognition = canCreateRecognitionPermission || (await userHasPermission(actor, "recognition.read"));
-  const canCreateFeedbackPermission = await userHasPermission(actor, "feedback.submit");
-  const canViewFeedback = isAnyAdmin(actor) && (await userHasPermission(actor, "feedback.read"));
+  const canViewRecognition = canCreateRecognitionPermission || canReadRecognitionPermission;
+  const canViewFeedback = isAnyAdmin(actor) && canReadFeedbackPermission;
 
-  const target = await prisma.user.findFirst({
-    where: {
-      AND: [{ id: userId, deletedAt: null }, staffVisibilityWhere(actor)],
-    },
-    include: {
-      groupMemberships: { include: { roleDefinition: true, orgGroup: true } },
-      companyMemberships: { include: { company: true, roleDefinition: true, department: true, supervisor: true } },
-      memberOnboardings: {
-        include: { company: { select: { name: true } } },
-        orderBy: [{ deadlineAt: "asc" }, { createdAt: "asc" }],
-      },
-      projectMemberships: { include: { project: { include: { company: true } }, roleDefinition: true } },
-      companionProfile: true,
-      performanceSnapshots: { orderBy: { createdAt: "desc" }, take: 1 },
-    },
-  });
+  const target = await loadStaffDetailTarget(actor, userId);
   if (!target) notFound();
-
-  const recognitionsReceived = canViewRecognition
-    ? await prisma.recognitionEvent.findMany({
-        where: { toUserId: target.id },
-        include: { fromUser: true, project: { include: { company: true } } },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-      })
-    : [];
-
-  const feedbackReceived = canViewFeedback
-    ? await prisma.feedbackEvent.findMany({
-        where: { toUserId: target.id },
-        include: { fromUser: true, project: { include: { company: true } } },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-      })
-    : [];
-
-  const companionSpeciesOptions =
-    isSuperAdmin(actor) && (actor.id !== target.id || target.companionIntroCompletedAt)
-      ? getCompanionManifest()
-      : getCompanionManifestForUser(target as AccessUser);
   const canEditCompanionHere =
     isSuperAdmin(actor) || (actor.id === target.id && !target.companionIntroCompletedAt);
+  const companionSpeciesOptions =
+    !canEditCompanionHere
+      ? getCompanionManifest()
+      : isSuperAdmin(actor) && (actor.id !== target.id || target.companionIntroCompletedAt)
+        ? getCompanionManifest()
+        : getCompanionManifestForUser(actor);
   const canSkipStaffOnboarding = isSuperAdmin(actor) && actor.id !== target.id;
   const onboardingByCompanyId = new Map(target.memberOnboardings.map((ob) => [ob.companyId, ob]));
   const pendingOnboardings = target.memberOnboardings.filter((ob) => !ob.completedAt);
@@ -119,38 +223,96 @@ export default async function StaffDetailPage({
   const isAnyCompanyAdmin = actor.companyMemberships.some((m) => m.roleDefinition.key === "COMPANY_ADMIN");
   const isAnyGroupAdmin = actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN");
   const isAnyPm = actor.projectMemberships.some((m) => m.roleDefinition.key === "PROJECT_MANAGER");
-  const actorRoleIdsByPermission = await getActorRoleIdsByPermission(actor, [
-    "staff.assign_company",
-    "staff.assign_project",
-    "project.member.manage",
+  const canEditProfile = isSuperAdmin(actor) || actor.id === target.id || canUpdateStaffPermission;
+  const until = new Date();
+  const since = new Date(until);
+  since.setUTCDate(since.getUTCDate() - 90);
+
+  const [
+    recognitionsReceived,
+    feedbackReceived,
+    actorRoleIdsByPermission,
+    supervisorCandidates,
+    companies,
+    departmentsForStaffForms,
+    projects,
+    companyRoles,
+    projectRoles,
+    ability,
+    locale,
+    observationProjects,
+    ledgerEvidence,
+  ] = await Promise.all([
+    canViewRecognition
+      ? prisma.recognitionEvent.findMany({
+          where: { toUserId: target.id },
+          include: { fromUser: true, project: { include: { company: true } } },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        })
+      : Promise.resolve([]),
+    canViewFeedback
+      ? prisma.feedbackEvent.findMany({
+          where: { toUserId: target.id },
+          include: { fromUser: true, project: { include: { company: true } } },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        })
+      : Promise.resolve([]),
+    getActorRoleIdsByPermission(actor, ["staff.assign_company", "staff.assign_project", "project.member.manage"]),
+    prisma.user.findMany({
+      where: { deletedAt: null, active: true },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: "asc" },
+      take: 250,
+    }),
+    prisma.company.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
+    withMissingColumnFallback(
+      "staff form departments",
+      () =>
+        prisma.department.findMany({
+          where: { company: { deletedAt: null } },
+          include: { company: true },
+          orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
+        }),
+      [],
+    ),
+    prisma.project.findMany({
+      where: { deletedAt: null, company: { deletedAt: null } },
+      orderBy: { name: "asc" },
+      include: { company: true },
+    }),
+    prisma.roleDefinition.findMany({
+      where: { appliesScope: "COMPANY" },
+      orderBy: { displayName: "asc" },
+    }),
+    prisma.roleDefinition.findMany({
+      where: { appliesScope: "PROJECT" },
+      orderBy: { displayName: "asc" },
+    }),
+    withMissingColumnFallback("ability radar", () => sumAbilityByUser(prisma, target.id, since, until), defaultAbilityScores()),
+    getLocale(),
+    prisma.project.findMany({
+      where: { deletedAt: null, memberships: { some: { userId: target.id } } },
+      include: { company: true },
+      orderBy: { name: "asc" },
+    }),
+    withMissingColumnFallback(
+      "score ledger trail",
+      () =>
+        prisma.scoreLedgerEntry.findMany({
+          where: { userId: target.id },
+          orderBy: { createdAt: "desc" },
+          take: 12,
+        }),
+      [],
+    ),
   ]);
   const companyAssignmentRoleIds = actorRoleIdsByPermission.get("staff.assign_company") ?? new Set<string>();
   const projectAssignmentRoleIds = mergeRoleIdSets(
     actorRoleIdsByPermission.get("staff.assign_project"),
     actorRoleIdsByPermission.get("project.member.manage"),
   );
-
-  const canEditProfile =
-    isSuperAdmin(actor) || actor.id === target.id || (await userHasPermission(actor, "staff.update"));
-
-  const supervisorCandidates = await prisma.user.findMany({
-    where: { deletedAt: null, active: true },
-    select: { id: true, name: true, email: true },
-    orderBy: { name: "asc" },
-    take: 250,
-  });
-
-  const companies = await prisma.company.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } });
-  const departmentsForStaffForms = await prisma.department.findMany({
-    where: { companyId: { in: companies.map((c) => c.id) } },
-    include: { company: true },
-    orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
-  });
-  const projects = await prisma.project.findMany({
-    where: { deletedAt: null },
-    orderBy: { name: "asc" },
-    include: { company: true },
-  });
   const manageableCompanies = companies.filter((company) =>
     canManageCompanyScopeWithRoleIds(actor, company, companyAssignmentRoleIds),
   );
@@ -165,21 +327,18 @@ export default async function StaffDetailPage({
   const canAssignCompanyUI = manageableCompanies.length > 0;
   const canAssignProjectUI = manageableProjects.length > 0;
   const offboardingRuns = canAssignCompanyUI
-    ? await prisma.offboardingRun.findMany({
-        where: { userId: target.id, companyId: { in: [...manageableCompanyIds] } },
-        include: { company: true, checklist: true, startedBy: true },
-        orderBy: { startedAt: "desc" },
-        take: 8,
-      })
+    ? await withMissingColumnFallback(
+        "offboarding runs",
+        () =>
+          prisma.offboardingRun.findMany({
+            where: { userId: target.id, companyId: { in: [...manageableCompanyIds] } },
+            include: { company: true, checklist: true, startedBy: true },
+            orderBy: { startedAt: "desc" },
+            take: 8,
+          }),
+        [],
+      )
     : [];
-  const companyRoles = await prisma.roleDefinition.findMany({
-    where: { appliesScope: "COMPANY" },
-    orderBy: { displayName: "asc" },
-  });
-  const projectRoles = await prisma.roleDefinition.findMany({
-    where: { appliesScope: "PROJECT" },
-    orderBy: { displayName: "asc" },
-  });
   const defaultCompanyRoleId =
     companyRoles.find((r) => r.key === "COMPANY_CONTRIBUTOR")?.id ?? companyRoles[0]?.id ?? "";
   const defaultProjectRoleId =
@@ -194,17 +353,12 @@ export default async function StaffDetailPage({
   const assignCompanyFormSupervisors = supervisorCandidates.map((user) => ({ id: user.id, name: user.name }));
 
   const canSoftDelete =
-    (await userHasPermission(actor, "staff.soft_delete")) &&
+    canSoftDeletePermission &&
     (isSuperAdmin(actor) || isAnyGroupAdmin) &&
     actor.id !== target.id &&
     !(target.isSuperAdmin && !isSuperAdmin(actor));
 
   const latestScore = target.performanceSnapshots[0] ?? null;
-  const until = new Date();
-  const since = new Date(until);
-  since.setUTCDate(since.getUTCDate() - 90);
-  const ability = await sumAbilityByUser(prisma, target.id, since, until);
-  const locale = await getLocale();
   const dimList = [
     { label: t(locale, "abilityExecution"), value: ability.EXECUTION },
     { label: t(locale, "abilityCollaboration"), value: ability.COLLABORATION },
@@ -225,19 +379,8 @@ export default async function StaffDetailPage({
   const canFeedbackHere =
     canCreateFeedbackPermission &&
     (isSuperAdmin(actor) || isAnyGroupAdmin || isAnyCompanyAdmin || isAnyPm);
-  const observationProjects = await prisma.project.findMany({
-    where: { deletedAt: null, memberships: { some: { userId: target.id } } },
-    include: { company: true },
-    orderBy: { name: "asc" },
-  });
   const observationProjectChoices = observationProjects.filter((p) => canManageProject(actor, p));
   const canManageFeedbackWithoutProject = isSuperAdmin(actor) || isAnyGroupAdmin;
-
-  const ledgerEvidence = await prisma.scoreLedgerEntry.findMany({
-    where: { userId: target.id },
-    orderBy: { createdAt: "desc" },
-    take: 12,
-  });
 
   return (
     <div className="space-y-8">

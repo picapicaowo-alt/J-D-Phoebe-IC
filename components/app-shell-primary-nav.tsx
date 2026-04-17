@@ -5,11 +5,10 @@ import { t } from "@/lib/messages";
 import { AppShellNav, type ShellNavDropdown, type ShellNavLink } from "@/components/app-shell-nav";
 
 export async function AppShellPrimaryNav() {
-  const user = await getCurrentShellUser();
+  const [user, locale] = await Promise.all([getCurrentShellUser(), getLocale()]);
   if (!user) return null;
 
   const keys = await getPermissionKeysForShell(user.id, user.isSuperAdmin);
-  const locale = await getLocale();
 
   const primaryLinks: ShellNavLink[] = [];
   if (keys?.has("project.read")) {

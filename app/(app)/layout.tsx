@@ -1,15 +1,12 @@
 import Link from "next/link";
 import { ReactNode, Suspense } from "react";
 import { getLocale } from "@/lib/locale";
-import { requireUser } from "@/lib/auth";
 import { BrandMark } from "@/components/brand-mark";
 import { AppShellPrimaryNav } from "@/components/app-shell-primary-nav";
 import { AppShellNavSkeleton } from "@/components/app-shell-nav-skeleton";
 import { AppShellHeaderControls } from "@/components/app-shell-header-controls";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  // Guard protected app routes before streaming shell content to avoid redirect-as-error states.
-  await requireUser({ skipPasswordResetGate: true });
   const locale = await getLocale();
 
   return (
