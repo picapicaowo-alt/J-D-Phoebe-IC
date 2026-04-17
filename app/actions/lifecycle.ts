@@ -229,20 +229,46 @@ export async function skipMemberOnboardingAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
   if (!isSuperAdmin(actor)) throw new Error("Forbidden");
 
-  const onboardingId = must(formData, "onboardingId");
-  const ob = await prisma.memberOnboarding.findFirst({
-    where: { id: onboardingId },
-    include: {
-      assignedMaterial: true,
-      company: {
+  const onboardingIdRaw = String(formData.get("onboardingId") ?? "").trim();
+  const userIdRaw = String(formData.get("userId") ?? "").trim();
+  const companyIdRaw = String(formData.get("companyId") ?? "").trim();
+
+  let ob = onboardingIdRaw
+    ? await prisma.memberOnboarding.findFirst({
+        where: { id: onboardingIdRaw },
         include: {
-          onboardingMaterials: {
-            orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+          assignedMaterial: true,
+          company: {
+            include: {
+              onboardingMaterials: {
+                orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+              },
+            },
+          },
+        },
+      })
+    : null;
+
+  if (!ob && userIdRaw && companyIdRaw) {
+    if (userIdRaw === actor.id) throw new Error("Forbidden");
+    const { ensureMemberOnboardingForCompany } = await import("@/lib/member-onboarding");
+    const created = await ensureMemberOnboardingForCompany(userIdRaw, companyIdRaw, { createPlaceholder: true });
+    if (!created) throw new Error("Not found");
+    ob = await prisma.memberOnboarding.findFirst({
+      where: { id: created.id },
+      include: {
+        assignedMaterial: true,
+        company: {
+          include: {
+            onboardingMaterials: {
+              orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+            },
           },
         },
       },
-    },
-  });
+    });
+  }
+
   if (!ob) throw new Error("Not found");
   if (ob.userId === actor.id) throw new Error("Forbidden");
 
@@ -253,14 +279,15 @@ export async function skipMemberOnboardingAction(formData: FormData) {
     fallbackMaterial?.videoUrl?.trim() ||
     ob.company.onboardingVideoUrl?.trim();
   const now = new Date();
+  const targetOnboardingId = ob.id;
 
   await prisma.$transaction([
     prisma.memberOnboardingChecklistItem.updateMany({
-      where: { onboardingId, completedAt: null },
+      where: { onboardingId: targetOnboardingId, completedAt: null },
       data: { completedAt: now },
     }),
     prisma.memberOnboarding.update({
-      where: { id: onboardingId },
+      where: { id: targetOnboardingId },
       data: {
         materialsOpenedAt: ob.materialsOpenedAt ?? now,
         completedAt: ob.completedAt ?? now,

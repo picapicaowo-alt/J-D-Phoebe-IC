@@ -110,6 +110,11 @@ export default async function StaffDetailPage({
   const canSkipStaffOnboarding = isSuperAdmin(actor) && actor.id !== target.id;
   const onboardingByCompanyId = new Map(target.memberOnboardings.map((ob) => [ob.companyId, ob]));
   const pendingOnboardings = target.memberOnboardings.filter((ob) => !ob.completedAt);
+  const onboardingAdminRows = target.companyMemberships.map((membership) => ({
+    companyId: membership.companyId,
+    companyName: membership.company.name,
+    onboarding: onboardingByCompanyId.get(membership.companyId) ?? null,
+  }));
 
   const isAnyCompanyAdmin = actor.companyMemberships.some((m) => m.roleDefinition.key === "COMPANY_ADMIN");
   const isAnyGroupAdmin = actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN");
@@ -332,34 +337,44 @@ export default async function StaffDetailPage({
         <Card className="space-y-4 p-4">
           <CardTitle>{t(locale, "staffOnboardingAdminTitle")}</CardTitle>
           <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffOnboardingAdminHint")}</p>
-          {!target.memberOnboardings.length ? (
+          {!onboardingAdminRows.length ? (
             <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffOnboardingNone")}</p>
           ) : (
             <ul className="space-y-3">
-              {target.memberOnboardings.map((ob) => (
-                <li key={ob.id} className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+              {onboardingAdminRows.map((row) => (
+                <li key={row.companyId} className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <p className="font-medium text-[hsl(var(--foreground))]">{ob.company.name}</p>
+                      <p className="font-medium text-[hsl(var(--foreground))]">{row.companyName}</p>
                       <p className="mt-1 text-xs text-[hsl(var(--muted))]">
-                        {ob.completedAt
-                          ? `${t(locale, "onboardingCompletedAtLabel")}: ${formatOnboardingTimestamp(ob.completedAt)}`
-                          : `${t(locale, "onboardingDeadline")}: ${ob.deadlineAt.toISOString().slice(0, 10)}`}
+                        {row.onboarding?.completedAt
+                          ? `${t(locale, "onboardingCompletedAtLabel")}: ${formatOnboardingTimestamp(row.onboarding.completedAt)}`
+                          : row.onboarding
+                            ? `${t(locale, "onboardingDeadline")}: ${row.onboarding.deadlineAt.toISOString().slice(0, 10)}`
+                            : t(locale, "staffOnboardingNone")}
                       </p>
                     </div>
                     <span
                       className={`rounded-full px-2 py-1 text-xs ${
-                        ob.completedAt
+                        row.onboarding?.completedAt
                           ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                          : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
+                          : row.onboarding
+                            ? "bg-amber-500/15 text-amber-800 dark:text-amber-200"
+                            : "bg-[hsl(var(--background))] text-[hsl(var(--muted))]"
                       }`}
                     >
-                      {ob.completedAt ? t(locale, "staffOnboardingComplete") : t(locale, "staffOnboardingPending")}
+                      {row.onboarding?.completedAt
+                        ? t(locale, "staffOnboardingComplete")
+                        : row.onboarding
+                          ? t(locale, "staffOnboardingPending")
+                          : t(locale, "staffOnboardingNone")}
                     </span>
                   </div>
-                  {!ob.completedAt ? (
+                  {(!row.onboarding || !row.onboarding.completedAt) ? (
                     <form action={skipMemberOnboardingAction} className="mt-3">
-                      <input type="hidden" name="onboardingId" value={ob.id} />
+                      {row.onboarding ? <input type="hidden" name="onboardingId" value={row.onboarding.id} /> : null}
+                      {!row.onboarding ? <input type="hidden" name="userId" value={target.id} /> : null}
+                      {!row.onboarding ? <input type="hidden" name="companyId" value={row.companyId} /> : null}
                       <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                         {t(locale, "staffOnboardingSkipBtn")}
                       </FormSubmitButton>
@@ -369,7 +384,7 @@ export default async function StaffDetailPage({
               ))}
             </ul>
           )}
-          {pendingOnboardings.length ? null : target.memberOnboardings.length ? (
+          {pendingOnboardings.length ? null : onboardingAdminRows.length ? (
             <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "onboardingCompleted")}</p>
           ) : null}
         </Card>
@@ -666,9 +681,11 @@ export default async function StaffDetailPage({
                             ? `${t(locale, "onboardingDeadline")}: ${onboarding.deadlineAt.toISOString().slice(0, 10)}`
                             : t(locale, "staffOnboardingNone")}
                       </p>
-                      {canSkipStaffOnboarding && onboarding && !onboarding.completedAt ? (
+                      {canSkipStaffOnboarding && (!onboarding || !onboarding.completedAt) ? (
                         <form action={skipMemberOnboardingAction} className="mt-3">
-                          <input type="hidden" name="onboardingId" value={onboarding.id} />
+                          {onboarding ? <input type="hidden" name="onboardingId" value={onboarding.id} /> : null}
+                          {!onboarding ? <input type="hidden" name="userId" value={target.id} /> : null}
+                          {!onboarding ? <input type="hidden" name="companyId" value={m.companyId} /> : null}
                           <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
                             {t(locale, "staffOnboardingSkipBtn")}
                           </FormSubmitButton>
