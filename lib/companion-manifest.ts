@@ -26,9 +26,10 @@ export function companionDisplayName(species: CompanionSpecies, locale: "en" | "
   return locale === "zh" ? row.name_zh : row.name_en;
 }
 
-/** Larger companion pool for elevated roles; default members see a smaller curated set. */
+/** During first-time selection show full pool; after onboarding, default members see a curated subset. */
 export function getCompanionManifestForUser(user: AccessUser): CompanionManifestEntry[] {
   const all = getCompanionManifest();
+  if (!user.companionIntroCompletedAt) return all;
   if (user.isSuperAdmin) return all;
   if (user.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN")) return all;
   if (user.companyMemberships.some((m) => ["COMPANY_ADMIN", "PROJECT_MANAGER"].includes(m.roleDefinition.key))) {

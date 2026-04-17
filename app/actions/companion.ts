@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { CompanionSpecies } from "@prisma/client";
-import { requireUser } from "@/lib/auth";
+import { invalidateAccessUserCache, requireUser } from "@/lib/auth";
 import type { AccessUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/companion-manifest";
@@ -71,6 +71,7 @@ export async function updateCompanionAction(formData: FormData) {
       data: { companionIntroCompletedAt: now },
     });
   }
+  invalidateAccessUserCache(targetUserId, target.clerkId);
   revalidatePath("/home");
   revalidatePath(`/staff/${targetUserId}`);
   revalidatePath("/onboarding/companion");
