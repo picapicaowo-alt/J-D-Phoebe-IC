@@ -17,8 +17,11 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
+import { ensureRbacCatalog } from "@/lib/rbac-sync";
 
 export default async function TrashPage() {
+  await ensureRbacCatalog();
+
   const user = (await requireUser()) as AccessUser;
   if (!(await userHasPermission(user, "trash.read"))) redirect("/group");
 

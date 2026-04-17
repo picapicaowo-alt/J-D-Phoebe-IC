@@ -179,6 +179,18 @@ export async function updateOnboardingVideoProgressAction(formData: FormData) {
   revalidatePath("/onboarding/member");
 }
 
+export type ToggleMemberOnboardingChecklistActionResult =
+  | {
+      ok: true;
+      itemId: string;
+      completedAt: string | null;
+      onboardingCompletedAt: string | null;
+    }
+  | {
+      ok: false;
+      code: "forbidden" | "already_completed" | "materials" | "order";
+    };
+
 export async function toggleMemberOnboardingChecklistAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   const itemId = must(formData, "itemId");
@@ -186,48 +198,82 @@ export async function toggleMemberOnboardingChecklistAction(formData: FormData) 
     where: { id: itemId },
     include: { onboarding: true },
   });
-  if (!item || item.onboarding.userId !== user.id) throw new Error("Forbidden");
-  if (item.onboarding.completedAt) throw new Error("Already completed");
+  if (!item || item.onboarding.userId !== user.id) {
+    return { ok: false, code: "forbidden" } satisfies ToggleMemberOnboardingChecklistActionResult;
+  }
+  if (item.onboarding.completedAt) {
+    return { ok: false, code: "already_completed" } satisfies ToggleMemberOnboardingChecklistActionResult;
+  }
+
+  const siblings = await prisma.memberOnboardingChecklistItem.findMany({
+    where: { onboardingId: item.onboardingId },
+    orderBy: { sortOrder: "asc" },
+  });
 
   const togglingOn = !item.completedAt;
   if (togglingOn) {
     if (item.itemKey === "OB_READ_PACKAGE" && !item.onboarding.materialsOpenedAt) {
-      redirect(`/onboarding/member?companyId=${item.onboarding.companyId}&onboardingErr=materials`);
+      return { ok: false, code: "materials" } satisfies ToggleMemberOnboardingChecklistActionResult;
     }
-    const siblings = await prisma.memberOnboardingChecklistItem.findMany({
-      where: { onboardingId: item.onboardingId },
-      orderBy: { sortOrder: "asc" },
-    });
-    const order = ["OB_READ_PACKAGE", "OB_ACK_POLICIES", "OB_SUPERVISOR_MEET"];
-    const idx = order.indexOf(item.itemKey);
-    if (idx > 0) {
-      const prevKey = order[idx - 1];
-      const prev = siblings.find((s) => s.itemKey === prevKey);
-      if (!prev?.completedAt) {
-        redirect(`/onboarding/member?companyId=${item.onboarding.companyId}&onboardingErr=order`);
-      }
+    const itemIndex = siblings.findIndex((s) => s.id === item.id);
+    if (itemIndex === -1) {
+      return { ok: false, code: "forbidden" } satisfies ToggleMemberOnboardingChecklistActionResult;
+    }
+    if (itemIndex > 0 && !siblings[itemIndex - 1]?.completedAt) {
+      return { ok: false, code: "order" } satisfies ToggleMemberOnboardingChecklistActionResult;
     }
   }
 
-  await prisma.memberOnboardingChecklistItem.update({
-    where: { id: itemId },
-    data: { completedAt: item.completedAt ? null : new Date() },
-  });
-  const siblings = await prisma.memberOnboardingChecklistItem.findMany({
-    where: { onboardingId: item.onboardingId },
-  });
-  const allDone = siblings.length > 0 && siblings.every((i) => i.completedAt);
-  await prisma.memberOnboarding.update({
-    where: { id: item.onboardingId },
-    data: { completedAt: allDone ? new Date() : null },
-  });
+  const now = new Date();
+  const nextCompletedAt = item.completedAt ? null : now;
+  const allDone =
+    siblings.length > 0 &&
+    siblings.every((s) => {
+      if (s.id === item.id) return Boolean(nextCompletedAt);
+      return Boolean(s.completedAt);
+    });
+  const nextOnboardingCompletedAt = allDone ? now : null;
+
+  await prisma.$transaction([
+    prisma.memberOnboardingChecklistItem.update({
+      where: { id: itemId },
+      data: { completedAt: nextCompletedAt },
+    }),
+    prisma.memberOnboarding.update({
+      where: { id: item.onboardingId },
+      data: { completedAt: nextOnboardingCompletedAt },
+    }),
+  ]);
   revalidatePath("/onboarding/member");
   revalidatePath("/home");
+
+  return {
+    ok: true,
+    itemId,
+    completedAt: nextCompletedAt?.toISOString() ?? null,
+    onboardingCompletedAt: nextOnboardingCompletedAt?.toISOString() ?? null,
+  } satisfies ToggleMemberOnboardingChecklistActionResult;
 }
+
+export type SkipMemberOnboardingActionResult =
+  | {
+      ok: true;
+      onboardingId: string;
+      userId: string;
+      companyId: string;
+      deadlineAt: string;
+      completedAt: string;
+    }
+  | {
+      ok: false;
+      code: "forbidden" | "not_found";
+    };
 
 export async function skipMemberOnboardingAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  if (!isSuperAdmin(actor)) throw new Error("Forbidden");
+  if (!isSuperAdmin(actor)) {
+    return { ok: false, code: "forbidden" } satisfies SkipMemberOnboardingActionResult;
+  }
 
   const onboardingIdRaw = String(formData.get("onboardingId") ?? "").trim();
   const userIdRaw = String(formData.get("userId") ?? "").trim();
@@ -250,10 +296,14 @@ export async function skipMemberOnboardingAction(formData: FormData) {
     : null;
 
   if (!ob && userIdRaw && companyIdRaw) {
-    if (userIdRaw === actor.id) throw new Error("Forbidden");
+    if (userIdRaw === actor.id) {
+      return { ok: false, code: "forbidden" } satisfies SkipMemberOnboardingActionResult;
+    }
     const { ensureMemberOnboardingForCompany } = await import("@/lib/member-onboarding");
     const created = await ensureMemberOnboardingForCompany(userIdRaw, companyIdRaw, { createPlaceholder: true });
-    if (!created) throw new Error("Not found");
+    if (!created) {
+      return { ok: false, code: "not_found" } satisfies SkipMemberOnboardingActionResult;
+    }
     ob = await prisma.memberOnboarding.findFirst({
       where: { id: created.id },
       include: {
@@ -269,8 +319,12 @@ export async function skipMemberOnboardingAction(formData: FormData) {
     });
   }
 
-  if (!ob) throw new Error("Not found");
-  if (ob.userId === actor.id) throw new Error("Forbidden");
+  if (!ob) {
+    return { ok: false, code: "not_found" } satisfies SkipMemberOnboardingActionResult;
+  }
+  if (ob.userId === actor.id) {
+    return { ok: false, code: "forbidden" } satisfies SkipMemberOnboardingActionResult;
+  }
 
   const fallbackMaterial = !ob.packageUrl.trim() ? getCurrentCompanyOnboardingMaterial(ob.company) : null;
   const videoUrl =
@@ -314,6 +368,15 @@ export async function skipMemberOnboardingAction(formData: FormData) {
   revalidatePath("/onboarding");
   revalidatePath("/onboarding/member");
   revalidatePath("/home");
+
+  return {
+    ok: true,
+    onboardingId: ob.id,
+    userId: ob.userId,
+    companyId: ob.companyId,
+    deadlineAt: ob.deadlineAt.toISOString(),
+    completedAt: now.toISOString(),
+  } satisfies SkipMemberOnboardingActionResult;
 }
 
 export async function markNotificationReadAction(formData: FormData) {

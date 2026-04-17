@@ -67,6 +67,20 @@ async function parsePendingUpload(
   };
 }
 
+async function parsePendingUploads(formData: FormData, key: string): Promise<PendingUpload[]> {
+  const values = formData.getAll(key);
+  const uploads: PendingUpload[] = [];
+  for (const value of values) {
+    if (!isFormDataFile(value) || value.size <= 0) continue;
+    uploads.push({
+      buf: Buffer.from(await value.arrayBuffer()),
+      fileName: sanitizeFileName(value.name || "upload"),
+      mimeType: value.type || "application/octet-stream",
+    });
+  }
+  return uploads;
+}
+
 async function requireCompanyForUpdate(actor: AccessUser, companyId: string) {
   const company = await prisma.company.findFirst({
     where: { id: companyId, deletedAt: null },
@@ -180,37 +194,37 @@ export async function createCompanyOnboardingMaterialAction(formData: FormData) 
   await migrateLegacyCompanyOnboardingMaterial(companyId);
 
   const values = parseCompanyOnboardingMaterial(formData);
-  const packageUpload = await parsePendingUpload(formData, "onboardingPackageFile");
-  const videoUpload = await parsePendingUpload(formData, "onboardingVideoFile", "video/");
+  const packageUploads = await parsePendingUploads(formData, "onboardingPackageFiles");
 
-  if (!values.packageUrl && !packageUpload) {
+  if (!values.packageUrl && packageUploads.length === 0) {
     throw new Error("Provide a material URL or upload a material file.");
   }
 
-  const material = await prisma.companyOnboardingMaterial.create({
-    data: {
-      companyId,
-      ...values,
-    },
-  });
-
-  if (packageUpload) {
-    await uploadOnboardingMaterialBlob({
-      userId: user.id,
-      companyId,
-      materialId: material.id,
-      kind: "package",
-      file: packageUpload,
-    });
-  }
-
-  if (videoUpload) {
-    await uploadOnboardingMaterialBlob({
-      userId: user.id,
-      companyId,
-      materialId: material.id,
-      kind: "video",
-      file: videoUpload,
+  if (packageUploads.length > 0) {
+    for (const packageUpload of packageUploads) {
+      const material = await prisma.companyOnboardingMaterial.create({
+        data: {
+          companyId,
+          packageUrl: "",
+          videoUrl: null,
+          packageVersion: values.packageVersion,
+          deadlineDays: values.deadlineDays,
+        },
+      });
+      await uploadOnboardingMaterialBlob({
+        userId: user.id,
+        companyId,
+        materialId: material.id,
+        kind: "package",
+        file: packageUpload,
+      });
+    }
+  } else {
+    await prisma.companyOnboardingMaterial.create({
+      data: {
+        companyId,
+        ...values,
+      },
     });
   }
 

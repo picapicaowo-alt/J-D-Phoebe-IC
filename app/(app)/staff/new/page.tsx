@@ -9,12 +9,15 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
+import { ensureRbacCatalog } from "@/lib/rbac-sync";
 
 export default async function NewStaffPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string; sent?: string; email?: string }>;
 }) {
+  await ensureRbacCatalog();
+
   const user = (await requireUser()) as AccessUser;
   const locale = await getLocale();
   const sp = await searchParams;
@@ -22,9 +25,7 @@ export default async function NewStaffPage({
   const sent = String(sp.sent ?? "").trim() === "1";
   const sentEmail = String(sp.email ?? "").trim();
 
-  const ok =
-    (await userHasPermission(user, "staff.create")) &&
-    (user.isSuperAdmin || user.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN"));
+  const ok = await userHasPermission(user, "staff.create");
   if (!ok) redirect("/staff");
 
   return (

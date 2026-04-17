@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { isSuperAdmin, type AccessUser } from "@/lib/access";
+import type { AccessUser } from "@/lib/access";
 import { createAccountSetupToken } from "@/lib/account-setup";
 import { requireUser } from "@/lib/auth";
 import { sendAccountSetupEmail } from "@/lib/auth-email";
@@ -12,6 +12,7 @@ import { getAppBaseUrl } from "@/lib/password-reset";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { canReuseUserAccount, findReusableUserCandidateByEmail } from "@/lib/user-account-reuse";
+import { ensureRbacCatalog } from "@/lib/rbac-sync";
 
 const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -22,11 +23,10 @@ function requireString(formData: FormData, key: string) {
 }
 
 export async function startStaffInviteAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   await assertPermission(actor, "staff.create");
-  if (!isSuperAdmin(actor) && !actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN")) {
-    throw new Error("Only group-level admins can create staff accounts in this deployment.");
-  }
 
   const email = requireString(formData, "email").toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(email)) {

@@ -11,6 +11,7 @@ import { t } from "@/lib/messages";
 import { getMbtiBadgeTone, getZodiacSignLabel } from "@/lib/profile-labels";
 import { StaffDirectoryRows } from "@/components/staff-directory-rows";
 import { StaffDirectoryFilters } from "@/components/staff-directory-filters";
+import { ensureRbacCatalog } from "@/lib/rbac-sync";
 
 const ACTIVE_PROJECT_STATUSES = ["PLANNING", "ACTIVE", "AT_RISK", "ON_HOLD"] as const;
 
@@ -53,6 +54,8 @@ export async function StaffDirectoryBody({
 }: {
   searchParams: Promise<{ q?: string; companyId?: string; departmentId?: string; active?: string }>;
 }) {
+  await ensureRbacCatalog();
+
   const user = (await requireUser()) as AccessUser;
   const locale = await getLocale();
   if (!(await userHasPermission(user, "staff.read"))) redirect("/projects");
@@ -64,9 +67,7 @@ export async function StaffDirectoryBody({
   const activeRaw = String(sp.active ?? "all").trim().toLowerCase();
   const activeFilter = activeRaw === "active" || activeRaw === "inactive" ? activeRaw : "all";
 
-  const canCreate =
-    (await userHasPermission(user, "staff.create")) &&
-    (user.isSuperAdmin || user.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN"));
+  const canCreate = await userHasPermission(user, "staff.create");
   const showOnboardingTimeline = user.isSuperAdmin;
   const visibleCompanyWhere: Prisma.CompanyWhereInput = { deletedAt: null, ...companyVisibilityWhere(user) };
 

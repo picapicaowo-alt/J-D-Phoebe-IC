@@ -15,91 +15,9 @@ import {
 } from "@prisma/client";
 import { PrismaClient } from "@prisma/client";
 import { PERMISSION_KEYS } from "../lib/permission-keys";
+import { SYSTEM_ROLE_DEFINITIONS, SYSTEM_ROLE_PERMISSION_KEYS } from "../lib/rbac-catalog";
 
 const prisma = new PrismaClient();
-
-const ALL_PERMS = [...PERMISSION_KEYS];
-
-const COMPANY_ADMIN_PERMS = ALL_PERMS.filter(
-  (k) =>
-    ![
-      "org.group.update",
-      "permission.matrix.update",
-      "trash.purge",
-      "staff.purge",
-      "staff.soft_delete",
-      "staff.restore",
-      "company.purge",
-      "project.purge",
-    ].includes(k),
-);
-
-const PROJECT_MANAGER_PERMS = [
-  "org.group.read",
-  "company.read",
-  "project.create",
-  "project.read",
-  "project.update",
-  "project.archive",
-  "project.restore",
-  "project.workflow.read",
-  "project.workflow.update",
-  "project.map.update",
-  "project.member.manage",
-  "recognition.read",
-  "recognition.create",
-  "feedback.submit",
-  "leaderboard.read",
-  "knowledge.read",
-  "knowledge.create",
-  "staff.read",
-  "staff.assign_project",
-  "trash.read",
-  "trash.restore",
-  "lifecycle.onboarding.hub",
-];
-
-const COMPANY_CONTRIBUTOR_PERMS = [
-  "org.group.read",
-  "company.read",
-  "project.create",
-  "project.read",
-  "project.update",
-  "project.archive",
-  "project.restore",
-  "project.workflow.read",
-  "project.workflow.update",
-  "project.map.update",
-  "project.member.manage",
-  "recognition.read",
-  "recognition.create",
-  "leaderboard.read",
-  "knowledge.read",
-  "knowledge.create",
-  "staff.read",
-  "lifecycle.onboarding.hub",
-];
-
-const PROJECT_CONTRIBUTOR_PERMS = [
-  "org.group.read",
-  "company.read",
-  "project.create",
-  "project.read",
-  "project.update",
-  "project.archive",
-  "project.restore",
-  "project.workflow.read",
-  "project.workflow.update",
-  "project.map.update",
-  "project.member.manage",
-  "recognition.read",
-  "recognition.create",
-  "leaderboard.read",
-  "knowledge.read",
-  "knowledge.create",
-  "staff.read",
-  "lifecycle.onboarding.hub",
-];
 
 async function main() {
   await prisma.staffInvite.deleteMany();
@@ -159,70 +77,27 @@ async function main() {
     });
   }
 
-  const roles = await prisma.$transaction([
-    prisma.roleDefinition.create({
-      data: {
-        key: "GROUP_ADMIN",
-        displayName: "Group Admin",
-        description: "Manage the parent group, companies, and group-level staff visibility.",
-        appliesScope: "GROUP",
-        system: true,
-      },
-    }),
-    prisma.roleDefinition.create({
-      data: {
-        key: "COMPANY_ADMIN",
-        displayName: "Company Admin",
-        description: "Full management for one company entity and its projects.",
-        appliesScope: "COMPANY",
-        system: true,
-      },
-    }),
-    prisma.roleDefinition.create({
-      data: {
-        key: "PROJECT_MANAGER",
-        displayName: "Project Manager",
-        description: "Own delivery for a project: members, workflow, and reporting.",
-        appliesScope: "PROJECT",
-        system: true,
-      },
-    }),
-    prisma.roleDefinition.create({
-      data: {
-        key: "COMPANY_CONTRIBUTOR",
-        displayName: "Company Contributor",
-        description: "Works under a company entity; may be assigned to multiple projects.",
-        appliesScope: "COMPANY",
-        system: true,
-      },
-    }),
-    prisma.roleDefinition.create({
-      data: {
-        key: "PROJECT_CONTRIBUTOR",
-        displayName: "Project Contributor",
-        description: "Executes work on assigned projects and workflow nodes.",
-        appliesScope: "PROJECT",
-        system: true,
-      },
-    }),
-  ]);
+  const roles = await Promise.all(
+    SYSTEM_ROLE_DEFINITIONS.map((role) =>
+      prisma.roleDefinition.create({
+        data: role,
+      }),
+    ),
+  );
 
-  const [roleGroupAdmin, roleCompanyAdmin, roleProjectManager, roleCompanyContributor, roleProjectContributor] = roles;
-
-  const roleKeyToPerms: Record<string, string[]> = {
-    GROUP_ADMIN: ALL_PERMS,
-    COMPANY_ADMIN: COMPANY_ADMIN_PERMS,
-    PROJECT_MANAGER: PROJECT_MANAGER_PERMS,
-    COMPANY_CONTRIBUTOR: COMPANY_CONTRIBUTOR_PERMS,
-    PROJECT_CONTRIBUTOR: PROJECT_CONTRIBUTOR_PERMS,
-  };
+  const roleByKey = Object.fromEntries(roles.map((role) => [role.key, role]));
+  const roleGroupAdmin = roleByKey.GROUP_ADMIN;
+  const roleCompanyAdmin = roleByKey.COMPANY_ADMIN;
+  const roleProjectManager = roleByKey.PROJECT_MANAGER;
+  const roleCompanyContributor = roleByKey.COMPANY_CONTRIBUTOR;
+  const roleProjectContributor = roleByKey.PROJECT_CONTRIBUTOR;
 
   const allRoleRows = await prisma.roleDefinition.findMany();
   const allPermRows = await prisma.permissionDefinition.findMany();
   const permIdByKey = Object.fromEntries(allPermRows.map((p) => [p.key, p.id]));
 
   for (const r of allRoleRows) {
-    const keys = roleKeyToPerms[r.key];
+    const keys = SYSTEM_ROLE_PERMISSION_KEYS[r.key];
     if (!keys) continue;
     for (const key of keys) {
       const pid = permIdByKey[key];

@@ -7,8 +7,9 @@ import { isSuperAdmin, type AccessUser } from "@/lib/access";
 import { assertPermission, invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { normalizeBirthday, normalizeMbti } from "@/lib/profile-labels";
-import { canManageCompanyMemberships, canManageProjectMemberships } from "@/lib/scoped-role-access";
+import { canManageCompanyMemberships, canManageProjectMemberships, canManageStaffTarget } from "@/lib/scoped-role-access";
 import { normalizeTimeZone } from "@/lib/timezone";
+import { ensureRbacCatalog } from "@/lib/rbac-sync";
 
 function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -17,14 +18,42 @@ function requireString(formData: FormData, key: string) {
 }
 
 export async function updateStaffAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const userId = requireString(formData, "userId");
-  const target = await prisma.user.findFirst({ where: { id: userId, deletedAt: null } });
+  const target = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+    select: {
+      id: true,
+      clerkId: true,
+      name: true,
+      title: true,
+      signature: true,
+      active: true,
+      isSuperAdmin: true,
+      contactEmails: true,
+      phone: true,
+      birthday: true,
+      birthdayHidden: true,
+      mbti: true,
+      timezone: true,
+      groupMemberships: { select: { orgGroupId: true } },
+      companyMemberships: { select: { companyId: true, company: { select: { orgGroupId: true } } } },
+      projectMemberships: {
+        select: {
+          projectId: true,
+          project: { select: { companyId: true, company: { select: { orgGroupId: true } } } },
+        },
+      },
+    },
+  });
   if (!target) throw new Error("Not found");
 
   const editingSelf = actor.id === userId;
   if (!editingSelf) {
     await assertPermission(actor, "staff.update");
+    if (!(await canManageStaffTarget(actor, target, "staff.update"))) throw new Error("Forbidden");
   }
 
   const name = requireString(formData, "name");
@@ -113,6 +142,8 @@ export async function updateStaffAction(formData: FormData) {
 }
 
 export async function assignCompanyAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
@@ -157,6 +188,8 @@ export async function assignCompanyAction(formData: FormData) {
 }
 
 export async function updateCompanyMembershipSupervisorAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
@@ -205,6 +238,8 @@ export async function updateCompanyMembershipSupervisorAction(formData: FormData
 }
 
 export async function updateCompanyMembershipDepartmentAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
@@ -239,6 +274,8 @@ export async function updateCompanyMembershipDepartmentAction(formData: FormData
 }
 
 export async function updateCompanyMembershipRoleAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
@@ -286,6 +323,8 @@ export async function updateCompanyMembershipRoleAction(formData: FormData) {
 }
 
 export async function assignProjectAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const userId = requireString(formData, "userId");
   const projectId = requireString(formData, "projectId");
@@ -314,6 +353,8 @@ export async function assignProjectAction(formData: FormData) {
 }
 
 export async function updateProjectMembershipRoleAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const userId = requireString(formData, "userId");
   const projectId = requireString(formData, "projectId");
@@ -363,6 +404,8 @@ export async function updateProjectMembershipRoleAction(formData: FormData) {
 }
 
 export async function removeCompanyMembershipAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
@@ -377,6 +420,8 @@ export async function removeCompanyMembershipAction(formData: FormData) {
 }
 
 export async function removeProjectMembershipAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const userId = requireString(formData, "userId");
   const projectId = requireString(formData, "projectId");
@@ -394,6 +439,8 @@ export async function removeProjectMembershipAction(formData: FormData) {
 }
 
 export async function assignMultipleToProjectAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const projectId = requireString(formData, "projectId");
   const roleDefinitionId = requireString(formData, "roleDefinitionId");

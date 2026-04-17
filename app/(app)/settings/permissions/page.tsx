@@ -7,8 +7,11 @@ import { prisma } from "@/lib/prisma";
 import { PermissionMatrix } from "@/components/permission-matrix";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
+import { ensureRbacCatalog } from "@/lib/rbac-sync";
 
 export default async function PermissionsMatrixPage() {
+  await ensureRbacCatalog();
+
   const user = (await requireUser()) as AccessUser;
   if (!(await userHasPermission(user, "permission.matrix.read"))) redirect("/group");
 

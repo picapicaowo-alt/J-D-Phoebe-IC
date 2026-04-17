@@ -6,6 +6,8 @@ import { canManageProjectSettings, isCompanyAdmin, isGroupAdmin, isSuperAdmin, t
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
+import { canManageStaffTarget } from "@/lib/scoped-role-access";
+import { ensureRbacCatalog } from "@/lib/rbac-sync";
 
 function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -21,16 +23,29 @@ function getStringArray(formData: FormData, key: string) {
 }
 
 export async function softDeleteUserAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   await assertPermission(actor, "staff.soft_delete");
-  if (!isSuperAdmin(actor) && !actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN")) {
-    throw new Error("Forbidden");
-  }
   const userId = requireString(formData, "userId");
   if (actor.id === userId) throw new Error("You cannot trash your own account here.");
-  const target = await prisma.user.findFirst({ where: { id: userId, deletedAt: null } });
+  const target = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+    select: {
+      id: true,
+      isSuperAdmin: true,
+      groupMemberships: { select: { orgGroupId: true } },
+      companyMemberships: { select: { companyId: true, company: { select: { orgGroupId: true } } } },
+      projectMemberships: {
+        select: {
+          projectId: true,
+          project: { select: { companyId: true, company: { select: { orgGroupId: true } } } },
+        },
+      },
+    },
+  });
   if (!target) throw new Error("Not found");
-  if (target.isSuperAdmin && !isSuperAdmin(actor)) throw new Error("Forbidden");
+  if (!(await canManageStaffTarget(actor, target, "staff.soft_delete"))) throw new Error("Forbidden");
 
   await prisma.user.update({
     where: { id: userId },
@@ -42,15 +57,29 @@ export async function softDeleteUserAction(formData: FormData) {
 }
 
 export async function restoreUserAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   await assertPermission(actor, "trash.restore");
   await assertPermission(actor, "staff.restore");
-  if (!isSuperAdmin(actor) && !actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN")) {
-    throw new Error("Forbidden");
-  }
   const userId = requireString(formData, "userId");
-  const target = await prisma.user.findFirst({ where: { id: userId, deletedAt: { not: null } } });
+  const target = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: { not: null } },
+    select: {
+      id: true,
+      isSuperAdmin: true,
+      groupMemberships: { select: { orgGroupId: true } },
+      companyMemberships: { select: { companyId: true, company: { select: { orgGroupId: true } } } },
+      projectMemberships: {
+        select: {
+          projectId: true,
+          project: { select: { companyId: true, company: { select: { orgGroupId: true } } } },
+        },
+      },
+    },
+  });
   if (!target) throw new Error("Not found");
+  if (!(await canManageStaffTarget(actor, target, "staff.restore"))) throw new Error("Forbidden");
 
   await prisma.user.update({
     where: { id: userId },
@@ -62,6 +91,8 @@ export async function restoreUserAction(formData: FormData) {
 }
 
 export async function purgeUserAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   await assertPermission(actor, "trash.purge");
   await assertPermission(actor, "staff.purge");

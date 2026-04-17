@@ -30,6 +30,7 @@ export const PERMISSION_KEYS = [
   "staff.create",
   "staff.read",
   "staff.update",
+  "staff.birthday.read",
   "staff.assign_company",
   "staff.assign_project",
   "staff.soft_delete",

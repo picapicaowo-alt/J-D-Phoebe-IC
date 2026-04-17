@@ -6,6 +6,7 @@ import { type AccessUser } from "@/lib/access";
 import { assertPermission, invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
+import { ensureRbacCatalog } from "@/lib/rbac-sync";
 
 function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -14,6 +15,8 @@ function requireString(formData: FormData, key: string) {
 }
 
 export async function setRolePermissionAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const user = (await requireUser()) as AccessUser;
   await assertPermission(user, "permission.matrix.update");
 

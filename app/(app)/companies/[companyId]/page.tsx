@@ -4,7 +4,6 @@ import {
   createCompanyOnboardingMaterialAction,
   deleteCompanyOnboardingMaterialAction,
   uploadCompanyOnboardingPackageAction,
-  uploadCompanyOnboardingVideoAction,
   updateCompanyOnboardingMaterialAction,
 } from "@/app/actions/company";
 import { softDeleteCompanyAction } from "@/app/actions/trash";
@@ -304,15 +303,6 @@ export default async function CompanyDetailPage({
                           {t(locale, "companyOnboardingUploadPackage")}
                         </FormSubmitButton>
                       </form>
-                      <form action={uploadCompanyOnboardingVideoAction} encType="multipart/form-data" className="grid gap-2">
-                        <input type="hidden" name="companyId" value={company.id} />
-                        <input type="hidden" name="materialId" value={material.id} />
-                        <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadVideo")}</label>
-                        <input type="file" name="file" accept="video/*" required className="text-xs" />
-                        <FormSubmitButton type="submit" variant="secondary">
-                          {t(locale, "companyOnboardingUploadVideo")}
-                        </FormSubmitButton>
-                      </form>
                     </div>
 
                     <form action={deleteCompanyOnboardingMaterialAction} className="mt-3">
@@ -347,15 +337,9 @@ export default async function CompanyDetailPage({
                 <Input name="onboardingVideoUrl" placeholder="https://..." />
                 <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadPackage")}</label>
-                  <input type="file" name="onboardingPackageFile" className="text-xs" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadVideo")}</label>
-                  <input type="file" name="onboardingVideoFile" accept="video/*" className="text-xs" />
-                </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadPackage")}</label>
+                <input type="file" name="onboardingPackageFiles" multiple className="text-xs" />
               </div>
               <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingUploadHelp")}</p>
               <div className="grid gap-3 sm:grid-cols-2">

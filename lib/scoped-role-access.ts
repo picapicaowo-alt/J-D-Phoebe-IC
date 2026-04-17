@@ -14,6 +14,14 @@ type ProjectScope = {
   company: { orgGroupId: string };
 };
 
+type StaffScopeTarget = {
+  id: string;
+  isSuperAdmin?: boolean;
+  groupMemberships: { orgGroupId: string }[];
+  companyMemberships: { companyId: string; company: { orgGroupId: string } }[];
+  projectMemberships: { projectId: string; project: { companyId: string; company: { orgGroupId: string } } }[];
+};
+
 export async function getActorRoleIdsByPermission(
   user: AccessUser,
   permissionKeys: readonly PermissionKey[],
@@ -163,14 +171,8 @@ export async function canCreateProjectInCompany(user: AccessUser, company: Compa
 }
 
 export async function canManageCompanyMemberships(user: AccessUser, company: CompanyScope) {
-  if (user.isSuperAdmin) return true;
-  const isGroupAdminForCompany = user.groupMemberships.some(
-    (membership) => membership.orgGroupId === company.orgGroupId && membership.roleDefinition.key === "GROUP_ADMIN",
-  );
-  if (isGroupAdminForCompany) return true;
-  return user.companyMemberships.some(
-    (membership) => membership.companyId === company.id && membership.roleDefinition.key === "COMPANY_ADMIN",
-  );
+  const byPermission = await getActorRoleIdsByPermission(user, ["staff.assign_company"]);
+  return canManageCompanyScopeWithRoleIds(user, company, byPermission.get("staff.assign_company") ?? new Set());
 }
 
 export async function canManageProjectMemberships(user: AccessUser, project: ProjectScope) {
@@ -181,4 +183,49 @@ export async function canManageProjectMemberships(user: AccessUser, project: Pro
     project,
     mergeRoleIdSets(byPermission.get("project.member.manage"), byPermission.get("staff.assign_project")),
   );
+}
+
+export function canManageStaffTargetWithRoleIds(
+  user: AccessUser,
+  target: StaffScopeTarget,
+  allowedRoleIds: ReadonlySet<string>,
+) {
+  if (user.isSuperAdmin) return true;
+  if (target.isSuperAdmin) return false;
+  if (!allowedRoleIds.size) return false;
+
+  return (
+    target.groupMemberships.some((membership) =>
+      user.groupMemberships.some(
+        (actorMembership) =>
+          actorMembership.orgGroupId === membership.orgGroupId &&
+          !!actorMembership.roleDefinitionId &&
+          allowedRoleIds.has(actorMembership.roleDefinitionId),
+      ),
+    ) ||
+    target.companyMemberships.some((membership) =>
+      canManageCompanyScopeWithRoleIds(
+        user,
+        { id: membership.companyId, orgGroupId: membership.company.orgGroupId },
+        allowedRoleIds,
+      ),
+    ) ||
+    target.projectMemberships.some((membership) =>
+      canManageProjectScopeWithRoleIds(
+        user,
+        {
+          id: membership.projectId,
+          ownerId: "",
+          companyId: membership.project.companyId,
+          company: { orgGroupId: membership.project.company.orgGroupId },
+        },
+        allowedRoleIds,
+      ),
+    )
+  );
+}
+
+export async function canManageStaffTarget(user: AccessUser, target: StaffScopeTarget, permissionKey: PermissionKey) {
+  const byPermission = await getActorRoleIdsByPermission(user, [permissionKey]);
+  return canManageStaffTargetWithRoleIds(user, target, byPermission.get(permissionKey) ?? new Set());
 }

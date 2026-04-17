@@ -15,7 +15,6 @@ import {
 } from "@/app/actions/staff";
 import {
   completeOffboardingRunAction,
-  skipMemberOnboardingAction,
   startOffboardingRunAction,
   toggleOffboardingChecklistAction,
 } from "@/app/actions/lifecycle";
@@ -31,11 +30,13 @@ import { sumAbilityByUser } from "@/lib/scoring";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import {
+  canManageStaffTarget,
   canManageCompanyMemberships,
   canManageProjectScopeWithRoleIds,
   getActorRoleIdsByPermission,
   mergeRoleIdSets,
 } from "@/lib/scoped-role-access";
+import { ensureRbacCatalog } from "@/lib/rbac-sync";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -43,12 +44,9 @@ import { Select } from "@/components/ui/select";
 import { AbilityRadar } from "@/components/ability-radar";
 import { StaffAssignCompanyForm } from "@/components/staff-assign-company-form";
 import { StaffAvatarPreview } from "@/components/staff-avatar-preview";
+import { StaffOnboardingStatusCard } from "@/components/staff-onboarding-status-card";
 import { StaffObservationsPanel } from "@/components/staff-observations-panel";
 import { Badge } from "@/components/ui/badge";
-
-function formatOnboardingTimestamp(when: Date) {
-  return when.toISOString().slice(0, 16).replace("T", " ");
-}
 
 function isMissingColumnError(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022";
@@ -179,6 +177,8 @@ export default async function StaffDetailPage({
   params: Promise<{ userId: string }>;
   searchParams?: Promise<{ uploadError?: string | string[] }>;
 }) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const { userId } = await params;
   const sp = (await searchParams) ?? {};
@@ -191,6 +191,7 @@ export default async function StaffDetailPage({
     canReadFeedbackPermission,
     canUpdateStaffPermission,
     canSoftDeletePermission,
+    canReadBirthdayPermission,
   ] = await Promise.all([
     userHasPermission(actor, "staff.read"),
     userHasPermission(actor, "recognition.create"),
@@ -199,6 +200,7 @@ export default async function StaffDetailPage({
     userHasPermission(actor, "feedback.read"),
     userHasPermission(actor, "staff.update"),
     userHasPermission(actor, "staff.soft_delete"),
+    userHasPermission(actor, "staff.birthday.read"),
   ]);
 
   const canReadStaff = actor.id === userId || canReadStaffPermission;
@@ -217,18 +219,29 @@ export default async function StaffDetailPage({
         ? getCompanionManifest()
         : getCompanionManifestForUser(actor);
   const canSkipStaffOnboarding = isSuperAdmin(actor) && actor.id !== target.id;
+  const canManageTargetProfile = canUpdateStaffPermission ? await canManageStaffTarget(actor, target, "staff.update") : false;
+  const canManageTargetTrash = canSoftDeletePermission ? await canManageStaffTarget(actor, target, "staff.soft_delete") : false;
   const onboardingByCompanyId = new Map(target.memberOnboardings.map((ob) => [ob.companyId, ob]));
   const pendingOnboardings = target.memberOnboardings.filter((ob) => !ob.completedAt);
-  const onboardingAdminRows = target.companyMemberships.map((membership) => ({
-    companyId: membership.companyId,
-    companyName: membership.company.name,
-    onboarding: onboardingByCompanyId.get(membership.companyId) ?? null,
-  }));
+  const onboardingAdminRows = target.companyMemberships.map((membership) => {
+    const onboarding = onboardingByCompanyId.get(membership.companyId);
+    return {
+      companyId: membership.companyId,
+      companyName: membership.company.name,
+      onboarding: onboarding
+        ? {
+            id: onboarding.id,
+            deadlineAt: onboarding.deadlineAt.toISOString(),
+            completedAt: onboarding.completedAt?.toISOString() ?? null,
+          }
+        : null,
+    };
+  });
 
   const isAnyCompanyAdmin = actor.companyMemberships.some((m) => m.roleDefinition.key === "COMPANY_ADMIN");
   const isAnyGroupAdmin = actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN");
   const isAnyPm = actor.projectMemberships.some((m) => m.roleDefinition.key === "PROJECT_MANAGER");
-  const canEditProfile = isSuperAdmin(actor) || actor.id === target.id || canUpdateStaffPermission;
+  const canEditProfile = actor.id === target.id || isSuperAdmin(actor) || canManageTargetProfile;
   const until = new Date();
   const since = new Date(until);
   since.setUTCDate(since.getUTCDate() - 90);
@@ -316,7 +329,8 @@ export default async function StaffDetailPage({
   const zodiacLabel = getZodiacSignLabel(target.birthday, locale);
   const mbtiBadgeTone = getMbtiBadgeTone(target.mbti);
   const formattedBirthday = formatBirthdayLabel(target.birthday, locale);
-  const canSeeExactBirthday = !!target.birthday && (!target.birthdayHidden || actor.id === target.id || isSuperAdmin(actor));
+  const canSeeExactBirthday =
+    !!target.birthday && (!target.birthdayHidden || actor.id === target.id || isSuperAdmin(actor) || canReadBirthdayPermission);
   const projectAssignmentRoleIds = mergeRoleIdSets(
     actorRoleIdsByPermission.get("staff.assign_project"),
     actorRoleIdsByPermission.get("project.member.manage"),
@@ -366,7 +380,7 @@ export default async function StaffDetailPage({
 
   const canSoftDelete =
     canSoftDeletePermission &&
-    (isSuperAdmin(actor) || isAnyGroupAdmin) &&
+    (isSuperAdmin(actor) || canManageTargetTrash) &&
     actor.id !== target.id &&
     !(target.isSuperAdmin && !isSuperAdmin(actor));
 
@@ -556,44 +570,15 @@ export default async function StaffDetailPage({
           ) : (
             <ul className="space-y-3">
               {onboardingAdminRows.map((row) => (
-                <li key={row.companyId} className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="font-medium text-[hsl(var(--foreground))]">{row.companyName}</p>
-                      <p className="mt-1 text-xs text-[hsl(var(--muted))]">
-                        {row.onboarding?.completedAt
-                          ? `${t(locale, "onboardingCompletedAtLabel")}: ${formatOnboardingTimestamp(row.onboarding.completedAt)}`
-                          : row.onboarding
-                            ? `${t(locale, "onboardingDeadline")}: ${row.onboarding.deadlineAt.toISOString().slice(0, 10)}`
-                            : t(locale, "staffOnboardingNone")}
-                      </p>
-                    </div>
-                    <span
-                      className={`rounded-full px-2 py-1 text-xs ${
-                        row.onboarding?.completedAt
-                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                          : row.onboarding
-                            ? "bg-amber-500/15 text-amber-800 dark:text-amber-200"
-                            : "bg-[hsl(var(--background))] text-[hsl(var(--muted))]"
-                      }`}
-                    >
-                      {row.onboarding?.completedAt
-                        ? t(locale, "staffOnboardingComplete")
-                        : row.onboarding
-                          ? t(locale, "staffOnboardingPending")
-                          : t(locale, "staffOnboardingNone")}
-                    </span>
-                  </div>
-                  {(!row.onboarding || !row.onboarding.completedAt) ? (
-                    <form action={skipMemberOnboardingAction} className="mt-3">
-                      {row.onboarding ? <input type="hidden" name="onboardingId" value={row.onboarding.id} /> : null}
-                      {!row.onboarding ? <input type="hidden" name="userId" value={target.id} /> : null}
-                      {!row.onboarding ? <input type="hidden" name="companyId" value={row.companyId} /> : null}
-                      <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
-                        {t(locale, "staffOnboardingSkipBtn")}
-                      </FormSubmitButton>
-                    </form>
-                  ) : null}
+                <li key={row.companyId}>
+                  <StaffOnboardingStatusCard
+                    companyId={row.companyId}
+                    targetUserId={target.id}
+                    title={row.companyName}
+                    onboarding={row.onboarding}
+                    locale={locale}
+                    canSkip={canSkipStaffOnboarding}
+                  />
                 </li>
               ))}
             </ul>
@@ -869,43 +854,23 @@ export default async function StaffDetailPage({
                     ) : null}
                   </div>
                   {onboarding || canSkipStaffOnboarding ? (
-                    <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-xs">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-medium text-[hsl(var(--foreground))]">{t(locale, "navOnboarding")}</span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 ${
-                            onboarding?.completedAt
-                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                              : onboarding
-                                ? "bg-amber-500/15 text-amber-800 dark:text-amber-200"
-                                : "bg-[hsl(var(--background))] text-[hsl(var(--muted))]"
-                          }`}
-                        >
-                          {onboarding?.completedAt
-                            ? t(locale, "staffOnboardingComplete")
-                            : onboarding
-                              ? t(locale, "staffOnboardingPending")
-                              : t(locale, "staffOnboardingNone")}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-[hsl(var(--muted))]">
-                        {onboarding?.completedAt
-                          ? `${t(locale, "onboardingCompletedAtLabel")}: ${formatOnboardingTimestamp(onboarding.completedAt)}`
-                          : onboarding
-                            ? `${t(locale, "onboardingDeadline")}: ${onboarding.deadlineAt.toISOString().slice(0, 10)}`
-                            : t(locale, "staffOnboardingNone")}
-                      </p>
-                      {canSkipStaffOnboarding && (!onboarding || !onboarding.completedAt) ? (
-                        <form action={skipMemberOnboardingAction} className="mt-3">
-                          {onboarding ? <input type="hidden" name="onboardingId" value={onboarding.id} /> : null}
-                          {!onboarding ? <input type="hidden" name="userId" value={target.id} /> : null}
-                          {!onboarding ? <input type="hidden" name="companyId" value={m.companyId} /> : null}
-                          <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
-                            {t(locale, "staffOnboardingSkipBtn")}
-                          </FormSubmitButton>
-                        </form>
-                      ) : null}
-                    </div>
+                    <StaffOnboardingStatusCard
+                      companyId={m.companyId}
+                      targetUserId={target.id}
+                      title={t(locale, "navOnboarding")}
+                      onboarding={
+                        onboarding
+                          ? {
+                              id: onboarding.id,
+                              deadlineAt: onboarding.deadlineAt.toISOString(),
+                              completedAt: onboarding.completedAt?.toISOString() ?? null,
+                            }
+                          : null
+                      }
+                      locale={locale}
+                      canSkip={canSkipStaffOnboarding}
+                      className="text-xs"
+                    />
                   ) : null}
                   {canManageThisCompanyMembership ? (
                     <form action={updateCompanyMembershipRoleAction} className="flex flex-wrap items-end gap-2 text-xs">

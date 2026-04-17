@@ -10,6 +10,8 @@ import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/l
 import { resolveBlobReadWriteToken } from "@/lib/blob";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { canManageStaffTarget } from "@/lib/scoped-role-access";
+import { ensureRbacCatalog } from "@/lib/rbac-sync";
 
 const MAX_BYTES = 6 * 1024 * 1024;
 const INLINE_FALLBACK_MAX_BYTES = 160 * 1024;
@@ -103,9 +105,29 @@ export async function uploadUserAvatarAction(formData: FormData) {
   const fallbackPath = userId ? `/staff/${userId}` : "/settings/profile";
 
   try {
+    await ensureRbacCatalog();
+
     const actor = (await requireUser()) as AccessUser;
     if (!userId) throw new Error("Missing userId");
-    if (actor.id !== userId) await assertPermission(actor, "staff.update");
+    if (actor.id !== userId) {
+      await assertPermission(actor, "staff.update");
+      const target = await prisma.user.findFirst({
+        where: { id: userId, deletedAt: null },
+        select: {
+          id: true,
+          isSuperAdmin: true,
+          groupMemberships: { select: { orgGroupId: true } },
+          companyMemberships: { select: { companyId: true, company: { select: { orgGroupId: true } } } },
+          projectMemberships: {
+            select: {
+              projectId: true,
+              project: { select: { companyId: true, company: { select: { orgGroupId: true } } } },
+            },
+          },
+        },
+      });
+      if (!target || !(await canManageStaffTarget(actor, target, "staff.update"))) throw new Error("Forbidden");
+    }
 
     const file = formData.get("file");
     if (!file || typeof file === "string" || !("arrayBuffer" in file)) throw new Error("Choose an image file.");
@@ -126,10 +148,30 @@ export async function uploadUserAvatarAction(formData: FormData) {
 }
 
 export async function removeUserAvatarAction(formData: FormData) {
+  await ensureRbacCatalog();
+
   const actor = (await requireUser()) as AccessUser;
   const userId = String(formData.get("userId") ?? "").trim();
   if (!userId) throw new Error("Missing userId");
-  if (actor.id !== userId) await assertPermission(actor, "staff.update");
+  if (actor.id !== userId) {
+    await assertPermission(actor, "staff.update");
+    const target = await prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: {
+        id: true,
+        isSuperAdmin: true,
+        groupMemberships: { select: { orgGroupId: true } },
+        companyMemberships: { select: { companyId: true, company: { select: { orgGroupId: true } } } },
+        projectMemberships: {
+          select: {
+            projectId: true,
+            project: { select: { companyId: true, company: { select: { orgGroupId: true } } } },
+          },
+        },
+      },
+    });
+    if (!target || !(await canManageStaffTarget(actor, target, "staff.update"))) throw new Error("Forbidden");
+  }
 
   await prisma.user.update({ where: { id: userId }, data: { avatarUrl: null } });
   invalidateAccessUserCache(userId);
