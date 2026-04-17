@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
-import { UserFace } from "@/components/user-face";
+import { StaffAvatarPreview } from "@/components/staff-avatar-preview";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -100,7 +100,7 @@ export function StaffDirectoryRows({ rows, copy }: { rows: StaffDirectoryRowDTO[
                   aria-label={s.name}
                 />
               </label>
-              <UserFace name={s.name} avatarUrl={s.avatarUrl} size={48} className="shrink-0" />
+              <StaffAvatarPreview name={s.name} avatarUrl={s.avatarUrl} size={48} className="shrink-0" />
               <div className="min-w-0 flex-1">
                 <Link className="text-base font-semibold text-[hsl(var(--foreground))] hover:underline" href={`/staff/${s.id}`} prefetch={false}>
                   {s.name}

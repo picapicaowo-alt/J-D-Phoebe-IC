@@ -40,8 +40,8 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AbilityRadar } from "@/components/ability-radar";
 import { StaffAssignCompanyForm } from "@/components/staff-assign-company-form";
+import { StaffAvatarPreview } from "@/components/staff-avatar-preview";
 import { StaffObservationsPanel } from "@/components/staff-observations-panel";
-import { UserFace } from "@/components/user-face";
 
 function formatOnboardingTimestamp(when: Date) {
   return when.toISOString().slice(0, 16).replace("T", " ");
@@ -249,7 +249,7 @@ export default async function StaffDetailPage({
       </div>
 
       <div className="flex flex-wrap items-start gap-3">
-        <UserFace name={target.name} avatarUrl={target.avatarUrl} size={56} />
+        <StaffAvatarPreview name={target.name} avatarUrl={target.avatarUrl} size={56} />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
           {target.title ? <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">{target.title}</p> : null}
