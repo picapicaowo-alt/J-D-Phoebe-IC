@@ -206,7 +206,10 @@ export async function ProjectsPageBody({
           <p className="mt-2 max-w-3xl text-base leading-7 text-[hsl(var(--muted))]">{t(locale, "projectsPageLead")}</p>
         </div>
         {canCreate ? (
-          <Link href="/projects/new" className="text-sm font-medium text-[hsl(var(--accent))] hover:underline">
+          <Link
+            href="/projects/new"
+            className="inline-flex items-center justify-center rounded-md bg-[hsl(var(--primary))] px-4 py-2.5 text-base font-semibold text-white shadow-[0_4px_12px_rgba(99,102,241,0.25)] transition hover:-translate-y-px hover:bg-[hsl(var(--primary-hover))]"
+          >
             {t(locale, "projectsNew")}
           </Link>
         ) : null}
@@ -334,7 +337,7 @@ export async function ProjectsPageBody({
               <FormSubmitButton
                 type="submit"
                 variant="secondary"
-                className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100"
+                className="h-8 border border-rose-600/20 bg-rose-600/5 px-2.5 text-xs font-medium text-rose-700 dark:text-rose-300"
                 pendingLabel="…"
                 disabled={!selectableProjectIds.length}
               >
@@ -368,7 +371,7 @@ export async function ProjectsPageBody({
                 <FormSubmitButton
                   type="submit"
                   variant="secondary"
-                  className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100"
+                  className="h-8 border border-rose-600/20 bg-rose-600/5 px-2.5 text-xs font-medium text-rose-700 dark:text-rose-300"
                   pendingLabel="…"
                   disabled={!selectableProjectIds.length}
                 >
