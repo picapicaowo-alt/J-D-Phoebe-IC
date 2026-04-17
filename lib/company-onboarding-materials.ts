@@ -86,7 +86,13 @@ export function resolveCompanyOnboardingMaterials(
   company: CompanyWithOnboardingMaterials,
 ): ResolvedCompanyOnboardingMaterial[] {
   const dbMaterials = sortMaterialsDesc(company.onboardingMaterials ?? []).filter(
-    (material) => Boolean(material.packageAttachmentId || material.packageUrl.trim()),
+    (material) =>
+      Boolean(
+        material.packageAttachmentId ||
+          material.packageUrl.trim() ||
+          material.videoAttachmentId ||
+          material.videoUrl?.trim(),
+      ),
   );
   if (dbMaterials.length) {
     return dbMaterials.map((material, index) => ({
@@ -99,15 +105,16 @@ export function resolveCompanyOnboardingMaterials(
     }));
   }
 
-  const packageUrl = company.onboardingPackageUrl?.trim();
-  if (!packageUrl) return [];
+  const packageUrl = company.onboardingPackageUrl?.trim() ?? "";
+  const videoUrl = normalizeVideoUrl(company.onboardingVideoUrl);
+  if (!packageUrl && !videoUrl) return [];
 
   return [
     {
       id: `${LEGACY_COMPANY_ONBOARDING_MATERIAL_ID_PREFIX}${company.id}`,
       companyId: company.id,
       packageUrl,
-      videoUrl: normalizeVideoUrl(company.onboardingVideoUrl),
+      videoUrl,
       packageVersion: normalizePackageVersion(company.onboardingPackageVersion),
       deadlineDays: company.onboardingDeadlineDays ?? DEFAULT_COMPANY_ONBOARDING_DEADLINE_DAYS,
       packageAttachmentId: null,
@@ -115,7 +122,7 @@ export function resolveCompanyOnboardingMaterials(
       createdAt: company.createdAt,
       updatedAt: company.updatedAt,
       packageHref: packageUrl,
-      videoHref: normalizeVideoUrl(company.onboardingVideoUrl),
+      videoHref: videoUrl,
       packageAttachmentName: null,
       videoAttachmentName: null,
       videoMimeType: null,
