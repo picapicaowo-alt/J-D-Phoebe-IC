@@ -648,6 +648,8 @@ export default async function ProjectDetailPage({
   const knowledgeTotalCount = ownKnowledge.length + sharedKnowledgeInbound.length;
   const filesTotalCount = projectFiles.length + sharedAttachmentInbound.length;
   const taskRows = buildProjectTaskRows(project.nodes);
+  const projectMemberOptions = project.memberships.map((m) => ({ id: m.userId, name: m.user.name }));
+  const labelMemberOptions = staff.length ? staff : projectMemberOptions;
   const focusedTask = findTaskById(taskRows, String(sp.task ?? "").trim() || null);
   const currentSection = String(sp.section ?? "").trim() || null;
   const daysLeft = daysLeftLine(project.deadline, locale);
@@ -828,7 +830,8 @@ export default async function ProjectDetailPage({
           tasks={taskRows}
           canEdit={canEditTasks}
           undoAvailable={undoAvailable}
-          memberOptions={project.memberships.map((m) => ({ id: m.userId, name: m.user.name }))}
+          memberOptions={projectMemberOptions}
+          labelMemberOptions={labelMemberOptions}
           locale={locale}
           copy={{
             title: t(locale, "wfMapTitle"),

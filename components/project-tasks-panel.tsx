@@ -759,13 +759,13 @@ function NodeLabelsDialog({
   dialogId,
   projectId,
   node,
-  memberOptions,
+  peopleOptions,
   copy,
 }: {
   dialogId: string;
   projectId: string;
   node: { id: string } & TaskOperationalFormState;
-  memberOptions: { id: string; name: string }[];
+  peopleOptions: { id: string; name: string }[];
   copy: ProjectTasksCopy;
 }) {
   const waitingLabelOptions = copy.labelOptions.filter((option) => WAITING_LABELS.includes(option.value));
@@ -860,7 +860,7 @@ function NodeLabelsDialog({
                   type="button"
                   className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
                     active
-                      ? "border-[hsl(var(--foreground))] bg-[hsl(var(--foreground))] text-[hsl(var(--card))]"
+                      ? "border-[hsl(var(--primary))]/30 bg-[hsl(var(--primary))]/12 text-[hsl(var(--primary))] ring-1 ring-[hsl(var(--primary))]/25"
                       : "border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10"
                   }`}
                   onClick={() => setActiveCategory(category.key)}
@@ -890,7 +890,7 @@ function NodeLabelsDialog({
               <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.waitingOnInternalLabel}</label>
               <MultiPersonPicker
                 name="waitingOnUserIds"
-                options={memberOptions}
+                options={peopleOptions}
                 selectedIds={selectedWaitingUserIds}
                 onChange={setSelectedWaitingUserIds}
                 placeholder={copy.peoplePickerPlaceholder}
@@ -930,7 +930,7 @@ function NodeLabelsDialog({
               <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.approverLabel}</label>
               <Select name="approverUserId" className="h-10 text-sm" defaultValue={node.approverId ?? ""}>
                 <option value="">—</option>
-                {memberOptions.map((m) => (
+                {peopleOptions.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
@@ -1003,6 +1003,7 @@ export function ProjectTasksPanel({
   canEdit,
   undoAvailable,
   memberOptions,
+  labelMemberOptions,
   copy,
   locale,
   onOptimisticTasksChange,
@@ -1012,6 +1013,7 @@ export function ProjectTasksPanel({
   canEdit: boolean;
   undoAvailable: boolean;
   memberOptions: { id: string; name: string }[];
+  labelMemberOptions: { id: string; name: string }[];
   copy: ProjectTasksCopy;
   locale: "en" | "zh";
   onOptimisticTasksChange?: (tasks: ProjectTaskRow[]) => void;
@@ -1387,7 +1389,7 @@ export function ProjectTasksPanel({
                         nextAction: task.nextAction,
                         isProjectBottleneck: task.isProjectBottleneck,
                       }}
-                      memberOptions={memberOptions}
+                      peopleOptions={labelMemberOptions}
                       copy={copy}
                     />
                   </>
@@ -1552,7 +1554,7 @@ export function ProjectTasksPanel({
                                   nextAction: sub.nextAction,
                                   isProjectBottleneck: sub.isProjectBottleneck,
                                 }}
-                                memberOptions={memberOptions}
+                                peopleOptions={labelMemberOptions}
                                 copy={copy}
                               />
                             </>

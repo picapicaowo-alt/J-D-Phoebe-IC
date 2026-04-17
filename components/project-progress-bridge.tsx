@@ -80,6 +80,7 @@ export function ProjectTasksPanelWithProgress({
   canEdit,
   undoAvailable,
   memberOptions,
+  labelMemberOptions,
   copy,
   locale,
 }: {
@@ -88,6 +89,7 @@ export function ProjectTasksPanelWithProgress({
   canEdit: boolean;
   undoAvailable: boolean;
   memberOptions: { id: string; name: string }[];
+  labelMemberOptions: { id: string; name: string }[];
   copy: ProjectTasksCopy;
   locale: "en" | "zh";
 }) {
@@ -107,6 +109,7 @@ export function ProjectTasksPanelWithProgress({
       canEdit={canEdit}
       undoAvailable={undoAvailable}
       memberOptions={memberOptions}
+      labelMemberOptions={labelMemberOptions}
       copy={copy}
       locale={locale}
       onOptimisticTasksChange={handleOptimisticChange}

@@ -50,6 +50,12 @@ type ParsedOperationalInput = {
   isProjectBottleneck: boolean;
 };
 
+type ProjectStaffDirectoryEntry = {
+  id: string;
+  name: string;
+  email: string;
+};
+
 /** Run rollup + second revalidate after the response is sent so mutations return fast (avoids Vercel / PgBouncer timeouts). */
 function scheduleTaskRollupRevalidate(projectId: string) {
   after(async () => {
@@ -100,39 +106,58 @@ function parseNodeStatus(formData: FormData, key = "status") {
   return allowed.includes(raw as WorkflowNodeStatus) ? (raw as WorkflowNodeStatus) : WorkflowNodeStatus.NOT_STARTED;
 }
 
-async function resolveMentionedUserId(projectId: string, mentionRaw: string | null) {
-  return resolveMentionedUserIdWithDb(prisma, projectId, mentionRaw);
+async function listProjectStaffDirectory(db: DbClient, projectId: string): Promise<ProjectStaffDirectoryEntry[]> {
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: {
+      ownerId: true,
+      company: { select: { orgGroupId: true } },
+      memberships: { select: { userId: true } },
+    },
+  });
+
+  if (!project) return [];
+
+  const mustIncludeUserIds = [...new Set([project.ownerId, ...project.memberships.map((membership) => membership.userId)])];
+
+  return db.user.findMany({
+    where: {
+      deletedAt: null,
+      OR: [
+        { id: { in: mustIncludeUserIds } },
+        {
+          active: true,
+          OR: [
+            { groupMemberships: { some: { orgGroupId: project.company.orgGroupId } } },
+            { companyMemberships: { some: { company: { orgGroupId: project.company.orgGroupId } } } },
+            { projectMemberships: { some: { project: { company: { orgGroupId: project.company.orgGroupId } } } } },
+          ],
+        },
+      ],
+    },
+    select: { id: true, name: true, email: true },
+  });
 }
 
-async function resolveMentionedUserIdWithDb(db: DbClient, projectId: string, mentionRaw: string | null) {
+function resolveMentionedUserIdFromDirectory(directory: ProjectStaffDirectoryEntry[], mentionRaw: string | null) {
   const mention = mentionRaw?.trim();
   if (!mention) return null;
   const normalized = mention.replace(/^@+/, "").trim().toLowerCase();
   if (!normalized) return null;
 
-  const memberships = await db.projectMembership.findMany({
-    where: { projectId },
-    select: { userId: true, user: { select: { id: true, name: true, email: true } } },
-  });
-
-  const match = memberships.find((membership) => {
-    const name = membership.user.name.trim().toLowerCase();
-    const email = membership.user.email.trim().toLowerCase();
+  const match = directory.find((person) => {
+    const name = person.name.trim().toLowerCase();
+    const email = person.email.trim().toLowerCase();
     return name === normalized || email === normalized || `@${name}` === `@${normalized}`;
   });
 
-  return match?.userId ?? null;
+  return match?.id ?? null;
 }
 
-async function filterProjectMemberIds(db: DbClient, projectId: string, rawUserIds: string[]) {
+function filterDirectoryUserIds(directory: ProjectStaffDirectoryEntry[], rawUserIds: string[]) {
   const uniqueUserIds = [...new Set(rawUserIds.map((value) => value.trim()).filter(Boolean))];
   if (!uniqueUserIds.length) return [] as string[];
-
-  const memberships = await db.projectMembership.findMany({
-    where: { projectId, userId: { in: uniqueUserIds } },
-    select: { userId: true },
-  });
-  const allowedUserIds = new Set(memberships.map((membership) => membership.userId));
+  const allowedUserIds = new Set(directory.map((person) => person.id));
   return uniqueUserIds.filter((userId) => allowedUserIds.has(userId));
 }
 
@@ -246,11 +271,18 @@ async function parseOperationalInput(formData: FormData, projectId: string, opts
     !!String(formData.get("approverUserId") ?? "").trim() ||
     !!parseOptionalDate(formData, "approvalRequestedAt") ||
     !!parseOptionalDate(formData, "approvalCompletedAt");
+  let staffDirectoryPromise: Promise<ProjectStaffDirectoryEntry[]> | null = null;
+  const getStaffDirectory = () => {
+    if (!staffDirectoryPromise) {
+      staffDirectoryPromise = listProjectStaffDirectory(db, projectId);
+    }
+    return staffDirectoryPromise;
+  };
 
   const waitingStartedAt = hasWaitingState ? parseOptionalDate(formData, "waitingStartedAt") ?? new Date() : null;
-  const waitingOnUserIds = hasWaitingState ? await filterProjectMemberIds(db, projectId, rawWaitingOnUserIds) : [];
+  const waitingOnUserIds = hasWaitingState ? filterDirectoryUserIds(await getStaffDirectory(), rawWaitingOnUserIds) : [];
   const fallbackWaitingOnUserId =
-    hasWaitingState && waitingOnUserMention ? await resolveMentionedUserIdWithDb(db, projectId, waitingOnUserMention) : null;
+    hasWaitingState && waitingOnUserMention ? resolveMentionedUserIdFromDirectory(await getStaffDirectory(), waitingOnUserMention) : null;
   const normalizedWaitingOnUserIds = [...new Set([...waitingOnUserIds, fallbackWaitingOnUserId].filter(Boolean) as string[])];
   const waitingOnExternalName = hasWaitingState ? waitingOnExternalNameInput : null;
   const waitingDetails = hasWaitingState ? waitingDetailsInput : null;
@@ -258,7 +290,7 @@ async function parseOperationalInput(formData: FormData, projectId: string, opts
   const approvalRequestedAt = hasApprovalState ? parseOptionalDate(formData, "approvalRequestedAt") ?? new Date() : null;
   const approvalCompletedAt = hasApprovalState ? parseOptionalDate(formData, "approvalCompletedAt") : null;
   const [approverUserId] = hasApprovalState
-    ? await filterProjectMemberIds(db, projectId, [String(formData.get("approverUserId") ?? "").trim()])
+    ? filterDirectoryUserIds(await getStaffDirectory(), [String(formData.get("approverUserId") ?? "").trim()])
     : [];
 
   return {
