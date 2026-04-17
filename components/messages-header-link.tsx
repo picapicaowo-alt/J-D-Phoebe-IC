@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useEffectEvent, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 function parseJson<T>(value: string): T | null {
@@ -29,6 +29,8 @@ export function MessagesHeaderLink({
 }) {
   const [count, setCount] = useState(initialUnreadCount);
   const pathname = usePathname();
+  const router = useRouter();
+  const prefetchedRef = useRef(false);
 
   const refreshCount = useEffectEvent(async () => {
     const next = await fetchUnreadCount().catch(() => null);
@@ -36,6 +38,12 @@ export function MessagesHeaderLink({
       setCount(next);
     }
   });
+
+  useEffect(() => {
+    if (prefetchedRef.current) return;
+    prefetchedRef.current = true;
+    router.prefetch("/messages");
+  }, [router]);
 
   useEffect(() => {
     const handleUnreadChanged = () => void refreshCount();
@@ -64,7 +72,16 @@ export function MessagesHeaderLink({
   return (
     <Link
       href="/messages"
-      prefetch={false}
+      onFocus={() => {
+        if (prefetchedRef.current) return;
+        prefetchedRef.current = true;
+        router.prefetch("/messages");
+      }}
+      onPointerEnter={() => {
+        if (prefetchedRef.current) return;
+        prefetchedRef.current = true;
+        router.prefetch("/messages");
+      }}
       className={cn(
         "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition",
         count > 0

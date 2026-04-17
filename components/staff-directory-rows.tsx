@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { StaffAvatarPreview } from "@/components/staff-avatar-preview";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,10 +38,22 @@ type Copy = {
 
 export function StaffDirectoryRows({ rows, copy }: { rows: StaffDirectoryRowDTO[]; copy: Copy }) {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const router = useRouter();
+  const prefetchedRef = useRef(new Set<string>());
 
   const selectedIds = useMemo(() => Object.keys(selected).filter((id) => selected[id]), [selected]);
   const pageIds = useMemo(() => rows.map((r) => r.id), [rows]);
   const allSelected = pageIds.length > 0 && pageIds.every((id) => selected[id]);
+
+  const warmStaffRoute = useCallback(
+    (staffId: string) => {
+      const href = `/staff/${staffId}`;
+      if (prefetchedRef.current.has(href)) return;
+      prefetchedRef.current.add(href);
+      router.prefetch(href);
+    },
+    [router],
+  );
 
   const toggleOne = useCallback((id: string) => {
     setSelected((s) => ({ ...s, [id]: !s[id] }));
@@ -105,7 +118,13 @@ export function StaffDirectoryRows({ rows, copy }: { rows: StaffDirectoryRowDTO[
               </label>
               <StaffAvatarPreview name={s.name} avatarUrl={s.avatarUrl} size={48} className="shrink-0" />
               <div className="min-w-0 flex-1">
-                <Link className="text-base font-semibold text-[hsl(var(--foreground))] hover:underline" href={`/staff/${s.id}`} prefetch={false}>
+                <Link
+                  className="text-base font-semibold text-[hsl(var(--foreground))] hover:underline"
+                  href={`/staff/${s.id}`}
+                  prefetch={false}
+                  onFocus={() => warmStaffRoute(s.id)}
+                  onPointerEnter={() => warmStaffRoute(s.id)}
+                >
                   {s.name}
                 </Link>
                 {s.title ? <p className="text-sm text-[hsl(var(--muted))]">{s.title}</p> : <p className="text-sm text-[hsl(var(--muted))]">{s.email}</p>}

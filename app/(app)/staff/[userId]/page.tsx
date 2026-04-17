@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import { Prisma } from "@prisma/client";
 import { updateCompanionAction } from "@/app/actions/companion";
 import { softDeleteUserAction } from "@/app/actions/trash";
@@ -47,6 +48,8 @@ import { StaffAvatarPreview } from "@/components/staff-avatar-preview";
 import { StaffOnboardingStatusCard } from "@/components/staff-onboarding-status-card";
 import { StaffObservationsPanel } from "@/components/staff-observations-panel";
 import { Badge } from "@/components/ui/badge";
+
+type StaffDetailTarget = NonNullable<Awaited<ReturnType<typeof loadStaffDetailTarget>>>;
 
 function isMissingColumnError(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022";
@@ -170,78 +173,75 @@ async function loadStaffDetailTarget(actor: AccessUser, userId: string) {
   }
 }
 
-export default async function StaffDetailPage({
-  params,
-  searchParams,
+function StaffDetailDeferredFallback({ locale }: { locale: "en" | "zh" }) {
+  return (
+    <div className="space-y-4">
+      <section className="grid gap-4 lg:grid-cols-2">
+        <Card className="space-y-3 p-4">
+          <CardTitle>{t(locale, "staffAbilityRadar")}</CardTitle>
+          <div className="animate-pulse space-y-3">
+            <div className="h-56 rounded-xl bg-[hsl(var(--border))]/60" />
+            <div className="grid gap-2 md:grid-cols-2">
+              <div className="h-20 rounded-lg bg-[hsl(var(--border))]/50" />
+              <div className="h-20 rounded-lg bg-[hsl(var(--border))]/50" />
+            </div>
+          </div>
+        </Card>
+        <Card className="space-y-3 p-4">
+          <CardTitle>{t(locale, "staffRecognitionOnlyTitle")}</CardTitle>
+          <div className="animate-pulse space-y-3">
+            <div className="h-24 rounded-xl bg-[hsl(var(--border))]/60" />
+            <div className="h-24 rounded-xl bg-[hsl(var(--border))]/50" />
+          </div>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2">
+        <Card className="p-4">
+          <CardTitle>{t(locale, "projCompanyMemberships")}</CardTitle>
+          <div className="mt-3 animate-pulse space-y-3">
+            <div className="h-16 rounded-lg bg-[hsl(var(--border))]/60" />
+            <div className="h-16 rounded-lg bg-[hsl(var(--border))]/50" />
+          </div>
+        </Card>
+        <Card className="p-4">
+          <CardTitle>{t(locale, "projProjectMemberships")}</CardTitle>
+          <div className="mt-3 animate-pulse space-y-3">
+            <div className="h-16 rounded-lg bg-[hsl(var(--border))]/60" />
+            <div className="h-16 rounded-lg bg-[hsl(var(--border))]/50" />
+          </div>
+        </Card>
+      </section>
+    </div>
+  );
+}
+
+async function StaffDetailDeferredPanels({
+  actor,
+  target,
+  locale,
+  canSkipStaffOnboarding,
+  canViewRecognition,
+  canViewFeedback,
+  canCreateRecognitionPermission,
+  canCreateFeedbackPermission,
+  canSoftDeletePermission,
+  canManageTargetTrash,
 }: {
-  params: Promise<{ userId: string }>;
-  searchParams?: Promise<{ uploadError?: string | string[] }>;
+  actor: AccessUser;
+  target: StaffDetailTarget;
+  locale: "en" | "zh";
+  canSkipStaffOnboarding: boolean;
+  canViewRecognition: boolean;
+  canViewFeedback: boolean;
+  canCreateRecognitionPermission: boolean;
+  canCreateFeedbackPermission: boolean;
+  canSoftDeletePermission: boolean;
+  canManageTargetTrash: boolean;
 }) {
-  await ensureRbacCatalog();
-
-  const actor = (await requireUser()) as AccessUser;
-  const { userId } = await params;
-  const sp = (await searchParams) ?? {};
-  const uploadError = Array.isArray(sp.uploadError) ? sp.uploadError[0] : sp.uploadError;
-  const [
-    canReadStaffPermission,
-    canCreateRecognitionPermission,
-    canReadRecognitionPermission,
-    canCreateFeedbackPermission,
-    canReadFeedbackPermission,
-    canUpdateStaffPermission,
-    canSoftDeletePermission,
-    canReadBirthdayPermission,
-  ] = await Promise.all([
-    userHasPermission(actor, "staff.read"),
-    userHasPermission(actor, "recognition.create"),
-    userHasPermission(actor, "recognition.read"),
-    userHasPermission(actor, "feedback.submit"),
-    userHasPermission(actor, "feedback.read"),
-    userHasPermission(actor, "staff.update"),
-    userHasPermission(actor, "staff.soft_delete"),
-    userHasPermission(actor, "staff.birthday.read"),
-  ]);
-
-  const canReadStaff = actor.id === userId || canReadStaffPermission;
-  if (!canReadStaff) notFound();
-  const canViewRecognition = canCreateRecognitionPermission || canReadRecognitionPermission;
-  const canViewFeedback = isAnyAdmin(actor) && canReadFeedbackPermission;
-
-  const target = await loadStaffDetailTarget(actor, userId);
-  if (!target) notFound();
-  const canEditCompanionHere =
-    isSuperAdmin(actor) || (actor.id === target.id && !target.companionIntroCompletedAt);
-  const companionSpeciesOptions =
-    !canEditCompanionHere
-      ? getCompanionManifest()
-      : isSuperAdmin(actor) && (actor.id !== target.id || target.companionIntroCompletedAt)
-        ? getCompanionManifest()
-        : getCompanionManifestForUser(actor);
-  const canSkipStaffOnboarding = isSuperAdmin(actor) && actor.id !== target.id;
-  const canManageTargetProfile = canUpdateStaffPermission ? await canManageStaffTarget(actor, target, "staff.update") : false;
-  const canManageTargetTrash = canSoftDeletePermission ? await canManageStaffTarget(actor, target, "staff.soft_delete") : false;
-  const onboardingByCompanyId = new Map(target.memberOnboardings.map((ob) => [ob.companyId, ob]));
-  const pendingOnboardings = target.memberOnboardings.filter((ob) => !ob.completedAt);
-  const onboardingAdminRows = target.companyMemberships.map((membership) => {
-    const onboarding = onboardingByCompanyId.get(membership.companyId);
-    return {
-      companyId: membership.companyId,
-      companyName: membership.company.name,
-      onboarding: onboarding
-        ? {
-            id: onboarding.id,
-            deadlineAt: onboarding.deadlineAt.toISOString(),
-            completedAt: onboarding.completedAt?.toISOString() ?? null,
-          }
-        : null,
-    };
-  });
-
   const isAnyCompanyAdmin = actor.companyMemberships.some((m) => m.roleDefinition.key === "COMPANY_ADMIN");
   const isAnyGroupAdmin = actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN");
   const isAnyPm = actor.projectMemberships.some((m) => m.roleDefinition.key === "PROJECT_MANAGER");
-  const canEditProfile = actor.id === target.id || isSuperAdmin(actor) || canManageTargetProfile;
   const until = new Date();
   const since = new Date(until);
   since.setUTCDate(since.getUTCDate() - 90);
@@ -257,7 +257,6 @@ export default async function StaffDetailPage({
     companyRoles,
     projectRoles,
     ability,
-    locale,
     observationProjects,
     ledgerEvidence,
   ] = await Promise.all([
@@ -309,7 +308,6 @@ export default async function StaffDetailPage({
       orderBy: { displayName: "asc" },
     }),
     withMissingColumnFallback("ability radar", () => sumAbilityByUser(prisma, target.id, since, until), defaultAbilityScores()),
-    getLocale(),
     prisma.project.findMany({
       where: { deletedAt: null, memberships: { some: { userId: target.id } } },
       include: { company: true },
@@ -326,11 +324,7 @@ export default async function StaffDetailPage({
       [],
     ),
   ]);
-  const zodiacLabel = getZodiacSignLabel(target.birthday, locale);
-  const mbtiBadgeTone = getMbtiBadgeTone(target.mbti);
-  const formattedBirthday = formatBirthdayLabel(target.birthday, locale);
-  const canSeeExactBirthday =
-    !!target.birthday && (!target.birthdayHidden || actor.id === target.id || isSuperAdmin(actor) || canReadBirthdayPermission);
+
   const projectAssignmentRoleIds = mergeRoleIdSets(
     actorRoleIdsByPermission.get("staff.assign_project"),
     actorRoleIdsByPermission.get("project.member.manage"),
@@ -377,7 +371,6 @@ export default async function StaffDetailPage({
   }));
   const assignCompanyFormRoles = companyRoles.map((role) => ({ id: role.id, displayName: role.displayName }));
   const assignCompanyFormSupervisors = supervisorCandidates.map((user) => ({ id: user.id, name: user.name }));
-
   const canSoftDelete =
     canSoftDeletePermission &&
     (isSuperAdmin(actor) || canManageTargetTrash) &&
@@ -407,188 +400,10 @@ export default async function StaffDetailPage({
     (isSuperAdmin(actor) || isAnyGroupAdmin || isAnyCompanyAdmin || isAnyPm);
   const observationProjectChoices = observationProjects.filter((p) => canManageProject(actor, p));
   const canManageFeedbackWithoutProject = isSuperAdmin(actor) || isAnyGroupAdmin;
+  const onboardingByCompanyId = new Map(target.memberOnboardings.map((ob) => [ob.companyId, ob]));
 
   return (
-    <div className="space-y-8">
-      <div className="text-xs text-[hsl(var(--muted))]">
-        <Link className="hover:underline" href="/staff">
-          {t(locale, "staffBreadcrumb")}
-        </Link>{" "}
-        / {t(locale, "staffProfile")}
-      </div>
-
-      <div className="flex flex-wrap items-start gap-3">
-        <StaffAvatarPreview name={target.name} avatarUrl={target.avatarUrl} size={56} />
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
-          {target.title ? <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">{target.title}</p> : null}
-          <p className={`text-sm text-[hsl(var(--foreground))] ${target.title ? "mt-1" : "mt-0.5"}`}>{target.email}</p>
-          {zodiacLabel || target.mbti ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {zodiacLabel ? <Badge tone="info">{zodiacLabel}</Badge> : null}
-              {target.mbti ? <Badge tone={mbtiBadgeTone}>{target.mbti}</Badge> : null}
-            </div>
-          ) : null}
-          {target.contactEmails ? (
-            <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
-              {t(locale, "profileContactEmailsLabel")}: {target.contactEmails}
-            </p>
-          ) : null}
-          {target.phone ? (
-            <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
-              {t(locale, "profilePhoneLabel")}: {target.phone}
-            </p>
-          ) : null}
-          {canSeeExactBirthday && formattedBirthday ? (
-            <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
-              {t(locale, "profileBirthdayLabel")}: {formattedBirthday}
-            </p>
-          ) : null}
-          {target.signature ? <p className="mt-2 max-w-2xl whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]">{target.signature}</p> : null}
-        </div>
-      </div>
-
-      {canEditProfile ? (
-        <Card className="space-y-4 p-4">
-          <CardTitle>{t(locale, "staffProfile")}</CardTitle>
-          <div className="space-y-2 border-b border-[hsl(var(--border))] pb-4">
-            <p className="text-xs font-medium">{t(locale, "profileAvatarLabel")}</p>
-            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileAvatarHelp")}</p>
-            {uploadError ? (
-              <p className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-900 dark:text-rose-100">
-                {uploadError}
-              </p>
-            ) : null}
-            <form action={uploadUserAvatarAction} encType="multipart/form-data" className="flex flex-wrap items-end gap-2">
-              <input type="hidden" name="userId" value={target.id} />
-              <input type="hidden" name="returnTo" value={`/staff/${target.id}`} />
-              <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" className="max-w-xs text-xs" />
-              <FormSubmitButton type="submit" variant="secondary" className="h-9 text-xs">
-                {t(locale, "btnSave")}
-              </FormSubmitButton>
-            </form>
-            {target.avatarUrl ? (
-              <form action={removeUserAvatarAction}>
-                <input type="hidden" name="userId" value={target.id} />
-                <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
-                  {t(locale, "profileAvatarRemove")}
-                </FormSubmitButton>
-              </form>
-            ) : null}
-          </div>
-          <form action={updateStaffAction} className="space-y-3">
-            <input type="hidden" name="userId" value={target.id} />
-            <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "staffName")}</label>
-              <Input name="name" defaultValue={target.name} required />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "staffTitle")}</label>
-              <Input name="title" defaultValue={target.title ?? ""} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium" htmlFor="staff-signature">
-                {t(locale, "profileSignatureLabel")}
-              </label>
-              <textarea
-                id="staff-signature"
-                name="signature"
-                rows={3}
-                defaultValue={target.signature ?? ""}
-                maxLength={280}
-                placeholder={t(locale, "profileSignaturePlaceholder")}
-                className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
-              />
-              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileSignatureHelp")}</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "profileContactEmailsLabel")}</label>
-              <Input name="contactEmails" defaultValue={target.contactEmails ?? ""} placeholder="a@firm.com; b@…" />
-              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileContactEmailsHelp")}</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "profilePhoneLabel")}</label>
-              <Input name="phone" defaultValue={target.phone ?? ""} />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-xs font-medium" htmlFor="staff-birthday">
-                  {t(locale, "profileBirthdayLabel")}
-                </label>
-                <Input id="staff-birthday" name="birthday" type="date" defaultValue={target.birthday ?? ""} />
-                <p className="text-xs text-[hsl(var(--muted))]">
-                  {zodiacLabel
-                    ? t(locale, "profileBirthdayHelpWithZodiac").replace("{zodiac}", zodiacLabel)
-                    : t(locale, "profileBirthdayHelp")}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium" htmlFor="staff-mbti">
-                  {t(locale, "profileMbtiLabel")}
-                </label>
-                <Select id="staff-mbti" name="mbti" defaultValue={target.mbti ?? ""}>
-                  <option value="">{t(locale, "commonOptional")}</option>
-                  {MBTI_OPTIONS.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </Select>
-                <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileMbtiHelp")}</p>
-              </div>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="birthdayHidden" defaultChecked={target.birthdayHidden} />
-              {t(locale, "profileBirthdayHiddenLabel")}
-            </label>
-            <p className="-mt-2 text-xs text-[hsl(var(--muted))]">{t(locale, "profileBirthdayHiddenHelp")}</p>
-            {isSuperAdmin(actor) ? (
-              <>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" name="active" defaultChecked={target.active} />
-                  {t(locale, "staffActive")}
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" name="isSuperAdmin" defaultChecked={target.isSuperAdmin} />
-                  {t(locale, "superAdminBadge")}
-                </label>
-              </>
-            ) : null}
-            <FormSubmitButton type="submit">{t(locale, "staffSave")}</FormSubmitButton>
-          </form>
-        </Card>
-      ) : (
-        <Card className="p-4 text-sm text-[hsl(var(--muted))]">{t(locale, "staffNoEdit")}</Card>
-      )}
-
-      {canSkipStaffOnboarding ? (
-        <Card className="space-y-4 p-4">
-          <CardTitle>{t(locale, "staffOnboardingAdminTitle")}</CardTitle>
-          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffOnboardingAdminHint")}</p>
-          {!onboardingAdminRows.length ? (
-            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffOnboardingNone")}</p>
-          ) : (
-            <ul className="space-y-3">
-              {onboardingAdminRows.map((row) => (
-                <li key={row.companyId}>
-                  <StaffOnboardingStatusCard
-                    companyId={row.companyId}
-                    targetUserId={target.id}
-                    title={row.companyName}
-                    onboarding={row.onboarding}
-                    locale={locale}
-                    canSkip={canSkipStaffOnboarding}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-          {pendingOnboardings.length ? null : onboardingAdminRows.length ? (
-            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "onboardingCompleted")}</p>
-          ) : null}
-        </Card>
-      ) : null}
-
+    <>
       <section className="grid gap-4 lg:grid-cols-2">
         <Card className="space-y-3 p-4">
           <CardTitle>{t(locale, "staffAbilityRadar")}</CardTitle>
@@ -628,63 +443,6 @@ export default async function StaffDetailPage({
               ))}
             </ul>
           </div>
-        </Card>
-
-        <Card className="space-y-3 p-4">
-          <CardTitle>{t(locale, "staffCompanionSection")}</CardTitle>
-          {target.companionProfile ? (
-            <div className="flex flex-wrap items-start gap-3 text-sm">
-              {(() => {
-                const asset = getCompanionManifest().find((e) => e.species === target.companionProfile!.species);
-                return asset ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={asset.file} alt="" width={72} height={72} className="h-[72px] w-[72px] rounded-3xl object-contain" />
-                ) : null;
-              })()}
-              <div className="space-y-1">
-                <div className="font-medium">
-                  {target.companionProfile.name ?? t(locale, "staffCompanionDefaultName")}
-                </div>
-                <div className="text-xs text-[hsl(var(--muted))]">
-                  {t(locale, "homeMood")}: {target.companionProfile.mood}
-                </div>
-                <div className="text-xs text-[hsl(var(--muted))]">
-                  {t(locale, "homeLevel")}: {target.companionProfile.level}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffCompanionNoSelection")}</p>
-          )}
-          {actor.id === target.id && target.companionIntroCompletedAt && !isSuperAdmin(actor) ? (
-            <p className="mt-2 border-t pt-2 text-sm text-[hsl(var(--muted))]">{t(locale, "companionPermanentWarning")}</p>
-          ) : null}
-          {canEditCompanionHere ? (
-            <form action={updateCompanionAction} className="mt-2 flex flex-wrap items-end gap-2 border-t pt-2">
-              {actor.id !== target.id ? <input type="hidden" name="userId" value={target.id} /> : null}
-              <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "staffSpecies")}</label>
-                <Select name="species" defaultValue={target.companionProfile?.species ?? companionSpeciesOptions[0]?.species ?? "BUNNY"}>
-                  {companionSpeciesOptions.map((e) => (
-                    <option key={e.id} value={e.species}>
-                      {locale === "zh" ? e.name_zh : e.name_en}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "staffDisplayName")}</label>
-                <Input
-                  name="name"
-                  placeholder={t(locale, "commonOptional")}
-                  defaultValue={target.companionProfile?.name ?? ""}
-                />
-              </div>
-              <FormSubmitButton type="submit" variant="secondary" className="h-9 text-xs">
-                {t(locale, "staffSaveCompanion")}
-              </FormSubmitButton>
-            </form>
-          ) : null}
         </Card>
       </section>
 
@@ -993,6 +751,341 @@ export default async function StaffDetailPage({
           </ul>
         </Card>
       </section>
+    </>
+  );
+}
+
+export default async function StaffDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ userId: string }>;
+  searchParams?: Promise<{ uploadError?: string | string[] }>;
+}) {
+  await ensureRbacCatalog();
+
+  const actor = (await requireUser()) as AccessUser;
+  const { userId } = await params;
+  const sp = (await searchParams) ?? {};
+  const uploadError = Array.isArray(sp.uploadError) ? sp.uploadError[0] : sp.uploadError;
+  const [
+    canReadStaffPermission,
+    canCreateRecognitionPermission,
+    canReadRecognitionPermission,
+    canCreateFeedbackPermission,
+    canReadFeedbackPermission,
+    canUpdateStaffPermission,
+    canSoftDeletePermission,
+    canReadBirthdayPermission,
+    locale,
+  ] = await Promise.all([
+    userHasPermission(actor, "staff.read"),
+    userHasPermission(actor, "recognition.create"),
+    userHasPermission(actor, "recognition.read"),
+    userHasPermission(actor, "feedback.submit"),
+    userHasPermission(actor, "feedback.read"),
+    userHasPermission(actor, "staff.update"),
+    userHasPermission(actor, "staff.soft_delete"),
+    userHasPermission(actor, "staff.birthday.read"),
+    getLocale(),
+  ]);
+
+  const canReadStaff = actor.id === userId || canReadStaffPermission;
+  if (!canReadStaff) notFound();
+  const canViewRecognition = canCreateRecognitionPermission || canReadRecognitionPermission;
+  const canViewFeedback = isAnyAdmin(actor) && canReadFeedbackPermission;
+
+  const target = await loadStaffDetailTarget(actor, userId);
+  if (!target) notFound();
+  const canEditCompanionHere =
+    isSuperAdmin(actor) || (actor.id === target.id && !target.companionIntroCompletedAt);
+  const companionSpeciesOptions =
+    !canEditCompanionHere
+      ? getCompanionManifest()
+      : isSuperAdmin(actor) && (actor.id !== target.id || target.companionIntroCompletedAt)
+        ? getCompanionManifest()
+        : getCompanionManifestForUser(actor);
+  const canSkipStaffOnboarding = isSuperAdmin(actor) && actor.id !== target.id;
+  const canManageTargetProfile = canUpdateStaffPermission ? await canManageStaffTarget(actor, target, "staff.update") : false;
+  const canManageTargetTrash = canSoftDeletePermission ? await canManageStaffTarget(actor, target, "staff.soft_delete") : false;
+  const onboardingByCompanyId = new Map(target.memberOnboardings.map((ob) => [ob.companyId, ob]));
+  const pendingOnboardings = target.memberOnboardings.filter((ob) => !ob.completedAt);
+  const onboardingAdminRows = target.companyMemberships.map((membership) => {
+    const onboarding = onboardingByCompanyId.get(membership.companyId);
+    return {
+      companyId: membership.companyId,
+      companyName: membership.company.name,
+      onboarding: onboarding
+        ? {
+            id: onboarding.id,
+            deadlineAt: onboarding.deadlineAt.toISOString(),
+            completedAt: onboarding.completedAt?.toISOString() ?? null,
+          }
+        : null,
+    };
+  });
+
+  const canEditProfile = actor.id === target.id || isSuperAdmin(actor) || canManageTargetProfile;
+  const zodiacLabel = getZodiacSignLabel(target.birthday, locale);
+  const mbtiBadgeTone = getMbtiBadgeTone(target.mbti);
+  const formattedBirthday = formatBirthdayLabel(target.birthday, locale);
+  const canSeeExactBirthday =
+    !!target.birthday && (!target.birthdayHidden || actor.id === target.id || isSuperAdmin(actor) || canReadBirthdayPermission);
+
+  return (
+    <div className="space-y-8">
+      <div className="text-xs text-[hsl(var(--muted))]">
+        <Link className="hover:underline" href="/staff">
+          {t(locale, "staffBreadcrumb")}
+        </Link>{" "}
+        / {t(locale, "staffProfile")}
+      </div>
+
+      <div className="flex flex-wrap items-start gap-3">
+        <StaffAvatarPreview name={target.name} avatarUrl={target.avatarUrl} size={56} />
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
+          {target.title ? <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">{target.title}</p> : null}
+          <p className={`text-sm text-[hsl(var(--foreground))] ${target.title ? "mt-1" : "mt-0.5"}`}>{target.email}</p>
+          {zodiacLabel || target.mbti ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {zodiacLabel ? <Badge tone="info">{zodiacLabel}</Badge> : null}
+              {target.mbti ? <Badge tone={mbtiBadgeTone}>{target.mbti}</Badge> : null}
+            </div>
+          ) : null}
+          {target.contactEmails ? (
+            <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
+              {t(locale, "profileContactEmailsLabel")}: {target.contactEmails}
+            </p>
+          ) : null}
+          {target.phone ? (
+            <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
+              {t(locale, "profilePhoneLabel")}: {target.phone}
+            </p>
+          ) : null}
+          {canSeeExactBirthday && formattedBirthday ? (
+            <p className="mt-0.5 text-sm text-[hsl(var(--muted))]">
+              {t(locale, "profileBirthdayLabel")}: {formattedBirthday}
+            </p>
+          ) : null}
+          {target.signature ? <p className="mt-2 max-w-2xl whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]">{target.signature}</p> : null}
+        </div>
+      </div>
+
+      {canEditProfile ? (
+        <Card className="space-y-4 p-4">
+          <CardTitle>{t(locale, "staffProfile")}</CardTitle>
+          <div className="space-y-2 border-b border-[hsl(var(--border))] pb-4">
+            <p className="text-xs font-medium">{t(locale, "profileAvatarLabel")}</p>
+            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileAvatarHelp")}</p>
+            {uploadError ? (
+              <p className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-900 dark:text-rose-100">
+                {uploadError}
+              </p>
+            ) : null}
+            <form action={uploadUserAvatarAction} encType="multipart/form-data" className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="userId" value={target.id} />
+              <input type="hidden" name="returnTo" value={`/staff/${target.id}`} />
+              <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" className="max-w-xs text-xs" />
+              <FormSubmitButton type="submit" variant="secondary" className="h-9 text-xs">
+                {t(locale, "btnSave")}
+              </FormSubmitButton>
+            </form>
+            {target.avatarUrl ? (
+              <form action={removeUserAvatarAction}>
+                <input type="hidden" name="userId" value={target.id} />
+                <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                  {t(locale, "profileAvatarRemove")}
+                </FormSubmitButton>
+              </form>
+            ) : null}
+          </div>
+          <form action={updateStaffAction} className="space-y-3">
+            <input type="hidden" name="userId" value={target.id} />
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "staffName")}</label>
+              <Input name="name" defaultValue={target.name} required />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "staffTitle")}</label>
+              <Input name="title" defaultValue={target.title ?? ""} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium" htmlFor="staff-signature">
+                {t(locale, "profileSignatureLabel")}
+              </label>
+              <textarea
+                id="staff-signature"
+                name="signature"
+                rows={3}
+                defaultValue={target.signature ?? ""}
+                maxLength={280}
+                placeholder={t(locale, "profileSignaturePlaceholder")}
+                className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileSignatureHelp")}</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "profileContactEmailsLabel")}</label>
+              <Input name="contactEmails" defaultValue={target.contactEmails ?? ""} placeholder="a@firm.com; b@…" />
+              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileContactEmailsHelp")}</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "profilePhoneLabel")}</label>
+              <Input name="phone" defaultValue={target.phone ?? ""} />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium" htmlFor="staff-birthday">
+                  {t(locale, "profileBirthdayLabel")}
+                </label>
+                <Input id="staff-birthday" name="birthday" type="date" defaultValue={target.birthday ?? ""} />
+                <p className="text-xs text-[hsl(var(--muted))]">
+                  {zodiacLabel
+                    ? t(locale, "profileBirthdayHelpWithZodiac").replace("{zodiac}", zodiacLabel)
+                    : t(locale, "profileBirthdayHelp")}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium" htmlFor="staff-mbti">
+                  {t(locale, "profileMbtiLabel")}
+                </label>
+                <Select id="staff-mbti" name="mbti" defaultValue={target.mbti ?? ""}>
+                  <option value="">{t(locale, "commonOptional")}</option>
+                  {MBTI_OPTIONS.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </Select>
+                <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileMbtiHelp")}</p>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="birthdayHidden" defaultChecked={target.birthdayHidden} />
+              {t(locale, "profileBirthdayHiddenLabel")}
+            </label>
+            <p className="-mt-2 text-xs text-[hsl(var(--muted))]">{t(locale, "profileBirthdayHiddenHelp")}</p>
+            {isSuperAdmin(actor) ? (
+              <>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="active" defaultChecked={target.active} />
+                  {t(locale, "staffActive")}
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="isSuperAdmin" defaultChecked={target.isSuperAdmin} />
+                  {t(locale, "superAdminBadge")}
+                </label>
+              </>
+            ) : null}
+            <FormSubmitButton type="submit">{t(locale, "staffSave")}</FormSubmitButton>
+          </form>
+        </Card>
+      ) : (
+        <Card className="p-4 text-sm text-[hsl(var(--muted))]">{t(locale, "staffNoEdit")}</Card>
+      )}
+
+      {canSkipStaffOnboarding ? (
+        <Card className="space-y-4 p-4">
+          <CardTitle>{t(locale, "staffOnboardingAdminTitle")}</CardTitle>
+          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffOnboardingAdminHint")}</p>
+          {!onboardingAdminRows.length ? (
+            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffOnboardingNone")}</p>
+          ) : (
+            <ul className="space-y-3">
+              {onboardingAdminRows.map((row) => (
+                <li key={row.companyId}>
+                  <StaffOnboardingStatusCard
+                    companyId={row.companyId}
+                    targetUserId={target.id}
+                    title={row.companyName}
+                    onboarding={row.onboarding}
+                    locale={locale}
+                    canSkip={canSkipStaffOnboarding}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+          {pendingOnboardings.length ? null : onboardingAdminRows.length ? (
+            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "onboardingCompleted")}</p>
+          ) : null}
+        </Card>
+      ) : null}
+
+      <section>
+        <Card className="space-y-3 p-4">
+          <CardTitle>{t(locale, "staffCompanionSection")}</CardTitle>
+          {target.companionProfile ? (
+            <div className="flex flex-wrap items-start gap-3 text-sm">
+              {(() => {
+                const asset = getCompanionManifest().find((e) => e.species === target.companionProfile!.species);
+                return asset ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={asset.file} alt="" width={72} height={72} className="h-[72px] w-[72px] rounded-3xl object-contain" />
+                ) : null;
+              })()}
+              <div className="space-y-1">
+                <div className="font-medium">
+                  {target.companionProfile.name ?? t(locale, "staffCompanionDefaultName")}
+                </div>
+                <div className="text-xs text-[hsl(var(--muted))]">
+                  {t(locale, "homeMood")}: {target.companionProfile.mood}
+                </div>
+                <div className="text-xs text-[hsl(var(--muted))]">
+                  {t(locale, "homeLevel")}: {target.companionProfile.level}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffCompanionNoSelection")}</p>
+          )}
+          {actor.id === target.id && target.companionIntroCompletedAt && !isSuperAdmin(actor) ? (
+            <p className="mt-2 border-t pt-2 text-sm text-[hsl(var(--muted))]">{t(locale, "companionPermanentWarning")}</p>
+          ) : null}
+          {canEditCompanionHere ? (
+            <form action={updateCompanionAction} className="mt-2 flex flex-wrap items-end gap-2 border-t pt-2">
+              {actor.id !== target.id ? <input type="hidden" name="userId" value={target.id} /> : null}
+              <div className="space-y-1">
+                <label className="text-xs font-medium">{t(locale, "staffSpecies")}</label>
+                <Select name="species" defaultValue={target.companionProfile?.species ?? companionSpeciesOptions[0]?.species ?? "BUNNY"}>
+                  {companionSpeciesOptions.map((e) => (
+                    <option key={e.id} value={e.species}>
+                      {locale === "zh" ? e.name_zh : e.name_en}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">{t(locale, "staffDisplayName")}</label>
+                <Input
+                  name="name"
+                  placeholder={t(locale, "commonOptional")}
+                  defaultValue={target.companionProfile?.name ?? ""}
+                />
+              </div>
+              <FormSubmitButton type="submit" variant="secondary" className="h-9 text-xs">
+                {t(locale, "staffSaveCompanion")}
+              </FormSubmitButton>
+            </form>
+          ) : null}
+        </Card>
+      </section>
+
+      <Suspense fallback={<StaffDetailDeferredFallback locale={locale} />}>
+        <StaffDetailDeferredPanels
+          actor={actor}
+          target={target}
+          locale={locale}
+          canSkipStaffOnboarding={canSkipStaffOnboarding}
+          canViewRecognition={canViewRecognition}
+          canViewFeedback={canViewFeedback}
+          canCreateRecognitionPermission={canCreateRecognitionPermission}
+          canCreateFeedbackPermission={canCreateFeedbackPermission}
+          canSoftDeletePermission={canSoftDeletePermission}
+          canManageTargetTrash={canManageTargetTrash}
+        />
+      </Suspense>
     </div>
   );
 }

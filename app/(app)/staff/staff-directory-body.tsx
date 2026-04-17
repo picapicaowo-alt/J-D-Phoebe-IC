@@ -11,6 +11,7 @@ import { t } from "@/lib/messages";
 import { getMbtiBadgeTone, getZodiacSignLabel } from "@/lib/profile-labels";
 import { StaffDirectoryRows } from "@/components/staff-directory-rows";
 import { StaffDirectoryFilters } from "@/components/staff-directory-filters";
+import { RoutePrefetcher } from "@/components/route-prefetcher";
 import { ensureRbacCatalog } from "@/lib/rbac-sync";
 
 const ACTIVE_PROJECT_STATUSES = ["PLANNING", "ACTIVE", "AT_RISK", "ON_HOLD"] as const;
@@ -29,10 +30,6 @@ function onboardingBadgeText(rows: { completedAt: Date | null }[], locale: Local
   if (!rows.length) return { label: t(locale, "staffOnboardingNone"), tone: "none" };
   if (rows.every((r) => r.completedAt)) return { label: t(locale, "staffOnboardingComplete"), tone: "done" };
   return { label: t(locale, "staffOnboardingPending"), tone: "pending" };
-}
-
-function formatOnboardingTimestamp(when: Date) {
-  return when.toISOString().slice(0, 16).replace("T", " ");
 }
 
 function IconPeople({ className }: { className?: string }) {
@@ -204,6 +201,8 @@ export async function StaffDirectoryBody({
 
   return (
     <div className="space-y-8">
+      <RoutePrefetcher hrefs={staff.slice(0, 24).map((member) => `/staff/${member.id}`)} limit={24} />
+
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/10 text-[hsl(var(--foreground))]">
@@ -276,7 +275,7 @@ export async function StaffDirectoryBody({
                   .map((ob) => ({
                     key: `${ob.companyId}:${ob.completedAt?.toISOString() ?? "pending"}`,
                     label: ob.completedAt
-                      ? `${ob.company.name} · ${t(locale, "onboardingCompletedAtLabel")}: ${formatOnboardingTimestamp(ob.completedAt)}`
+                      ? ob.company.name
                       : `${ob.company.name} · ${t(locale, "staffOnboardingPending")}`,
                   }))
               : [],
