@@ -156,6 +156,7 @@ export async function updateOnboardingVideoProgressAction(formData: FormData) {
   if (!ob) throw new Error("Forbidden");
   const videoUrl = ob?.videoUrl?.trim() || ob?.assignedMaterial?.videoUrl?.trim() || ob?.company.onboardingVideoUrl?.trim();
   if (!videoUrl) throw new Error("Forbidden");
+  const packageUrl = ob?.packageUrl?.trim() || ob?.assignedMaterial?.packageUrl?.trim() || ob?.company.onboardingPackageUrl?.trim() || "";
 
   if (ob.videoCompletedAt) {
     revalidatePath("/onboarding/member");
@@ -184,6 +185,7 @@ export async function updateOnboardingVideoProgressAction(formData: FormData) {
     where: { id: onboardingId },
     data: {
       videoProgressSeconds: nextProgress,
+      ...(!packageUrl && nextProgress > 0 && !ob.materialsOpenedAt ? { materialsOpenedAt: new Date() } : {}),
       ...(completedAt ? { videoCompletedAt: completedAt } : {}),
     },
   });
@@ -207,7 +209,14 @@ export async function toggleMemberOnboardingChecklistAction(formData: FormData) 
   const itemId = must(formData, "itemId");
   const item = await prisma.memberOnboardingChecklistItem.findFirst({
     where: { id: itemId },
-    include: { onboarding: true },
+    include: {
+      onboarding: {
+        include: {
+          assignedMaterial: true,
+          company: true,
+        },
+      },
+    },
   });
   if (!item || item.onboarding.userId !== user.id) {
     return { ok: false, code: "forbidden" } satisfies ToggleMemberOnboardingChecklistActionResult;
@@ -223,7 +232,21 @@ export async function toggleMemberOnboardingChecklistAction(formData: FormData) 
 
   const togglingOn = !item.completedAt;
   if (togglingOn) {
-    if (item.itemKey === "OB_READ_PACKAGE" && !item.onboarding.materialsOpenedAt) {
+    const resolvedPackageUrl =
+      item.onboarding.packageUrl?.trim() ||
+      item.onboarding.assignedMaterial?.packageUrl?.trim() ||
+      item.onboarding.company.onboardingPackageUrl?.trim() ||
+      "";
+    const resolvedVideoUrl =
+      item.onboarding.videoUrl?.trim() ||
+      item.onboarding.assignedMaterial?.videoUrl?.trim() ||
+      item.onboarding.company.onboardingVideoUrl?.trim() ||
+      "";
+    const gateSatisfied =
+      Boolean(item.onboarding.materialsOpenedAt) ||
+      (!resolvedPackageUrl && Boolean(resolvedVideoUrl) && Boolean(item.onboarding.videoCompletedAt));
+
+    if (item.itemKey === "OB_READ_PACKAGE" && !gateSatisfied) {
       return { ok: false, code: "materials" } satisfies ToggleMemberOnboardingChecklistActionResult;
     }
     const itemIndex = siblings.findIndex((s) => s.id === item.id);

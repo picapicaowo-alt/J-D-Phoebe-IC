@@ -99,6 +99,15 @@ export default async function MemberOnboardingPage({
   const videoUrl = ob.videoUrl?.trim() || assignedMaterialMedia?.videoHref || ob.company.onboardingVideoUrl?.trim() || "";
   const videoIsDirect = Boolean(assignedMaterialMedia?.videoMimeType?.startsWith("video/"));
   const videoGateOk = !videoUrl || Boolean(ob.videoCompletedAt);
+  let effectiveMaterialsOpenedAt = ob.materialsOpenedAt;
+
+  if (!effectiveMaterialsOpenedAt && !hasPackageUrl && videoUrl && ob.videoCompletedAt) {
+    effectiveMaterialsOpenedAt = ob.videoCompletedAt;
+    await prisma.memberOnboarding.update({
+      where: { id: ob.id },
+      data: { materialsOpenedAt: effectiveMaterialsOpenedAt },
+    });
+  }
 
   return (
     <div className="mx-auto max-w-[1280px] space-y-6">
@@ -262,7 +271,7 @@ export default async function MemberOnboardingPage({
           />
         ) : null}
 
-        {!ob.completedAt && !ob.materialsOpenedAt && videoGateOk && hasPackageUrl ? (
+        {!ob.completedAt && !effectiveMaterialsOpenedAt && videoGateOk && hasPackageUrl ? (
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
             <p className="font-medium text-[hsl(var(--foreground))]">{t(locale, "onboardingMaterialsAckTitle")}</p>
             <p className="mt-2 text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "onboardingMaterialsAckHelp")}</p>
@@ -274,16 +283,16 @@ export default async function MemberOnboardingPage({
             </form>
           </div>
         ) : null}
-        {!ob.completedAt && !ob.materialsOpenedAt && !hasAnyPrimaryResource ? (
+        {!ob.completedAt && !effectiveMaterialsOpenedAt && !hasAnyPrimaryResource ? (
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
             <p className="font-medium text-[hsl(var(--foreground))]">{t(locale, "onboardingNoPackage")}</p>
             <p className="mt-2 text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "onboardingNoPackageHelp")}</p>
           </div>
         ) : null}
-        {ob.materialsOpenedAt && !ob.completedAt ? (
+        {effectiveMaterialsOpenedAt && !ob.completedAt ? (
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
             <p className="text-base text-emerald-700 dark:text-emerald-300">
-              {t(locale, "onboardingMaterialsOpenedAt")}: {ob.materialsOpenedAt.toISOString().slice(0, 16).replace("T", " ")}
+              {t(locale, "onboardingMaterialsOpenedAt")}: {effectiveMaterialsOpenedAt.toISOString().slice(0, 16).replace("T", " ")}
             </p>
             {hasPackageUrl ? (
               <OnboardingResourceLink
@@ -332,7 +341,7 @@ export default async function MemberOnboardingPage({
           items={ob.checklistItems}
           locale={locale}
           readOnly={Boolean(ob.completedAt)}
-          materialsOpenedAt={ob.materialsOpenedAt}
+          materialsOpenedAt={effectiveMaterialsOpenedAt}
         />
       </Card>
 
