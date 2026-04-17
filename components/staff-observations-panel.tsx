@@ -120,13 +120,15 @@ export function StaffObservationsPanel({
   if (!visibleCardCount) return null;
 
   return (
-    <div className="space-y-3">
-      {showGrowthContext && visibleCardCount > 1 ? (
+    <Card className="space-y-4 p-4">
+      {showGrowthContext ? (
         <div className="space-y-1">
           <CardTitle>{t(locale, "staffObservationsTitle")}</CardTitle>
           <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffObservationsHint")}</p>
         </div>
-      ) : null}
+      ) : (
+        <CardTitle>{t(locale, "staffRecognitionOnlyTitle")}</CardTitle>
+      )}
 
       <div className={`grid gap-4 ${visibleCardCount > 1 ? "xl:grid-cols-2" : ""}`}>
         {showRecognitionCard ? (
@@ -263,7 +265,7 @@ export function StaffObservationsPanel({
           </Card>
         ) : null}
       </div>
-    </div>
+    </Card>
   );
 }
 

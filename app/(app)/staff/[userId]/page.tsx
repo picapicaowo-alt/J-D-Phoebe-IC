@@ -321,7 +321,7 @@ function StaffDetailDeferredFallback({ locale }: { locale: "en" | "zh" }) {
           </div>
         </Card>
 
-        <div className="space-y-3">
+        <Card className="space-y-4 p-4">
           <div className="space-y-1">
             <CardTitle>{t(locale, "staffObservationsTitle")}</CardTitle>
             <div className="h-4 w-2/3 animate-pulse rounded bg-[hsl(var(--border))]/50" />
@@ -342,7 +342,7 @@ function StaffDetailDeferredFallback({ locale }: { locale: "en" | "zh" }) {
               </div>
             </Card>
           </div>
-        </div>
+        </Card>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
@@ -571,7 +571,7 @@ async function StaffDetailDeferredPanels({
 
   return (
     <>
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)] lg:items-start">
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
         <Card className="space-y-3 p-4">
           <CardTitle>{t(locale, "staffAbilityRadar")}</CardTitle>
           <AbilityRadar points={radarPoints} />

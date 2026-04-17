@@ -50,7 +50,7 @@ function ensureSubmitClosesDialog(dialog: HTMLDialogElement) {
   });
 }
 
-function openDialog(dialog: HTMLDialogElement) {
+export function openDialogElement(dialog: HTMLDialogElement) {
   closeAllOpenDialogs();
   ensureDialogLifecycle(dialog);
   ensureSubmitClosesDialog(dialog);
@@ -86,7 +86,7 @@ export function OpenDialogButton({
       onClick={() => {
         const el = getDialogById(dialogId);
         if (!el || el.open) return;
-        openDialog(el);
+        openDialogElement(el);
       }}
     >
       {children}

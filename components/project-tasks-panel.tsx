@@ -16,7 +16,7 @@ import {
 } from "@/app/actions/project-tasks";
 import { toggleProjectCompletionAction } from "@/app/actions/project";
 import { statusFromAggregatedProgress } from "@/lib/project-task-progress";
-import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
+import { CloseDialogButton, openDialogElement } from "@/components/dialog-launcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,6 +124,7 @@ type TaskOptimisticAction =
   | { type: "delete"; nodeId: string }
   | { type: "clear-all" };
 type OptimisticMutation = TaskOptimisticAction | (() => void | (() => void));
+type AddOptimisticAction = Extract<TaskOptimisticAction, { type: "add-root" } | { type: "add-sub" }>;
 
 const CLIENT_TASK_STATUSES: WorkflowNodeStatus[] = ["NOT_STARTED", "IN_PROGRESS", "WAITING", "BLOCKED", "APPROVED", "DONE", "SKIPPED"];
 
@@ -506,6 +507,53 @@ function ProgressTrack({ pct, thick = false }: { pct: number; thick?: boolean })
   );
 }
 
+function LazyDialogTrigger({
+  dialogId,
+  className,
+  onOpen,
+  children,
+  renderDialog,
+}: {
+  dialogId: string;
+  className?: string;
+  onOpen?: () => void;
+  children: React.ReactNode;
+  renderDialog: () => React.ReactNode;
+}) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const dialog = document.getElementById(dialogId);
+    if (dialog instanceof HTMLDialogElement && !dialog.open) {
+      openDialogElement(dialog);
+    }
+  }, [dialogId, mounted]);
+
+  return (
+    <>
+      <button
+        type="button"
+        className={className}
+        onClick={() => {
+          onOpen?.();
+          if (mounted) {
+            const dialog = document.getElementById(dialogId);
+            if (dialog instanceof HTMLDialogElement && !dialog.open) {
+              openDialogElement(dialog);
+            }
+            return;
+          }
+          setMounted(true);
+        }}
+      >
+        {children}
+      </button>
+      {mounted ? renderDialog() : null}
+    </>
+  );
+}
+
 type TaskOperationalFormState = {
   status: WorkflowNodeStatus;
   operationalLabels: WorkflowNodeLabel[];
@@ -790,6 +838,7 @@ function NodeLabelsDialog({
   const [activeCategory, setActiveCategory] = useState<TaskLabelCategory>(() => getDefaultLabelCategory(node));
   const syncKey = [
     node.id,
+    node.status,
     node.operationalLabels.join(","),
     node.waitingStartedAt ?? "",
     node.waitingOnUserIds.join(","),
@@ -801,12 +850,13 @@ function NodeLabelsDialog({
     node.nextAction ?? "",
     node.isProjectBottleneck ? "1" : "0",
   ].join("|");
+  const defaultCategory = getDefaultLabelCategory(node);
 
   useEffect(() => {
     setSelectedLabels(node.operationalLabels);
     setSelectedWaitingUserIds(node.waitingOnUserIds);
-    setActiveCategory(getDefaultLabelCategory(node));
-  }, [syncKey]);
+    setActiveCategory(defaultCategory);
+  }, [defaultCategory, node.operationalLabels, node.waitingOnUserIds]);
 
   function handleLabelToggle(label: WorkflowNodeLabel, checked: boolean) {
     setSelectedLabels((current) => {
@@ -1113,6 +1163,16 @@ export function ProjectTasksPanel({
     [commitVisibleTasks],
   );
 
+  const applyOptimisticAdd = useCallback(
+    (action: AddOptimisticAction) => {
+      commitVisibleTasks(applyTasksOptimistic(visibleTasksRef.current, action));
+      return () => {
+        commitVisibleTasks(applyTasksOptimistic(visibleTasksRef.current, { type: "delete", nodeId: action.row.id }));
+      };
+    },
+    [commitVisibleTasks],
+  );
+
   const runTrackedMutation = useCallback(
     async (key: string, action: () => Promise<void>, optimisticAction?: OptimisticMutation) => {
       setSubmitting(key, true);
@@ -1256,9 +1316,11 @@ export function ProjectTasksPanel({
                 const fd = new FormData(form);
                 const title = String(fd.get("title") ?? "").trim();
                 if (!title) return;
-                const mutationKey = "add-root";
                 const optimisticRow = buildOptimisticTaskRow(fd, memberOptions);
-                void runTrackedMutation(mutationKey, () => addProjectTaskAction(fd), { type: "add-root", row: optimisticRow });
+                const mutationKey = `add-root:${optimisticRow.id}`;
+                void runTrackedMutation(mutationKey, () => addProjectTaskAction(fd), () =>
+                  applyOptimisticAdd({ type: "add-root", row: optimisticRow }),
+                );
                 form.reset();
               }}
               className="space-y-2"
@@ -1295,7 +1357,6 @@ export function ProjectTasksPanel({
                   type="submit"
                   variant="secondary"
                   className="h-8 gap-1.5 px-3"
-                  disabled={isSubmitting("add-root")}
                 >
                   <IconPlus />
                   {copy.addTask}
@@ -1393,21 +1454,60 @@ export function ProjectTasksPanel({
                     <DropdownMenu buttonContent={<IconMore />}>
                       {({ closeMenu }) => (
                         <>
-                          <div onClick={closeMenu}>
-                            <OpenDialogButton
+                          <div>
+                            <LazyDialogTrigger
                               dialogId={taskDetailsDialogId}
                               className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                              onOpen={closeMenu}
+                              renderDialog={() => (
+                                <NodeDetailsDialog
+                                  dialogId={taskDetailsDialogId}
+                                  projectId={projectId}
+                                  node={{
+                                    id: task.id,
+                                    description: task.description,
+                                    dueAt: task.dueAt,
+                                    assigneeId: task.assigneeId,
+                                    status: task.status,
+                                  }}
+                                  memberOptions={memberOptions}
+                                  copy={copy}
+                                />
+                              )}
                             >
                               {copy.editDetails}
-                            </OpenDialogButton>
+                            </LazyDialogTrigger>
                           </div>
-                          <div onClick={closeMenu}>
-                            <OpenDialogButton
+                          <div>
+                            <LazyDialogTrigger
                               dialogId={taskLabelsDialogId}
                               className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                              onOpen={closeMenu}
+                              renderDialog={() => (
+                                <NodeLabelsDialog
+                                  dialogId={taskLabelsDialogId}
+                                  projectId={projectId}
+                                  node={{
+                                    id: task.id,
+                                    status: task.status,
+                                    operationalLabels: task.operationalLabels,
+                                    waitingStartedAt: task.waitingStartedAt,
+                                    waitingOnUserIds: task.waitingOnUserIds,
+                                    waitingOnExternalName: task.waitingOnExternalName,
+                                    waitingDetails: task.waitingDetails,
+                                    approverId: task.approverId,
+                                    approvalRequestedAt: task.approvalRequestedAt,
+                                    approvalCompletedAt: task.approvalCompletedAt,
+                                    nextAction: task.nextAction,
+                                    isProjectBottleneck: task.isProjectBottleneck,
+                                  }}
+                                  peopleOptions={labelMemberOptions}
+                                  copy={copy}
+                                />
+                              )}
                             >
                               {copy.editLabels}
-                            </OpenDialogButton>
+                            </LazyDialogTrigger>
                           </div>
                           <form
                             onSubmit={(e) => {
@@ -1441,44 +1541,6 @@ export function ProjectTasksPanel({
                     </DropdownMenu>
                   ) : null}
                 </div>
-                {canEdit && !taskIsOptimistic ? (
-                  <>
-                    <NodeDetailsDialog
-                      dialogId={taskDetailsDialogId}
-                      projectId={projectId}
-                      node={{
-                        id: task.id,
-                        description: task.description,
-                        dueAt: task.dueAt,
-                        assigneeId: task.assigneeId,
-                        status: task.status,
-                      }}
-                      memberOptions={memberOptions}
-                      copy={copy}
-                    />
-                    <NodeLabelsDialog
-                      dialogId={taskLabelsDialogId}
-                      projectId={projectId}
-                      node={{
-                        id: task.id,
-                        status: task.status,
-                        operationalLabels: task.operationalLabels,
-                        waitingStartedAt: task.waitingStartedAt,
-                        waitingOnUserIds: task.waitingOnUserIds,
-                        waitingOnExternalName: task.waitingOnExternalName,
-                        waitingDetails: task.waitingDetails,
-                        approverId: task.approverId,
-                        approvalRequestedAt: task.approvalRequestedAt,
-                        approvalCompletedAt: task.approvalCompletedAt,
-                        nextAction: task.nextAction,
-                        isProjectBottleneck: task.isProjectBottleneck,
-                      }}
-                      peopleOptions={labelMemberOptions}
-                      copy={copy}
-                    />
-                  </>
-                ) : null}
-
                 {expanded ? (
                   <div className="space-y-2 border-t border-[hsl(var(--border))] px-3 pb-3 pt-2">
                     {hasKids ? null : <p className="text-xs text-[hsl(var(--muted))]">{copy.noSubtasksHint}</p>}
@@ -1558,21 +1620,60 @@ export function ProjectTasksPanel({
                               <DropdownMenu buttonContent={<IconMore />}>
                                 {({ closeMenu }) => (
                                   <>
-                                    <div onClick={closeMenu}>
-                                      <OpenDialogButton
+                                    <div>
+                                      <LazyDialogTrigger
                                         dialogId={subDetailsDialogId}
                                         className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                                        onOpen={closeMenu}
+                                        renderDialog={() => (
+                                          <NodeDetailsDialog
+                                            dialogId={subDetailsDialogId}
+                                            projectId={projectId}
+                                            node={{
+                                              id: sub.id,
+                                              description: sub.description,
+                                              dueAt: sub.dueAt,
+                                              assigneeId: sub.assigneeId,
+                                              status: sub.status,
+                                            }}
+                                            memberOptions={memberOptions}
+                                            copy={copy}
+                                          />
+                                        )}
                                       >
                                         {copy.editDetails}
-                                      </OpenDialogButton>
+                                      </LazyDialogTrigger>
                                     </div>
-                                    <div onClick={closeMenu}>
-                                      <OpenDialogButton
+                                    <div>
+                                      <LazyDialogTrigger
                                         dialogId={subLabelsDialogId}
                                         className="flex h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                                        onOpen={closeMenu}
+                                        renderDialog={() => (
+                                          <NodeLabelsDialog
+                                            dialogId={subLabelsDialogId}
+                                            projectId={projectId}
+                                            node={{
+                                              id: sub.id,
+                                              status: sub.status,
+                                              operationalLabels: sub.operationalLabels,
+                                              waitingStartedAt: sub.waitingStartedAt,
+                                              waitingOnUserIds: sub.waitingOnUserIds,
+                                              waitingOnExternalName: sub.waitingOnExternalName,
+                                              waitingDetails: sub.waitingDetails,
+                                              approverId: sub.approverId,
+                                              approvalRequestedAt: sub.approvalRequestedAt,
+                                              approvalCompletedAt: sub.approvalCompletedAt,
+                                              nextAction: sub.nextAction,
+                                              isProjectBottleneck: sub.isProjectBottleneck,
+                                            }}
+                                            peopleOptions={labelMemberOptions}
+                                            copy={copy}
+                                          />
+                                        )}
                                       >
                                         {copy.editLabels}
-                                      </OpenDialogButton>
+                                      </LazyDialogTrigger>
                                     </div>
                                     <form
                                       onSubmit={(e) => {
@@ -1606,43 +1707,6 @@ export function ProjectTasksPanel({
                               </DropdownMenu>
                             ) : null}
                           </div>
-                          {canEdit && !subIsOptimistic ? (
-                            <>
-                              <NodeDetailsDialog
-                                dialogId={subDetailsDialogId}
-                                projectId={projectId}
-                                node={{
-                                  id: sub.id,
-                                  description: sub.description,
-                                  dueAt: sub.dueAt,
-                                  assigneeId: sub.assigneeId,
-                                  status: sub.status,
-                                }}
-                                memberOptions={memberOptions}
-                                copy={copy}
-                              />
-                              <NodeLabelsDialog
-                                dialogId={subLabelsDialogId}
-                                projectId={projectId}
-                                node={{
-                                  id: sub.id,
-                                  status: sub.status,
-                                  operationalLabels: sub.operationalLabels,
-                                  waitingStartedAt: sub.waitingStartedAt,
-                                  waitingOnUserIds: sub.waitingOnUserIds,
-                                  waitingOnExternalName: sub.waitingOnExternalName,
-                                  waitingDetails: sub.waitingDetails,
-                                  approverId: sub.approverId,
-                                  approvalRequestedAt: sub.approvalRequestedAt,
-                                  approvalCompletedAt: sub.approvalCompletedAt,
-                                  nextAction: sub.nextAction,
-                                  isProjectBottleneck: sub.isProjectBottleneck,
-                                }}
-                                peopleOptions={labelMemberOptions}
-                                copy={copy}
-                              />
-                            </>
-                          ) : null}
                         </div>
                       );
                     })}
@@ -1654,14 +1718,16 @@ export function ProjectTasksPanel({
                           const fd = new FormData(form);
                           const title = String(fd.get("title") ?? "").trim();
                           if (!title) return;
-                          const mutationKey = `add-sub:${task.id}`;
                           const optimisticRow = buildOptimisticTaskRow(fd, memberOptions);
+                          const mutationKey = `add-sub:${task.id}:${optimisticRow.id}`;
                           setOpen((current) => ({ ...current, [task.id]: true }));
-                          void runTrackedMutation(mutationKey, () => addProjectSubtaskAction(fd), {
-                            type: "add-sub",
-                            parentId: task.id,
-                            row: optimisticRow,
-                          });
+                          void runTrackedMutation(mutationKey, () => addProjectSubtaskAction(fd), () =>
+                            applyOptimisticAdd({
+                              type: "add-sub",
+                              parentId: task.id,
+                              row: optimisticRow,
+                            }),
+                          );
                           form.reset();
                         }}
                         className="space-y-2 pt-1 sm:ml-16 lg:ml-24"
@@ -1699,7 +1765,6 @@ export function ProjectTasksPanel({
                             type="submit"
                             variant="secondary"
                             className="h-8"
-                            disabled={isSubmitting(`add-sub:${task.id}`)}
                           >
                             {copy.addSubtask}
                           </Button>
