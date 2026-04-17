@@ -7,7 +7,7 @@ import { sendPasswordResetEmail } from "@/lib/auth-email";
 import { getEmailDeliveryMode } from "@/lib/email";
 import { createPasswordResetToken, getAppBaseUrl, parsePasswordResetToken, verifyPasswordResetToken } from "@/lib/password-reset";
 import { prisma } from "@/lib/prisma";
-import { getSignedInRedirectPath } from "@/lib/user-landing";
+import { getFastSignedInRedirectPath, getSignedInRedirectPath } from "@/lib/user-landing";
 
 type LoginCheckResult =
   | { ok: true; userId: string; redirectTo: string }
@@ -40,8 +40,7 @@ async function verifyLoginCredentials(email: string, password: string): Promise<
   return {
     ok: true,
     userId: user.id,
-    redirectTo: await getSignedInRedirectPath({
-      userId: user.id,
+    redirectTo: getFastSignedInRedirectPath({
       mustChangePassword: user.mustChangePassword,
       companionIntroCompletedAt: user.companionIntroCompletedAt,
     }),

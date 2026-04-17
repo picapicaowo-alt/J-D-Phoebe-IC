@@ -20,14 +20,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   try {
     const formData = await request.formData();
-    const memberIdsRaw = String(formData.get("memberIds") ?? "[]");
-    const adminIdsRaw = String(formData.get("adminIds") ?? "[]");
+    const parseStringArray = (raw: FormDataEntryValue | null) => {
+      const parsed = JSON.parse(String(raw ?? "[]"));
+      return Array.isArray(parsed) ? parsed.map((value: unknown) => String(value)) : [];
+    };
     const groupPhoto = formData.get("groupPhoto");
 
     const result = await updateMessageGroup(user as AccessUser, id, {
       name: String(formData.get("name") ?? ""),
-      memberIds: Array.isArray(JSON.parse(memberIdsRaw)) ? JSON.parse(memberIdsRaw).map((value: unknown) => String(value)) : [],
-      adminIds: Array.isArray(JSON.parse(adminIdsRaw)) ? JSON.parse(adminIdsRaw).map((value: unknown) => String(value)) : [],
+      memberIds: parseStringArray(formData.get("memberIds")),
+      adminIds: parseStringArray(formData.get("adminIds")),
       groupPhoto: groupPhoto && typeof groupPhoto !== "string" ? groupPhoto : null,
     });
     return NextResponse.json(result);

@@ -85,7 +85,9 @@ export function isLegacyCompanyOnboardingMaterialId(materialId: string) {
 export function resolveCompanyOnboardingMaterials(
   company: CompanyWithOnboardingMaterials,
 ): ResolvedCompanyOnboardingMaterial[] {
-  const dbMaterials = sortMaterialsDesc(company.onboardingMaterials ?? []);
+  const dbMaterials = sortMaterialsDesc(company.onboardingMaterials ?? []).filter(
+    (material) => Boolean(material.packageAttachmentId || material.packageUrl.trim()),
+  );
   if (dbMaterials.length) {
     return dbMaterials.map((material, index) => ({
       ...material,

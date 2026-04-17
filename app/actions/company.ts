@@ -39,6 +39,34 @@ function parseCompanyOnboardingMaterial(formData: FormData) {
   };
 }
 
+function isFormDataFile(value: FormDataEntryValue | null): value is File {
+  return Boolean(value && typeof value !== "string" && "arrayBuffer" in value);
+}
+
+type PendingUpload = {
+  buf: Buffer;
+  fileName: string;
+  mimeType: string;
+};
+
+async function parsePendingUpload(
+  formData: FormData,
+  key: string,
+  acceptMimePrefix?: string,
+): Promise<PendingUpload | null> {
+  const value = formData.get(key);
+  if (!isFormDataFile(value) || value.size <= 0) return null;
+  const mimeType = value.type || "application/octet-stream";
+  if (acceptMimePrefix && !mimeType.startsWith(acceptMimePrefix)) {
+    throw new Error(`Expected a ${acceptMimePrefix.replace("/", "")} file`);
+  }
+  return {
+    buf: Buffer.from(await value.arrayBuffer()),
+    fileName: sanitizeFileName(value.name || "upload"),
+    mimeType,
+  };
+}
+
 async function requireCompanyForUpdate(actor: AccessUser, companyId: string) {
   const company = await prisma.company.findFirst({
     where: { id: companyId, deletedAt: null },
@@ -151,12 +179,40 @@ export async function createCompanyOnboardingMaterialAction(formData: FormData) 
   await requireCompanyForUpdate(user, companyId);
   await migrateLegacyCompanyOnboardingMaterial(companyId);
 
-  await prisma.companyOnboardingMaterial.create({
+  const values = parseCompanyOnboardingMaterial(formData);
+  const packageUpload = await parsePendingUpload(formData, "onboardingPackageFile");
+  const videoUpload = await parsePendingUpload(formData, "onboardingVideoFile", "video/");
+
+  if (!values.packageUrl && !packageUpload) {
+    throw new Error("Provide a material URL or upload a material file.");
+  }
+
+  const material = await prisma.companyOnboardingMaterial.create({
     data: {
       companyId,
-      ...parseCompanyOnboardingMaterial(formData),
+      ...values,
     },
   });
+
+  if (packageUpload) {
+    await uploadOnboardingMaterialBlob({
+      userId: user.id,
+      companyId,
+      materialId: material.id,
+      kind: "package",
+      file: packageUpload,
+    });
+  }
+
+  if (videoUpload) {
+    await uploadOnboardingMaterialBlob({
+      userId: user.id,
+      companyId,
+      materialId: material.id,
+      kind: "video",
+      file: videoUpload,
+    });
+  }
 
   await backfillMemberOnboardingsForCompany(companyId);
   revalidateCompanyPaths(companyId);
@@ -173,6 +229,11 @@ export async function updateCompanyOnboardingMaterialAction(formData: FormData) 
   const nextValues = parseCompanyOnboardingMaterial(formData);
   const currentPackageHref = targetMaterial.packageAttachmentId ? attachmentHref(targetMaterial.packageAttachmentId) : null;
   const currentVideoHref = targetMaterial.videoAttachmentId ? attachmentHref(targetMaterial.videoAttachmentId) : null;
+  const keepsPackageAttachment = Boolean(currentPackageHref && nextValues.packageUrl === currentPackageHref);
+
+  if (!nextValues.packageUrl && !keepsPackageAttachment) {
+    throw new Error("Provide a material URL or upload a material file.");
+  }
 
   await prisma.companyOnboardingMaterial.update({
     where: { id: targetMaterial.id },
@@ -226,39 +287,43 @@ export async function deleteCompanyOnboardingMaterialAction(formData: FormData) 
   revalidateCompanyPaths(companyId);
 }
 
-async function uploadOnboardingMaterialFile(
-  formData: FormData,
-  kind: "package" | "video",
-  acceptMimePrefix?: string,
-) {
-  const user = (await requireUser()) as AccessUser;
-  await assertPermission(user, "company.update");
-  const companyId = requireString(formData, "companyId");
-  const materialId = requireString(formData, "materialId");
-  const material = await requireEditableOnboardingMaterial(user, companyId, materialId);
+async function uploadOnboardingMaterialBlob({
+  userId,
+  companyId,
+  materialId,
+  kind,
+  file,
+}: {
+  userId: string;
+  companyId: string;
+  materialId: string;
+  kind: "package" | "video";
+  file: PendingUpload;
+}) {
+  const material = await prisma.companyOnboardingMaterial.findFirst({
+    where: { id: materialId, companyId },
+    select: { id: true, packageAttachmentId: true, videoAttachmentId: true },
+  });
+  if (!material) throw new Error("Not found");
 
-  const file = formData.get("file");
-  if (!file || typeof file === "string" || !("arrayBuffer" in file)) throw new Error("Missing file");
-  const mimeType = file.type || "application/octet-stream";
-  if (acceptMimePrefix && !mimeType.startsWith(acceptMimePrefix)) {
-    throw new Error(`Expected a ${acceptMimePrefix.replace("/", "")} file`);
-  }
-
-  const buf = Buffer.from(await file.arrayBuffer());
-  const fileName = sanitizeFileName(file.name || "upload");
   const previousVersionId = kind === "package" ? material.packageAttachmentId : material.videoAttachmentId;
-  const { storageKey, blobUrl } = await storeUploadedFile(buf, fileName, mimeType, `onboarding/${companyId}/${material.id}/${kind}`);
+  const { storageKey, blobUrl } = await storeUploadedFile(
+    file.buf,
+    file.fileName,
+    file.mimeType,
+    `onboarding/${companyId}/${material.id}/${kind}`,
+  );
 
   const attachment = await prisma.attachment.create({
     data: {
       resourceKind: AttachmentResourceKind.FILE,
       previousVersionId,
-      fileName,
-      mimeType,
-      sizeBytes: buf.length,
+      fileName: file.fileName,
+      mimeType: file.mimeType,
+      sizeBytes: file.buf.length,
       storageKey,
       blobUrl,
-      uploadedById: user.id,
+      uploadedById: userId,
       description: kind === "package" ? "Onboarding package upload" : "Onboarding video upload",
     },
   });
@@ -274,7 +339,30 @@ async function uploadOnboardingMaterialFile(
         : {
             videoAttachmentId: attachment.id,
             videoUrl: attachmentHref(attachment.id),
-          },
+    },
+  });
+}
+
+async function uploadOnboardingMaterialFile(
+  formData: FormData,
+  kind: "package" | "video",
+  acceptMimePrefix?: string,
+) {
+  const user = (await requireUser()) as AccessUser;
+  await assertPermission(user, "company.update");
+  const companyId = requireString(formData, "companyId");
+  const materialId = requireString(formData, "materialId");
+  await requireEditableOnboardingMaterial(user, companyId, materialId);
+
+  const upload = await parsePendingUpload(formData, "file", acceptMimePrefix);
+  if (!upload) throw new Error("Missing file");
+
+  await uploadOnboardingMaterialBlob({
+    userId: user.id,
+    companyId,
+    materialId,
+    kind,
+    file: upload,
   });
 
   await backfillMemberOnboardingsForCompany(companyId);

@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { cookies } from "next/headers";
 import { revalidateTag, unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { cache } from "react";
 import type { AccessUser } from "@/lib/access";
 import { isClerkEnabled } from "@/lib/clerk-config";
@@ -121,15 +122,6 @@ function invalidateUserCache(user: { id: string; clerkId?: string | null } | str
   redirectUserByIdCache.delete(id);
   if (cid) userByClerkIdCache.delete(cid);
   if (cid) redirectUserByClerkIdCache.delete(cid);
-}
-
-async function loadFreshUserById(id: string) {
-  return writeUserCache(
-    await prisma.user.findFirst({
-      where: { id, deletedAt: null },
-      select: userSelect,
-    }),
-  );
 }
 
 export function invalidateAccessUserCache(user: { id: string; clerkId?: string | null } | string, clerkId?: string | null) {
@@ -308,9 +300,17 @@ export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
     const user = await getCurrentUser();
     if (!user || !user.active) redirect("/pending-access");
     if (!user.firstSignInAt) {
-      invalidateUserCache(user);
-      await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
-      return (await loadFreshUserById(user.id)) as AccessUser;
+      after(async () => {
+        try {
+          invalidateUserCache(user);
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { firstSignInAt: new Date() },
+          });
+        } catch (error) {
+          console.error("[requireUser firstSignInAt]", error);
+        }
+      });
     }
     return user as AccessUser;
   }
@@ -318,9 +318,17 @@ export async function requireUser(opts?: { skipPasswordResetGate?: boolean }) {
   const user = await getCurrentUser();
   if (!user || !user.active) redirect("/login");
   if (!user.firstSignInAt) {
-    invalidateUserCache(user);
-    await prisma.user.update({ where: { id: user.id }, data: { firstSignInAt: new Date() } });
-    return (await loadFreshUserById(user.id)) as AccessUser;
+    after(async () => {
+      try {
+        invalidateUserCache(user);
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { firstSignInAt: new Date() },
+        });
+      } catch (error) {
+        console.error("[requireUser firstSignInAt]", error);
+      }
+    });
   }
   if (!opts?.skipPasswordResetGate && user.mustChangePassword) {
     redirect("/settings/change-password");

@@ -57,10 +57,26 @@ const managedGroupInclude = {
   },
 } satisfies Prisma.MessageGroupInclude;
 
+const managedGroupCoreSelect = {
+  id: true,
+  companyId: true,
+  name: true,
+  avatarUrl: true,
+  createdById: true,
+  members: {
+    select: {
+      userId: true,
+      isAdmin: true,
+    },
+    orderBy: { createdAt: "asc" },
+  },
+} satisfies Prisma.MessageGroupSelect;
+
 type DirectMessageRow = Prisma.DirectMessageGetPayload<{ include: typeof directMessageInclude }>;
 type GroupMessageRow = Prisma.MessageGroupMessageGetPayload<{ include: typeof groupMessageInclude }>;
 type GroupMembershipRow = Prisma.MessageGroupMemberGetPayload<{ include: typeof groupMembershipInclude }>;
 type ManagedGroupRow = Prisma.MessageGroupGetPayload<{ include: typeof managedGroupInclude }>;
+type ManagedGroupCoreRow = Prisma.MessageGroupGetPayload<{ select: typeof managedGroupCoreSelect }>;
 type DirectPreferenceRow = Prisma.DirectMessagePreferenceGetPayload<{
   select: { peerId: true; mutedAt: true };
 }>;
@@ -159,6 +175,15 @@ export type ChatPageData = {
 export type ChatThreadData = {
   thread: ChatThreadDetail | null;
   messages: ChatMessage[];
+};
+
+export type ChatThreadGroupPatch = {
+  key: string;
+  name: string;
+  avatarUrl: string | null;
+  memberIds: string[];
+  adminIds: string[];
+  creatorId: string;
 };
 
 function normalizeText(value: string | null | undefined) {
@@ -391,6 +416,23 @@ async function listCompanyMessagingCandidates(companyId: string, currentUserId: 
   );
 }
 
+async function listCompanyMessagingCandidateIds(companyId: string, currentUserId: string): Promise<string[]> {
+  const rows = await prisma.user.findMany({
+    where: {
+      active: true,
+      deletedAt: null,
+      OR: [
+        { id: currentUserId },
+        { companyMemberships: { some: { companyId } } },
+        { projectMemberships: { some: { project: { companyId } } } },
+      ],
+    },
+    select: { id: true },
+  });
+
+  return rows.map((row) => row.id);
+}
+
 async function buildGroupOptions(user: AccessUser): Promise<ChatCompanyOption[]> {
   const companies = await listManageableCompanies(user);
   if (!companies.length) return [];
@@ -483,6 +525,36 @@ async function findMessageGroupMembership(user: AccessUser, groupId: string) {
     where: { groupId: cleanGroupId, userId: user.id },
     include: groupMembershipInclude,
   });
+}
+
+async function findMessageGroupMembershipCore(userId: string, groupId: string) {
+  const cleanGroupId = String(groupId ?? "").trim();
+  if (!cleanGroupId) return null;
+
+  return prisma.messageGroupMember.findUnique({
+    where: { groupId_userId: { groupId: cleanGroupId, userId } },
+    select: { groupId: true, userId: true, isAdmin: true },
+  });
+}
+
+async function findManagedMessageGroupCore(user: AccessUser, groupId: string) {
+  const cleanGroupId = String(groupId ?? "").trim();
+  if (!cleanGroupId) return null;
+
+  const group = await prisma.messageGroup.findFirst({
+    where: {
+      id: cleanGroupId,
+      ...(user.isSuperAdmin ? {} : { members: { some: { userId: user.id } } }),
+    },
+    select: managedGroupCoreSelect,
+  });
+
+  if (!group) return null;
+  if (!memberHasGroupAdminAccess(user, group)) {
+    throw new Error("You do not have permission to manage this group.");
+  }
+
+  return group;
 }
 
 async function findManagedMessageGroup(user: AccessUser, groupId: string) {
@@ -810,7 +882,7 @@ export async function getThreadMessages(user: AccessUser, threadKey: string, lim
     return rows.reverse().map((row) => serializeDirectMessage(row, user.id));
   }
 
-  const membership = await findMessageGroupMembership(user, parsed.id);
+  const membership = await findMessageGroupMembershipCore(user.id, parsed.id);
   if (!membership) return [];
 
   const rows = await prisma.messageGroupMessage.findMany({
@@ -1032,12 +1104,11 @@ export async function markThreadRead(user: AccessUser, threadKey: string) {
     return result.count;
   }
 
-  const membership = await findMessageGroupMembership(user, parsed.id);
-  if (!membership) throw new Error("This group chat is not available.");
-  await prisma.messageGroupMember.update({
-    where: { groupId_userId: { groupId: membership.groupId, userId: user.id } },
+  const updated = await prisma.messageGroupMember.updateMany({
+    where: { groupId: parsed.id, userId: user.id },
     data: { lastReadAt: new Date() },
   });
+  if (!updated.count) throw new Error("This group chat is not available.");
   return 1;
 }
 
@@ -1065,12 +1136,11 @@ export async function setThreadMuted(user: AccessUser, threadKey: string, muted:
     return { ok: true };
   }
 
-  const membership = await findMessageGroupMembership(user, parsed.id);
-  if (!membership) throw new Error("This group chat is not available.");
-  await prisma.messageGroupMember.update({
-    where: { groupId_userId: { groupId: membership.groupId, userId: user.id } },
+  const updated = await prisma.messageGroupMember.updateMany({
+    where: { groupId: parsed.id, userId: user.id },
     data: { mutedAt: muted ? new Date() : null },
   });
+  if (!updated.count) throw new Error("This group chat is not available.");
   return { ok: true };
 }
 
@@ -1088,8 +1158,8 @@ export async function createMessageGroup(user: AccessUser, input: { companyId: s
     throw new Error("You do not have permission to create a group for this company.");
   }
 
-  const candidates = await listCompanyMessagingCandidates(companyId, user.id);
-  const allowedIds = new Set(candidates.map((candidate) => candidate.id));
+  const candidateIds = await listCompanyMessagingCandidateIds(companyId, user.id);
+  const allowedIds = new Set(candidateIds);
   const memberIds = uniq([...input.memberIds, user.id]);
   if (memberIds.length < 2) {
     throw new Error("Select at least two members for the group chat.");
@@ -1130,7 +1200,7 @@ export async function updateMessageGroup(
   groupId: string,
   input: { name: string; memberIds: string[]; adminIds: string[]; groupPhoto?: File | null },
 ) {
-  const group = await findManagedMessageGroup(user, groupId);
+  const group = await findManagedMessageGroupCore(user, groupId);
   if (!group) {
     throw new Error("This group chat is not available.");
   }
@@ -1138,8 +1208,8 @@ export async function updateMessageGroup(
   const name = normalizeText(input.name);
   if (!name) throw new Error("Group name is required.");
 
-  const candidates = await listCompanyMessagingCandidates(group.company.id, user.id);
-  const allowedIds = new Set([...candidates.map((candidate) => candidate.id), ...group.members.map((member) => member.userId)]);
+  const candidateIds = await listCompanyMessagingCandidateIds(group.companyId, user.id);
+  const allowedIds = new Set([...candidateIds, ...group.members.map((member) => member.userId)]);
   const nextMemberIds = uniq([...input.memberIds, user.id, group.createdById]);
   const nextAdminIds = uniq(input.adminIds);
   if (nextMemberIds.length < 2) {
@@ -1153,9 +1223,13 @@ export async function updateMessageGroup(
   }
 
   const existingMemberIds = new Set(group.members.map((member) => member.userId));
+  const existingAdminIds = new Set(group.members.filter((member) => member.isAdmin).map((member) => member.userId));
   const toRemove = group.members.map((member) => member.userId).filter((memberId) => !nextMemberIds.includes(memberId));
   const toAdd = nextMemberIds.filter((memberId) => !existingMemberIds.has(memberId));
   const toKeep = nextMemberIds.filter((memberId) => existingMemberIds.has(memberId));
+  const nextAdminSet = new Set([...nextAdminIds, group.createdById]);
+  const promoteIds = toKeep.filter((memberId) => nextAdminSet.has(memberId) && !existingAdminIds.has(memberId));
+  const demoteIds = toKeep.filter((memberId) => !nextAdminSet.has(memberId) && existingAdminIds.has(memberId));
   const nextAvatarUrl = input.groupPhoto && isGroupAvatarUpload(input.groupPhoto)
     ? await storeGroupAvatar(input.groupPhoto, group.id)
     : undefined;
@@ -1188,24 +1262,39 @@ export async function updateMessageGroup(
           }),
         ]
       : []),
-    ...toKeep.map((memberId) =>
-      prisma.messageGroupMember.update({
-        where: { groupId_userId: { groupId: group.id, userId: memberId } },
-        data: { isAdmin: memberId === group.createdById || nextAdminIds.includes(memberId) },
-      }),
-    ),
+    ...(promoteIds.length
+      ? [
+          prisma.messageGroupMember.updateMany({
+            where: { groupId: group.id, userId: { in: promoteIds } },
+            data: { isAdmin: true },
+          }),
+        ]
+      : []),
+    ...(demoteIds.length
+      ? [
+          prisma.messageGroupMember.updateMany({
+            where: { groupId: group.id, userId: { in: demoteIds } },
+            data: { isAdmin: false },
+          }),
+        ]
+      : []),
   ]);
 
-  const thread = await getGroupThreadDetail(user, group.id);
-  if (!thread) {
-    throw new Error("This group chat is not available.");
-  }
-
-  return { threadKey: thread.key, thread };
+  return {
+    threadKey: makeThreadKey("group", group.id),
+    threadPatch: {
+      key: makeThreadKey("group", group.id),
+      name,
+      avatarUrl: nextAvatarUrl ?? group.avatarUrl,
+      memberIds: nextMemberIds,
+      adminIds: [...nextAdminSet],
+      creatorId: group.createdById,
+    } satisfies ChatThreadGroupPatch,
+  };
 }
 
 export async function deleteMessageGroup(user: AccessUser, groupId: string) {
-  const group = await findManagedMessageGroup(user, groupId);
+  const group = await findManagedMessageGroupCore(user, groupId);
   if (!group) {
     throw new Error("This group chat is not available.");
   }

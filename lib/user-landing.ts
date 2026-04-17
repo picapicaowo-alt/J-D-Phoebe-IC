@@ -14,18 +14,22 @@ export async function getPendingMemberOnboardingRoute(userId: string) {
   const pendingRoute = await findPendingMemberOnboardingRoute(userId);
   if (pendingRoute) return pendingRoute;
 
-  const [membershipCount, existingRunCount] = await Promise.all([
-    prisma.companyMembership.count({ where: { userId } }),
-    prisma.memberOnboarding.count({ where: { userId } }),
+  const [memberships, existingRuns] = await Promise.all([
+    prisma.companyMembership.findMany({
+      where: { userId, company: { deletedAt: null } },
+      orderBy: { companyId: "asc" },
+      select: { companyId: true },
+    }),
+    prisma.memberOnboarding.findMany({
+      where: { userId },
+      select: { companyId: true },
+    }),
   ]);
-  if (!membershipCount) return null;
+  if (!memberships.length) return null;
 
-  const hasMissingRuns = existingRunCount < membershipCount;
-  if (!hasMissingRuns) return null;
-
-  const { ensureAllMemberOnboardingsForUser } = await import("@/lib/member-onboarding");
-  await ensureAllMemberOnboardingsForUser(userId);
-  return findPendingMemberOnboardingRoute(userId);
+  const existingCompanyIds = new Set(existingRuns.map((run) => run.companyId));
+  const missingMembership = memberships.find((membership) => !existingCompanyIds.has(membership.companyId));
+  return missingMembership ? `/onboarding/member?companyId=${missingMembership.companyId}` : null;
 }
 
 export async function getSignedInRedirectPath({
@@ -40,4 +44,16 @@ export async function getSignedInRedirectPath({
   if (mustChangePassword) return "/settings/change-password";
   if (!companionIntroCompletedAt) return "/onboarding/companion";
   return (await getPendingMemberOnboardingRoute(userId)) ?? "/home";
+}
+
+export function getFastSignedInRedirectPath({
+  mustChangePassword,
+  companionIntroCompletedAt,
+}: {
+  mustChangePassword: boolean;
+  companionIntroCompletedAt: Date | null | undefined;
+}) {
+  if (mustChangePassword) return "/settings/change-password";
+  if (!companionIntroCompletedAt) return "/onboarding/companion";
+  return "/home";
 }

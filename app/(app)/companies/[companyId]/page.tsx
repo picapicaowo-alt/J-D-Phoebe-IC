@@ -336,7 +336,7 @@ export default async function CompanyDetailPage({
             <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
               {t(locale, "onboardingHubManageAddContent")}
             </p>
-            <form action={createCompanyOnboardingMaterialAction} className="mt-3 grid gap-3">
+            <form action={createCompanyOnboardingMaterialAction} encType="multipart/form-data" className="mt-3 grid gap-3">
               <input type="hidden" name="companyId" value={company.id} />
               <div className="space-y-1">
                 <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
@@ -347,6 +347,17 @@ export default async function CompanyDetailPage({
                 <Input name="onboardingVideoUrl" placeholder="https://..." />
                 <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadPackage")}</label>
+                  <input type="file" name="onboardingPackageFile" className="text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadVideo")}</label>
+                  <input type="file" name="onboardingVideoFile" accept="video/*" className="text-xs" />
+                </div>
+              </div>
+              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingUploadHelp")}</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>

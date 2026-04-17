@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { UserFace } from "@/components/user-face";
 import { cn } from "@/lib/utils";
-import type { ChatMessage, ChatPageData, ChatThreadData, ChatThreadDetail, ChatThreadSummary } from "@/lib/direct-messages";
+import type { ChatMessage, ChatPageData, ChatThreadData, ChatThreadDetail, ChatThreadGroupPatch, ChatThreadSummary } from "@/lib/direct-messages";
 
 type Props = {
   locale: "en" | "zh";
@@ -164,6 +164,10 @@ function sortThreads(threads: ChatThreadSummary[]) {
 
     return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   });
+}
+
+function sortMembersByName<T extends { name: string }>(members: T[]) {
+  return [...members].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
 
 function appendMessage(messages: ChatMessage[], incoming: ChatMessage) {
@@ -617,13 +621,40 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         method: "PATCH",
         body: formData,
       });
-      const data = await readJson<{ thread?: ChatThreadDetail; error?: string }>(response);
-      if (!response.ok || !data?.thread) {
+      const data = await readJson<{ threadPatch?: ChatThreadGroupPatch; error?: string }>(response);
+      if (!response.ok || !data?.threadPatch) {
         setGroupError(data?.error ?? copy.loadError);
         return;
       }
+
+      const patch = data.threadPatch;
+      const candidateById = new Map(
+        [...manageCandidates, ...(selectedThread?.type === "group" ? selectedThread.members : [])].map((member) => [member.id, member]),
+      );
+      const nextMembers = sortMembersByName(
+        patch.memberIds.map((memberId) => {
+          const member = candidateById.get(memberId);
+          return {
+            id: memberId,
+            name: member?.name ?? memberId,
+            title: member?.title ?? null,
+            avatarUrl: member?.avatarUrl ?? null,
+            isAdmin: memberId === patch.creatorId || patch.adminIds.includes(memberId),
+            isCreator: memberId === patch.creatorId,
+          };
+        }),
+      );
+      const nextThread: ChatThreadDetail = {
+        ...selectedThread,
+        key: patch.key,
+        name: patch.name,
+        avatarUrl: patch.avatarUrl,
+        memberCount: nextMembers.length,
+        members: nextMembers,
+        creatorId: patch.creatorId,
+      };
+
       manageDialogRef.current?.close();
-      const nextThread = data.thread;
       setThreads((current) => upsertThread(current, threadDetailToSummary(nextThread)));
       setSelectedThread(nextThread);
       setSelectedThreadKey(nextThread.key);
@@ -683,6 +714,20 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   async function handleToggleMute(muted: boolean) {
     if (!selectedThread) return;
 
+    const previousSelectedThread = selectedThread;
+    const previousThreads = threadsRef.current;
+    const previousCached = threadDataCacheRef.current.get(selectedThread.key);
+
+    setThreads((current) =>
+      current.map((thread) => (thread.key === selectedThread.key ? { ...thread, isMuted: muted } : thread)),
+    );
+    setSelectedThread((current) => (current && current.key === selectedThread.key ? { ...current, isMuted: muted } : current));
+    if (previousCached?.thread) {
+      threadDataCacheRef.current.set(selectedThread.key, {
+        ...previousCached,
+        thread: { ...previousCached.thread, isMuted: muted },
+      });
+    }
     setError(null);
     try {
       const response = await fetch("/api/messages/mute", {
@@ -695,23 +740,25 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
       });
       const data = await readJson<{ ok?: boolean; error?: string }>(response);
       if (!response.ok || !data?.ok) {
+        setThreads(previousThreads);
+        setSelectedThread(previousSelectedThread);
+        if (previousCached) {
+          threadDataCacheRef.current.set(selectedThread.key, previousCached);
+        } else {
+          threadDataCacheRef.current.delete(selectedThread.key);
+        }
         setError(data?.error ?? copy.loadError);
         return;
       }
-
-      setThreads((current) =>
-        current.map((thread) => (thread.key === selectedThread.key ? { ...thread, isMuted: muted } : thread)),
-      );
-      setSelectedThread((current) => (current && current.key === selectedThread.key ? { ...current, isMuted: muted } : current));
-      const cached = threadDataCacheRef.current.get(selectedThread.key);
-      if (cached?.thread) {
-        threadDataCacheRef.current.set(selectedThread.key, {
-          ...cached,
-          thread: { ...cached.thread, isMuted: muted },
-        });
-      }
       notifyUnreadChanged();
     } catch {
+      setThreads(previousThreads);
+      setSelectedThread(previousSelectedThread);
+      if (previousCached) {
+        threadDataCacheRef.current.set(selectedThread.key, previousCached);
+      } else {
+        threadDataCacheRef.current.delete(selectedThread.key);
+      }
       setError(copy.loadError);
     }
   }
