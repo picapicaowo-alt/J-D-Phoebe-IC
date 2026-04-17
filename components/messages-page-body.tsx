@@ -327,7 +327,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   const [manageAdminIds, setManageAdminIds] = useState<string[]>([]);
   const [manageGroupPhoto, setManageGroupPhoto] = useState<File | null>(null);
   const [memberListQuery, setMemberListQuery] = useState("");
-  const [hoveredMemberId, setHoveredMemberId] = useState<string | null>(null);
+  const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const threadsRef = useRef(initialData.threads);
   const selectedThreadRef = useRef<string | null>(initialData.selectedThreadKey);
@@ -784,7 +784,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
       if (!nextSelectedThread || nextSelectedThread.type !== "group" || nextSelectedThread.members.length === 0) return;
     }
     setMemberListQuery("");
-    setHoveredMemberId(null);
+    setExpandedMemberId(null);
     if (!memberListDialogRef.current?.open) {
       memberListDialogRef.current?.showModal();
     }
@@ -1610,24 +1610,27 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
             ) : (
               <div className="space-y-2">
                 {memberListMembers.map((member) => (
-                  <div
-                    key={member.id}
-                    className="relative rounded-[18px] border border-[hsl(var(--border))] px-3 py-3"
-                    onMouseEnter={() => setHoveredMemberId(member.id)}
-                    onMouseLeave={() => setHoveredMemberId((current) => (current === member.id ? null : current))}
-                  >
+                  <div key={member.id} className="relative rounded-[18px] border border-[hsl(var(--border))] px-3 py-3">
                     <div className="flex items-center justify-between gap-3">
-                      <Link href={`/staff/${member.id}`} prefetch={false} className="flex min-w-0 items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
                         <UserFace name={member.name} avatarUrl={member.avatarUrl} size={36} />
-                        <span className="min-w-0">
-                          <span className="flex flex-wrap items-center gap-2">
-                            <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
-                            {member.isCreator ? <Badge tone="neutral">{copy.groupCreatorLabel}</Badge> : null}
-                            {!member.isCreator && member.isAdmin ? <Badge tone="info">{copy.groupAdminLabel}</Badge> : null}
+                        <button
+                          type="button"
+                          onClick={() => setExpandedMemberId((current) => (current === member.id ? null : member.id))}
+                          className="min-w-0 text-left"
+                        >
+                          <span className="min-w-0">
+                            <span className="flex flex-wrap items-center gap-2">
+                              <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))] hover:text-[hsl(var(--primary))]">
+                                {member.name}
+                              </span>
+                              {member.isCreator ? <Badge tone="neutral">{copy.groupCreatorLabel}</Badge> : null}
+                              {!member.isCreator && member.isAdmin ? <Badge tone="info">{copy.groupAdminLabel}</Badge> : null}
+                            </span>
+                            <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
                           </span>
-                          <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
-                        </span>
-                      </Link>
+                        </button>
+                      </div>
                       <Button
                         type="button"
                         variant="secondary"
@@ -1640,8 +1643,8 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                       </Button>
                     </div>
 
-                    {hoveredMemberId === member.id ? (
-                      <div className="absolute right-3 top-[calc(100%+0.5rem)] z-10 w-64 rounded-[20px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+                    {expandedMemberId === member.id ? (
+                      <div className="mt-3 rounded-[20px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-[0_12px_30px_rgba(15,23,42,0.1)]">
                         <div className="flex items-center gap-3">
                           <UserFace name={member.name} avatarUrl={member.avatarUrl} size={52} />
                           <div className="min-w-0">
