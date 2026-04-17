@@ -5,7 +5,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { invalidateAccessUserCache, requireUser } from "@/lib/auth";
 import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { resolveBlobReadWriteToken } from "@/lib/blob";
 import { assertPermission } from "@/lib/permissions";
@@ -115,9 +115,11 @@ export async function uploadUserAvatarAction(formData: FormData) {
     const url = await persistImage(buf, mime, `avatars/${userId}`);
 
     await prisma.user.update({ where: { id: userId }, data: { avatarUrl: url } });
+    invalidateAccessUserCache(userId);
     revalidatePath(`/staff/${userId}`);
     revalidatePath("/staff");
     revalidatePath("/settings/profile");
+    revalidatePath("/onboarding/companion");
   } catch (error) {
     redirectWithUploadError(formData, fallbackPath, error);
   }
@@ -130,9 +132,11 @@ export async function removeUserAvatarAction(formData: FormData) {
   if (actor.id !== userId) await assertPermission(actor, "staff.update");
 
   await prisma.user.update({ where: { id: userId }, data: { avatarUrl: null } });
+  invalidateAccessUserCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath("/staff");
   revalidatePath("/settings/profile");
+  revalidatePath("/onboarding/companion");
 }
 
 export async function uploadCompanyLogoAction(formData: FormData) {

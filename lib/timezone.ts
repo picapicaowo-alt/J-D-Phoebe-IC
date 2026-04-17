@@ -15,6 +15,17 @@ const FALLBACK_TIME_ZONES = [
   "Asia/Tokyo",
   "Australia/Sydney",
 ] as const;
+const MANUAL_TIME_ZONE_ALIASES: Record<string, string> = {
+  beijing: "Asia/Shanghai",
+  "china standard time": "Asia/Shanghai",
+};
+const TIME_ZONE_CITY_OVERRIDES: Record<string, string> = {
+  UTC: "UTC",
+  "Asia/Shanghai": "Beijing",
+};
+const TIME_ZONE_EXTRA_TAGS: Partial<Record<string, string[]>> = {
+  "Asia/Shanghai": ["Shanghai"],
+};
 
 type ZonedDateParts = {
   year: number;
@@ -27,6 +38,9 @@ type ZonedDateParts = {
 
 const partFormatterCache = new Map<string, Intl.DateTimeFormat>();
 const displayFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const resolvedTimeZoneCache = new Map<string, string | null>();
+const offsetLabelCache = new Map<string, string>();
+const TIME_ZONE_TOKEN_RE = /[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+/g;
 
 function localeTag(locale: Locale) {
   return locale === "zh" ? "zh-CN" : "en-US";
@@ -87,14 +101,43 @@ function sameLocalDate(a: ZonedDateParts | null, b: ZonedDateParts | null) {
   return !!a && !!b && a.year === b.year && a.month === b.month && a.day === b.day;
 }
 
-export function normalizeTimeZone(timeZone: string | null | undefined) {
-  const candidate = String(timeZone ?? "").trim();
-  if (!candidate) return DEFAULT_TIME_ZONE;
+function tryResolveTimeZone(candidate: string) {
+  const cached = resolvedTimeZoneCache.get(candidate);
+  if (cached !== undefined) return cached;
+
   try {
-    return new Intl.DateTimeFormat("en-US", { timeZone: candidate }).resolvedOptions().timeZone || candidate;
+    const resolved = new Intl.DateTimeFormat("en-US", { timeZone: candidate }).resolvedOptions().timeZone || candidate;
+    resolvedTimeZoneCache.set(candidate, resolved);
+    return resolved;
   } catch {
-    return DEFAULT_TIME_ZONE;
+    resolvedTimeZoneCache.set(candidate, null);
+    return null;
   }
+}
+
+export function resolveTimeZone(timeZone: string | null | undefined) {
+  const candidate = String(timeZone ?? "").trim();
+  if (!candidate) return null;
+
+  const direct = tryResolveTimeZone(candidate);
+  if (direct) return direct;
+
+  const lower = candidate.toLowerCase();
+  for (const [alias, canonical] of Object.entries(MANUAL_TIME_ZONE_ALIASES)) {
+    if (lower === alias || lower.includes(alias)) return canonical;
+  }
+
+  const embedded = candidate.match(TIME_ZONE_TOKEN_RE) ?? [];
+  for (const token of embedded) {
+    const resolved = tryResolveTimeZone(token);
+    if (resolved) return resolved;
+  }
+
+  return null;
+}
+
+export function normalizeTimeZone(timeZone: string | null | undefined) {
+  return resolveTimeZone(timeZone) ?? DEFAULT_TIME_ZONE;
 }
 
 export function getSupportedTimeZones() {
@@ -102,6 +145,56 @@ export function getSupportedTimeZones() {
     typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [...FALLBACK_TIME_ZONES];
   const zones = new Set<string>([DEFAULT_TIME_ZONE, ...values.map((value) => normalizeTimeZone(value))]);
   return [...zones].sort((a, b) => a.localeCompare(b));
+}
+
+function formatUtcOffsetLabel(timeZone: string, at = new Date()) {
+  const normalized = normalizeTimeZone(timeZone);
+  const cacheKey = `${normalized}:${at.toISOString().slice(0, 10)}`;
+  const cached = offsetLabelCache.get(cacheKey);
+  if (cached) return cached;
+
+  const raw =
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: normalized,
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZoneName: "shortOffset",
+    })
+      .formatToParts(at)
+      .find((part) => part.type === "timeZoneName")?.value ?? "GMT+0";
+
+  const match = /^GMT(?:([+-])(\d{1,2})(?::(\d{2}))?)?$/.exec(raw);
+  const sign = match?.[1] ?? "+";
+  const hour = match?.[2] ? match[2].padStart(2, "0") : "00";
+  const minute = match?.[3] ?? "00";
+  const label = `UTC${sign}${hour}:${minute}`;
+  offsetLabelCache.set(cacheKey, label);
+  return label;
+}
+
+function cityLabelForTimeZone(timeZone: string) {
+  const normalized = normalizeTimeZone(timeZone);
+  const override = TIME_ZONE_CITY_OVERRIDES[normalized];
+  if (override) return override;
+  const parts = normalized.split("/");
+  return (parts[parts.length - 1] ?? normalized).replace(/_/g, " ");
+}
+
+export function formatTimeZoneInputValue(timeZone: string) {
+  const normalized = normalizeTimeZone(timeZone);
+  const city = cityLabelForTimeZone(normalized);
+  const extraTags = TIME_ZONE_EXTRA_TAGS[normalized] ?? [];
+  const tags = [city, ...extraTags].filter(Boolean).join(" / ");
+  if (normalized === DEFAULT_TIME_ZONE) {
+    return `${tags} (${formatUtcOffsetLabel(normalized)})`;
+  }
+  return `${tags} (${normalized}, ${formatUtcOffsetLabel(normalized)})`;
+}
+
+export function getTimeZoneInputOptions() {
+  return getSupportedTimeZones()
+    .map((timeZone) => formatTimeZoneInputValue(timeZone))
+    .sort((a, b) => a.localeCompare(b));
 }
 
 export function getZonedDateParts(value: Date | string | number, timeZone: string): ZonedDateParts | null {

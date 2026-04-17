@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { canManageProjectSettings, isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
@@ -129,16 +129,13 @@ export async function purgeCompanyAction(formData: FormData) {
 
 export async function softDeleteProjectAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
-  await assertPermission(user, "project.soft_delete");
   const projectId = requireString(formData, "projectId");
   const project = await prisma.project.findFirst({
     where: { id: projectId, deletedAt: null },
     include: { company: true },
   });
   if (!project) throw new Error("Not found");
-  if (!isSuperAdmin(user) && !isGroupAdmin(user, project.company.orgGroupId) && !isCompanyAdmin(user, project.companyId)) {
-    throw new Error("Forbidden");
-  }
+  if (!canManageProjectSettings(user, project)) throw new Error("Forbidden");
 
   await prisma.project.update({
     where: { id: projectId },
@@ -152,7 +149,6 @@ export async function softDeleteProjectAction(formData: FormData) {
 
 export async function softDeleteProjectsBulkAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
-  await assertPermission(user, "project.soft_delete");
   const projectIds = [...new Set(getStringArray(formData, "projectIds"))];
   if (!projectIds.length) return;
 
@@ -163,9 +159,7 @@ export async function softDeleteProjectsBulkAction(formData: FormData) {
   if (projects.length !== projectIds.length) throw new Error("Some projects were not found.");
 
   for (const project of projects) {
-    if (!isSuperAdmin(user) && !isGroupAdmin(user, project.company.orgGroupId) && !isCompanyAdmin(user, project.companyId)) {
-      throw new Error("Forbidden");
-    }
+    if (!canManageProjectSettings(user, project)) throw new Error("Forbidden");
   }
 
   await prisma.project.updateMany({

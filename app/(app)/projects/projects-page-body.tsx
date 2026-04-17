@@ -5,12 +5,9 @@ import { Priority, ProjectStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import {
   canManageCompanyProjects,
-  canManageProject,
+  canManageProjectSettings,
   canViewProject,
   companyVisibilityWhere,
-  isCompanyAdmin,
-  isGroupAdmin,
-  isSuperAdmin,
   projectVisibilityWhere,
   type AccessUser,
 } from "@/lib/access";
@@ -97,7 +94,7 @@ export async function ProjectsPageBody({
   const priorityRaw = typeof sp.priority === "string" ? sp.priority.trim() : "";
   const due = typeof sp.due === "string" ? sp.due.trim() : "";
 
-  const [companyOptions, allCompanies, canSoftDeletePermission, projectCreateRoleIds] = await Promise.all([
+  const [companyOptions, allCompanies, projectCreateRoleIds] = await Promise.all([
     prisma.company.findMany({
       where: { deletedAt: null, ...companyVisibilityWhere(user) },
       orderBy: { name: "asc" },
@@ -107,7 +104,6 @@ export async function ProjectsPageBody({
       where: { deletedAt: null },
       select: { id: true, orgGroupId: true },
     }),
-    userHasPermission(user, "project.soft_delete"),
     getActorRoleIdsByPermission(user, ["project.create"]).then((byPermission) => byPermission.get("project.create") ?? new Set<string>()),
   ]);
   const canCreate = allCompanies.some((company) =>
@@ -186,18 +182,9 @@ export async function ProjectsPageBody({
     !!selectedCo && canManageCompanyProjects(user, { id: selectedCo.id, orgGroupId: selectedCo.orgGroupId });
 
   const movableProjectIds = visible
-    .filter(
-      (p) =>
-        canManageProject(user, p) ||
-        canManageCompanyProjects(user, { id: p.companyId, orgGroupId: p.company.orgGroupId }),
-    )
+    .filter((p) => canManageProjectSettings(user, p))
     .map((p) => p.id);
-  const selectableProjectIds =
-    canSoftDeletePermission
-      ? visible
-          .filter((p) => isSuperAdmin(user) || isGroupAdmin(user, p.company.orgGroupId) || isCompanyAdmin(user, p.companyId))
-          .map((p) => p.id)
-      : [];
+  const selectableProjectIds = visible.filter((p) => canManageProjectSettings(user, p)).map((p) => p.id);
 
   const boardCards: GroupedProjectCard[] = visible.map((p) => ({
     id: p.id,

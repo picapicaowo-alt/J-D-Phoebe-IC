@@ -1,4 +1,4 @@
-import type { AccessUser } from "@/lib/access";
+import { canManageProjectSettings, type AccessUser } from "@/lib/access";
 import type { PermissionKey } from "@/lib/permission-keys";
 import { prisma } from "@/lib/prisma";
 
@@ -9,6 +9,7 @@ type CompanyScope = {
 
 type ProjectScope = {
   id: string;
+  ownerId: string;
   companyId: string;
   company: { orgGroupId: string };
 };
@@ -167,6 +168,7 @@ export async function canManageCompanyMemberships(user: AccessUser, company: Com
 }
 
 export async function canManageProjectMemberships(user: AccessUser, project: ProjectScope) {
+  if (canManageProjectSettings(user, project)) return true;
   const byPermission = await getActorRoleIdsByPermission(user, ["project.member.manage", "staff.assign_project"]);
   return canManageProjectScopeWithRoleIds(
     user,

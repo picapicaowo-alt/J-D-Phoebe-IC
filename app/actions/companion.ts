@@ -9,6 +9,7 @@ import { ensureMemberOnboardingForCompany } from "@/lib/member-onboarding";
 import { invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/companion-manifest";
+import { resolveTimeZone } from "@/lib/timezone";
 
 const userInclude = {
   groupMemberships: { include: { roleDefinition: true, orgGroup: true } },
@@ -29,6 +30,7 @@ export async function updateCompanionAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim() || null;
   const targetUserId = String(formData.get("userId") ?? "").trim() || actor.id;
   const companyId = String(formData.get("companyId") ?? "").trim() || null;
+  const timezoneRaw = String(formData.get("timezone") ?? "").trim();
 
   if (targetUserId !== actor.id && !actor.isSuperAdmin) {
     throw new Error("Only a superadmin can change another user’s companion.");
@@ -50,9 +52,11 @@ export async function updateCompanionAction(formData: FormData) {
     !actor.isSuperAdmin &&
     !target.isSuperAdmin &&
     !target.companionIntroCompletedAt;
+  const requiresInitialProfileSetup = editingSelf && !target.companionIntroCompletedAt;
   let selectedCompanyId: string | null = null;
   let createdMembershipCompanyId: string | null = null;
   let selectedCompanyOnboardingExists = false;
+  let selectedTimeZone: string | null = null;
 
   if (requiresInitialCompanySelection) {
     if (!companyId) {
@@ -105,6 +109,21 @@ export async function updateCompanionAction(formData: FormData) {
     );
   }
 
+  if (requiresInitialProfileSetup) {
+    if (!target.avatarUrl) {
+      redirect("/onboarding/companion?error=avatar_required");
+    }
+    if (!timezoneRaw) {
+      redirect("/onboarding/companion?error=timezone_required");
+    }
+    selectedTimeZone = resolveTimeZone(timezoneRaw);
+    if (!selectedTimeZone) {
+      redirect("/onboarding/companion?error=timezone_invalid");
+    }
+  } else if (timezoneRaw) {
+    selectedTimeZone = resolveTimeZone(timezoneRaw);
+  }
+
   const all = getCompanionManifest();
   const pool =
     actor.isSuperAdmin && (!editingSelf || locked)
@@ -131,7 +150,12 @@ export async function updateCompanionAction(formData: FormData) {
   if (!target.companionIntroCompletedAt) {
     await prisma.user.update({
       where: { id: targetUserId },
-      data: { companionIntroCompletedAt: now },
+      data: { companionIntroCompletedAt: now, ...(selectedTimeZone ? { timezone: selectedTimeZone } : {}) },
+    });
+  } else if (selectedTimeZone) {
+    await prisma.user.update({
+      where: { id: targetUserId },
+      data: { timezone: selectedTimeZone },
     });
   }
   if (createdMembershipCompanyId) {

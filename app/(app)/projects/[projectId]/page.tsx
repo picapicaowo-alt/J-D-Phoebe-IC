@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { KnowledgeLayer, Priority, ProjectRelationType, ProjectStatus, WorkflowNodeLabel, WorkflowNodeStatus } from "@prisma/client";
+import { KnowledgeLayer, Priority, ProjectRelationType, WorkflowNodeLabel, WorkflowNodeStatus } from "@prisma/client";
 import { assignMultipleToProjectAction, removeProjectMembershipAction } from "@/app/actions/staff";
 import { softDeleteProjectAction } from "@/app/actions/trash";
 import {
@@ -9,7 +9,6 @@ import {
   removeProjectRelationAction,
   restoreProjectAction,
   updateProjectRelationNoteAction,
-  updateProjectAction,
 } from "@/app/actions/project";
 import {
   toggleProjectRelationShareAttachmentAction,
@@ -19,7 +18,17 @@ import { createKnowledgeAssetAction, deleteKnowledgeAssetAction, softDeleteKnowl
 import { addExternalResourceLinkAction, updateProjectExternalLinkAction } from "@/app/actions/attachments";
 import { softDeleteAttachmentAction } from "@/app/actions/attachment-trash";
 import { getAppSession, requireUser } from "@/lib/auth";
-import { canEditWorkflow, canManageKnowledgeAsset, canManageProject, canViewProject, projectVisibilityWhere, type AccessUser } from "@/lib/access";
+import {
+  canEditWorkflow,
+  canManageCompanyProjects,
+  canManageKnowledgeAsset,
+  canManageProject,
+  canManageProjectSettings,
+  canViewProject,
+  companyVisibilityWhere,
+  projectVisibilityWhere,
+  type AccessUser,
+} from "@/lib/access";
 import { getLocale } from "@/lib/locale";
 import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tProjectStatus, tWorkflowNodeStatus } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
@@ -31,12 +40,13 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { calendarHref } from "@/lib/calendar-nav";
-import { countdownPhrase, isOverdue, toDatetimeLocalValue } from "@/lib/deadlines";
+import { toDatetimeLocalValue } from "@/lib/deadlines";
 import { AttachmentVersionTree } from "@/components/attachment-version-tree";
 import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
 import { UserFace } from "@/components/user-face";
 import { DetailsHashOpener } from "@/components/details-hash-opener";
 import { ProjectDetailActionTabs, ProjectDetailBreadcrumbs } from "@/components/project-detail-nav";
+import { ProjectEditForm } from "@/components/project-edit-form";
 import { type ProjectTaskRow } from "@/components/project-tasks-panel";
 import {
   formatWorkflowNodeLabel,
@@ -57,17 +67,6 @@ import {
 } from "@/components/project-progress-bridge";
 import type { Locale } from "@/lib/locale";
 import { formatDateTimeRangeInTimeZone, formatInTimeZone, getZonedDaySerial, getZonedYearMonth } from "@/lib/timezone";
-
-const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
-const STATUSES: ProjectStatus[] = [
-  "PLANNING",
-  "ACTIVE",
-  "AT_RISK",
-  "ON_HOLD",
-  "COMPLETED",
-  "ARCHIVED",
-  "CANCELLED",
-];
 
 const RELATION_TYPES: ProjectRelationType[] = [
   "INDEPENDENT",
@@ -175,9 +174,27 @@ function buildProjectTaskRows(nodes: TaskNodeRow[]): ProjectTaskRow[] {
   return walk(null);
 }
 
-function daysLeftLine(deadline: Date | null, locale: Locale, timeZone: string) {
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * ONE_HOUR_MS;
+
+function timeLeftLine(deadline: Date | null, locale: Locale, timeZone: string) {
   if (!deadline) return { text: t(locale, "projDaysLeftNone"), urgent: false };
-  const todaySerial = getZonedDaySerial(new Date(), timeZone);
+  const now = new Date();
+  const diffMs = deadline.getTime() - now.getTime();
+  if (Number.isNaN(diffMs)) return { text: t(locale, "projDaysLeftNone"), urgent: false };
+  if (diffMs < 0) return { text: t(locale, "projOverdue"), urgent: true };
+  if (diffMs < ONE_DAY_MS) {
+    if (diffMs < ONE_HOUR_MS) return { text: t(locale, "projHoursLeftUnderOne"), urgent: true };
+    const hours = Math.round((diffMs / ONE_HOUR_MS) * 10) / 10;
+    const hoursText = new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US", {
+      maximumFractionDigits: 1,
+    }).format(hours);
+    return {
+      text: t(locale, "projHoursLeftCount").replace("{n}", hoursText),
+      urgent: true,
+    };
+  }
+  const todaySerial = getZonedDaySerial(now, timeZone);
   const dueSerial = getZonedDaySerial(deadline, timeZone);
   if (todaySerial == null || dueSerial == null) return { text: t(locale, "projDaysLeftNone"), urgent: false };
   const days = dueSerial - todaySerial;
@@ -431,7 +448,6 @@ export default async function ProjectDetailPage({
   const localePromise = getLocale();
   const sessionPromise = getAppSession();
   const permissionPromise = Promise.all([
-    userHasPermission(user, "project.soft_delete"),
     userHasPermission(user, "project.workflow.update"),
     userHasPermission(user, "knowledge.create"),
     userHasPermission(user, "knowledge.read"),
@@ -439,7 +455,7 @@ export default async function ProjectDetailPage({
   ]);
   const projectPromise = loadProjectCore(projectId);
   const projectCalendarEventsPromise = Promise.all([projectPromise, permissionPromise]).then(([project, permissions]) => {
-    const canReadCalendar = permissions[4];
+    const canReadCalendar = permissions[3];
     if (!project || !canReadCalendar) return [];
     return prisma.calendarEvent.findMany({
       where: { projectId: project.id },
@@ -460,7 +476,7 @@ export default async function ProjectDetailPage({
   if (!project) notFound();
   if (!canViewProject(user, project)) notFound();
 
-  const canManage = canManageProject(user, project);
+  const canManage = canManageProjectSettings(user, project);
   const canManageMembers = await canManageProjectMemberships(user, project);
   const mustIncludeUserIds = [...new Set([project.ownerId, ...project.memberships.map((m) => m.userId)])];
   const projectRelationsPromise = prisma.project.findFirstOrThrow({
@@ -475,6 +491,7 @@ export default async function ProjectDetailPage({
             select: {
               id: true,
               name: true,
+              ownerId: true,
               companyId: true,
               company: { select: { id: true, name: true, orgGroupId: true } },
             },
@@ -492,6 +509,7 @@ export default async function ProjectDetailPage({
             select: {
               id: true,
               name: true,
+              ownerId: true,
               companyId: true,
               company: { select: { id: true, name: true, orgGroupId: true } },
             },
@@ -555,19 +573,60 @@ export default async function ProjectDetailPage({
       attachment: { select: projectAttachmentSelect },
     },
   });
-  const projectDeptsPromise: Promise<{ id: string; name: string }[]> = canManage
-    ? prisma.department.findMany({
-        where: { companyId: project.companyId },
-        orderBy: { sortOrder: "asc" },
-        select: { id: true, name: true },
-      })
+  const editableCompaniesPromise: Promise<{ id: string; name: string; orgGroupId: string }[]> = canManage
+    ? prisma.company
+        .findMany({
+          where: { deletedAt: null, ...companyVisibilityWhere(user) },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, orgGroupId: true },
+        })
+        .then((companies) =>
+          companies.filter((company) => canManageCompanyProjects(user, { id: company.id, orgGroupId: company.orgGroupId })),
+        )
     : Promise.resolve([]);
-  const projectGroupListPromise: Promise<{ id: string; name: string }[]> = canManage
-    ? prisma.projectGroup.findMany({
-        where: { companyId: project.companyId },
-        orderBy: { sortOrder: "asc" },
-        select: { id: true, name: true },
-      })
+  const editableCompanyIdsPromise = editableCompaniesPromise.then((companies) => companies.map((company) => company.id));
+  const projectEditDepartmentsPromise: Promise<{ id: string; name: string; companyId: string }[]> = canManage
+    ? editableCompanyIdsPromise.then((companyIds) =>
+        prisma.department.findMany({
+          where: { companyId: { in: companyIds } },
+          orderBy: [{ companyId: "asc" }, { sortOrder: "asc" }],
+          select: { id: true, name: true, companyId: true },
+        }),
+      )
+    : Promise.resolve([]);
+  const projectEditGroupListPromise: Promise<{ id: string; name: string; companyId: string }[]> = canManage
+    ? editableCompanyIdsPromise.then((companyIds) =>
+        prisma.projectGroup.findMany({
+          where: { companyId: { in: companyIds } },
+          orderBy: [{ companyId: "asc" }, { sortOrder: "asc" }],
+          select: { id: true, name: true, companyId: true },
+        }),
+      )
+    : Promise.resolve([]);
+  const projectOwnerOptionsPromise: Promise<{ id: string; name: string; companyIds: string[] }[]> = canManage
+    ? editableCompanyIdsPromise.then((companyIds) =>
+        prisma.user.findMany({
+          where: {
+            deletedAt: null,
+            OR: [
+              { id: project.ownerId },
+              { active: true, companyMemberships: { some: { companyId: { in: companyIds } } } },
+            ],
+          },
+          orderBy: { name: "asc" },
+          select: {
+            id: true,
+            name: true,
+            companyMemberships: { select: { companyId: true } },
+          },
+        }),
+      ).then((rows) =>
+        rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          companyIds: [...new Set(row.companyMemberships.map((membership) => membership.companyId))],
+        })),
+      )
     : Promise.resolve([]);
   const staffPromise: Promise<{ id: string; name: string }[]> = canManageMembers
     ? prisma.user.findMany({
@@ -605,7 +664,7 @@ export default async function ProjectDetailPage({
       })
     : Promise.resolve([]);
   const [
-    [canSoftDeletePermission, canEditTasksPermission, canEditKnowledge, canReadKnowledge, canReadCalendar],
+    [canEditTasksPermission, canEditKnowledge, canReadKnowledge, canReadCalendar],
     locale,
     session,
     projectCalendarEvents,
@@ -614,8 +673,10 @@ export default async function ProjectDetailPage({
     ownKnowledge,
     sharedKnowledgeInbound,
     sharedAttachmentInbound,
-    projectDepts,
-    projectGroupList,
+    editableCompanies,
+    projectEditDepartments,
+    projectEditGroupList,
+    projectOwnerOptions,
     staff,
     projectRoles,
     relationTargetProjects,
@@ -629,18 +690,16 @@ export default async function ProjectDetailPage({
     ownKnowledgePromise,
     sharedKnowledgeInboundPromise,
     sharedAttachmentInboundPromise,
-    projectDeptsPromise,
-    projectGroupListPromise,
+    editableCompaniesPromise,
+    projectEditDepartmentsPromise,
+    projectEditGroupListPromise,
+    projectOwnerOptionsPromise,
     staffPromise,
     projectRolesPromise,
     relationTargetProjectsPromise,
   ]);
 
-  const canSoftDeleteProject =
-    canSoftDeletePermission &&
-    (user.isSuperAdmin ||
-      user.groupMemberships.some((m) => m.orgGroupId === project.company.orgGroupId && m.roleDefinition.key === "GROUP_ADMIN") ||
-      user.companyMemberships.some((m) => m.companyId === project.companyId && m.roleDefinition.key === "COMPANY_ADMIN"));
+  const canSoftDeleteProject = canManageProjectSettings(user, project);
   const undoAvailable = session.taskUndo?.projectId === project.id;
   const canMemberManage = canManageMembers;
   const canEditTasks =
@@ -658,7 +717,7 @@ export default async function ProjectDetailPage({
   const labelMemberOptions = staff.length ? staff : projectMemberOptions;
   const focusedTask = findTaskById(taskRows, String(sp.task ?? "").trim() || null);
   const currentSection = String(sp.section ?? "").trim() || null;
-  const daysLeft = daysLeftLine(project.deadline, locale, user.timezone);
+  const timeLeft = timeLeftLine(project.deadline, locale, user.timezone);
   const priorityClass = priorityTone(project.priority);
   const projectDeadlineText = project.deadline
     ? formatInTimeZone(project.deadline, {
@@ -722,10 +781,7 @@ export default async function ProjectDetailPage({
           </p>
           {project.deadline ? (
             <p className="text-xs text-[hsl(var(--muted))]">
-              {projectDeadlineText} · {countdownPhrase(project.deadline, new Date(), user.timezone)}
-              {isOverdue(project.deadline, new Date(), user.timezone) && project.status !== "COMPLETED"
-                ? ` · ${t(locale, "projOverdue")}`
-                : ""}
+              {projectDeadlineText} · {timeLeft.text}
             </p>
           ) : null}
         </div>
@@ -777,10 +833,10 @@ export default async function ProjectDetailPage({
               <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projMetricDaysLeft")}</p>
               <p
                 className={`text-sm font-semibold tabular-nums ${
-                  daysLeft.urgent ? "text-orange-600 dark:text-orange-400" : "text-[hsl(var(--foreground))]"
+                  timeLeft.urgent ? "text-orange-600 dark:text-orange-400" : "text-[hsl(var(--foreground))]"
                 }`}
               >
-                {daysLeft.text}
+                {timeLeft.text}
               </p>
             </div>
           </div>
@@ -974,7 +1030,8 @@ export default async function ProjectDetailPage({
               {projectRelations.outgoingRelations.map((rel) => {
                 const sharedKIds = new Set(rel.sharedKnowledge.map((s) => s.knowledgeAsset.id));
                 const sharedAIds = new Set(rel.sharedAttachments.map((s) => s.attachment.id));
-                const canRelManage = canManageProject(user, project) || canManageProject(user, rel.toProject);
+                const canRelManage =
+                  canManageProjectSettings(user, project) || canManageProjectSettings(user, rel.toProject);
                 return (
                   <li key={rel.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
                     <div className="text-base font-medium">{tProjectRelationType(locale, rel.relationType)}</div>
@@ -1051,7 +1108,8 @@ export default async function ProjectDetailPage({
               {projectRelations.incomingRelations.map((rel) => {
                 const sharedKIds = new Set(rel.sharedKnowledge.map((s) => s.knowledgeAsset.id));
                 const sharedAIds = new Set(rel.sharedAttachments.map((s) => s.attachment.id));
-                const canRelManage = canManageProject(user, rel.fromProject) || canManageProject(user, project);
+                const canRelManage =
+                  canManageProjectSettings(user, rel.fromProject) || canManageProjectSettings(user, project);
                 return (
                   <li key={rel.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
                     <div className="text-base font-medium">{tProjectRelationType(locale, rel.relationType)}</div>
@@ -1709,81 +1767,39 @@ export default async function ProjectDetailPage({
             {t(locale, "projEditProject")} · {t(locale, "projDetailsSummary")}
           </summary>
           <div className="space-y-4 border-t border-[hsl(var(--border))] p-4">
-            <form action={updateProjectAction} className="space-y-3">
-              <input type="hidden" name="projectId" value={project.id} />
-              <div className="space-y-1">
-                <label className="text-sm font-medium">{t(locale, "commonName")}</label>
-                <Input name="name" defaultValue={project.name} required />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">{t(locale, "commonDescription")}</label>
-                <textarea
-                  name="description"
-                  rows={3}
-                  defaultValue={project.description ?? ""}
-                  className="w-full rounded-md border border-[hsl(var(--border))] px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">{t(locale, "commonOwner")}</label>
-                <Select name="ownerId" defaultValue={project.ownerId}>
-                  {staff.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1 md:col-span-2">
-                  <label className="text-sm font-medium">{t(locale, "projFieldDepartment")}</label>
-                  <Select name="departmentId" defaultValue={project.departmentId ?? ""}>
-                    <option value="">{t(locale, "projDeptGroupNone")}</option>
-                    {projectDepts.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <div className="space-y-1 md:col-span-2">
-                  <label className="text-sm font-medium">{t(locale, "projFieldProjectGroup")}</label>
-                  <Select name="projectGroupId" defaultValue={project.projectGroupId ?? ""}>
-                    <option value="">{t(locale, "projDeptGroupNone")}</option>
-                    {projectGroupList.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">{t(locale, "commonPriority")}</label>
-                  <Select name="priority" defaultValue={project.priority}>
-                    {PRIORITIES.map((p) => (
-                      <option key={p} value={p}>
-                        {tPriority(locale, p)}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">{t(locale, "commonStatus")}</label>
-                  <Select name="status" defaultValue={project.status}>
-                    {STATUSES.map((s) => (
-                      <option key={s} value={s}>
-                        {tProjectStatus(locale, s)}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">{t(locale, "projProjectDeadlineLabel")}</label>
-                <Input name="deadline" type="datetime-local" defaultValue={toDatetimeLocalValue(project.deadline, user.timezone)} />
-              </div>
-              <FormSubmitButton type="submit">{t(locale, "btnSave")}</FormSubmitButton>
-            </form>
+            <ProjectEditForm
+              locale={locale}
+              project={{
+                id: project.id,
+                companyId: project.companyId,
+                name: project.name,
+                description: project.description,
+                ownerId: project.ownerId,
+                departmentId: project.departmentId,
+                projectGroupId: project.projectGroupId,
+                priority: project.priority,
+                status: project.status,
+                deadlineValue: toDatetimeLocalValue(project.deadline, user.timezone),
+              }}
+              companies={editableCompanies.map((company) => ({ id: company.id, name: company.name }))}
+              departments={projectEditDepartments}
+              projectGroups={projectEditGroupList}
+              staff={projectOwnerOptions}
+              labels={{
+                company: t(locale, "commonCompany"),
+                department: t(locale, "projFieldDepartment"),
+                projectGroup: t(locale, "projFieldProjectGroup"),
+                none: t(locale, "projDeptGroupNone"),
+                owner: t(locale, "commonOwner"),
+                noStaff: t(locale, "staffEmpty"),
+                name: t(locale, "commonName"),
+                description: t(locale, "commonDescription"),
+                deadline: t(locale, "projProjectDeadlineLabel"),
+                priority: t(locale, "commonPriority"),
+                status: t(locale, "commonStatus"),
+                submit: t(locale, "btnSave"),
+              }}
+            />
             <>
                 <div className="flex gap-2 border-t pt-4">
                   {project.status !== "ARCHIVED" ? (

@@ -6,7 +6,7 @@ import path from "path";
 import { revalidatePath } from "next/cache";
 import { AttachmentResourceKind } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
-import { canEditWorkflow, canManageProject, canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { canEditWorkflow, canManageProjectSettings, canViewProject, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { resolveBlobReadWriteToken } from "@/lib/blob";
 import { assertPermission, userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -299,7 +299,6 @@ export async function addExternalResourceLinkAction(formData: FormData) {
 
 export async function updateProjectExternalLinkAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
-  await assertPermission(user, "project.update");
   const id = String(formData.get("id") ?? "").trim();
   if (!id) throw new Error("Missing id");
   const url = mustHttpUrl(formData, "externalUrl");
@@ -311,7 +310,7 @@ export async function updateProjectExternalLinkAction(formData: FormData) {
     include: { project: { include: { company: true } } },
   });
   if (!att?.projectId || !att.project) throw new Error("Not found");
-  if (!canManageProject(user, att.project)) throw new Error("Forbidden");
+  if (!canManageProjectSettings(user, att.project)) throw new Error("Forbidden");
   if (att.resourceKind !== AttachmentResourceKind.EXTERNAL_URL) throw new Error("Only external links can be edited here.");
 
   await prisma.attachment.update({

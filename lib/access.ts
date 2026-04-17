@@ -93,6 +93,24 @@ export function canManageProject(
   return false;
 }
 
+/**
+ * Project settings / structure edits (rename, move company, archive, relations, trash).
+ * Keep this tighter than general project visibility: admins may edit all, otherwise only
+ * the project owner or a PM on that specific project may do so.
+ */
+export function canManageProjectSettings(
+  user: AccessUser,
+  project: { id: string; ownerId: string; companyId: string; company: { orgGroupId: string } },
+) {
+  if (user.isSuperAdmin) return true;
+  if (isCompanyAdmin(user, project.companyId)) return true;
+  if (isGroupAdmin(user, project.company.orgGroupId)) return true;
+  if (project.ownerId === user.id) return true;
+  return user.projectMemberships.some(
+    (membership) => membership.projectId === project.id && membership.roleDefinition.key === "PROJECT_MANAGER",
+  );
+}
+
 /** Drag/edit workflow graph (positions, edges) — not the same as org-wide project settings. */
 export function canEditWorkflow(
   user: AccessUser,

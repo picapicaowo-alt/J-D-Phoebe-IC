@@ -15,7 +15,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { getSupportedTimeZones } from "@/lib/timezone";
+import { formatTimeZoneInputValue, getTimeZoneInputOptions } from "@/lib/timezone";
 
 export default async function ProfileSettingsPage({
   searchParams,
@@ -32,7 +32,7 @@ export default async function ProfileSettingsPage({
     include: { companionProfile: true },
   });
   if (!user) redirect("/login");
-  const timeZones = getSupportedTimeZones();
+  const timeZoneOptions = getTimeZoneInputOptions();
 
   const companion = user.companionProfile;
   const asset = companion ? getCompanionManifest().find((e) => e.species === companion.species) : null;
@@ -108,13 +108,13 @@ export default async function ProfileSettingsPage({
               id="profile-timezone"
               name="timezone"
               list="profile-timezone-options"
-              defaultValue={user.timezone}
+              defaultValue={formatTimeZoneInputValue(user.timezone)}
               className="text-sm"
-              placeholder="Asia/Shanghai"
+              placeholder="Beijing (Asia/Shanghai, UTC+08:00)"
               required
             />
             <datalist id="profile-timezone-options">
-              {timeZones.map((timeZone) => (
+              {timeZoneOptions.map((timeZone) => (
                 <option key={timeZone} value={timeZone} />
               ))}
             </datalist>

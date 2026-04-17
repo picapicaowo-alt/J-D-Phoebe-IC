@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { canManageCompanyProjects, canManageProject, type AccessUser } from "@/lib/access";
+import { canManageCompanyProjects, canManageProjectSettings, type AccessUser } from "@/lib/access";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
@@ -68,7 +68,6 @@ export async function deleteProjectGroupAction(formData: FormData) {
 
 export async function setProjectGroupMembershipAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
-  await assertPermission(user, "project.update");
   const projectId = req(formData, "projectId");
   const projectGroupIdRaw = String(formData.get("projectGroupId") ?? "").trim();
   const projectGroupId = projectGroupIdRaw || null;
@@ -78,7 +77,7 @@ export async function setProjectGroupMembershipAction(formData: FormData) {
     include: { company: true },
   });
   if (!project) throw new Error("Project not found");
-  if (!canManageProject(user, project) && !canManageCompanyProjects(user, { id: project.companyId, orgGroupId: project.company.orgGroupId })) {
+  if (!canManageProjectSettings(user, project)) {
     throw new Error("Forbidden");
   }
 

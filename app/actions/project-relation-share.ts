@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { canManageProject, type AccessUser } from "@/lib/access";
+import { canManageProjectSettings, type AccessUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 
 function req(formData: FormData, key: string) {
@@ -19,7 +19,7 @@ async function loadRelationForShare(relationId: string) {
 }
 
 function canManageEitherEnd(user: AccessUser, rel: NonNullable<Awaited<ReturnType<typeof loadRelationForShare>>>) {
-  return canManageProject(user, rel.fromProject) || canManageProject(user, rel.toProject);
+  return canManageProjectSettings(user, rel.fromProject) || canManageProjectSettings(user, rel.toProject);
 }
 
 export async function toggleProjectRelationShareKnowledgeAction(formData: FormData) {
