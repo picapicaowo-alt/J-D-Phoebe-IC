@@ -45,48 +45,62 @@ export async function updateCompanionAction(formData: FormData) {
   if (locked && !actor.isSuperAdmin) {
     throw new Error("Companion choice is permanent for your account. Contact a superadmin to change it.");
   }
-  const requiresInitialCompany =
+  const requiresInitialCompanySelection =
     editingSelf &&
     !actor.isSuperAdmin &&
     !target.isSuperAdmin &&
-    !target.companionIntroCompletedAt &&
-    target.companyMemberships.length === 0;
-  let assignedCompanyId: string | null = null;
+    !target.companionIntroCompletedAt;
+  let selectedCompanyId: string | null = null;
+  let createdMembershipCompanyId: string | null = null;
+  let selectedCompanyOnboardingExists = false;
 
-  if (requiresInitialCompany) {
+  if (requiresInitialCompanySelection) {
     if (!companyId) {
       redirect("/onboarding/companion?error=company_required");
     }
-    const [selectedCompany, role] = await Promise.all([
-      prisma.company.findFirst({
-        where: {
-          id: companyId,
-          deletedAt: null,
-          status: CompanyStatus.ACTIVE,
-          orgGroup: { deletedAt: null, status: OrgGroupStatus.ACTIVE },
-        },
-      }),
-      prisma.roleDefinition.findUnique({
-        where: { key: DEFAULT_REGISTER_ROLE_KEY },
-      }),
-    ]);
-    if (!selectedCompany || !role) {
+    const hasExistingMemberships = target.companyMemberships.length > 0;
+    if (hasExistingMemberships && !target.companyMemberships.some((membership) => membership.companyId === companyId)) {
       redirect("/onboarding/companion?error=company_unavailable");
     }
 
-    await prisma.companyMembership.upsert({
-      where: { userId_companyId: { userId: targetUserId, companyId: selectedCompany.id } },
-      create: {
-        userId: targetUserId,
-        companyId: selectedCompany.id,
-        roleDefinitionId: role.id,
+    const selectedCompany = await prisma.company.findFirst({
+      where: {
+        id: companyId,
+        deletedAt: null,
+        status: CompanyStatus.ACTIVE,
+        orgGroup: { deletedAt: null, status: OrgGroupStatus.ACTIVE },
       },
-      update: {
-        roleDefinitionId: role.id,
-      },
+      select: { id: true },
     });
-    await ensureMemberOnboardingForCompany(targetUserId, selectedCompany.id);
-    assignedCompanyId = selectedCompany.id;
+    if (!selectedCompany) {
+      redirect("/onboarding/companion?error=company_unavailable");
+    }
+
+    if (!hasExistingMemberships) {
+      const role = await prisma.roleDefinition.findUnique({
+        where: { key: DEFAULT_REGISTER_ROLE_KEY },
+        select: { id: true },
+      });
+      if (!role) {
+        redirect("/onboarding/companion?error=company_unavailable");
+      }
+
+      await prisma.companyMembership.upsert({
+        where: { userId_companyId: { userId: targetUserId, companyId: selectedCompany.id } },
+        create: {
+          userId: targetUserId,
+          companyId: selectedCompany.id,
+          roleDefinitionId: role.id,
+        },
+        update: {
+          roleDefinitionId: role.id,
+        },
+      });
+      createdMembershipCompanyId = selectedCompany.id;
+    }
+
+    selectedCompanyId = selectedCompany.id;
+    selectedCompanyOnboardingExists = Boolean(await ensureMemberOnboardingForCompany(targetUserId, selectedCompany.id));
   }
 
   const all = getCompanionManifest();
@@ -118,7 +132,7 @@ export async function updateCompanionAction(formData: FormData) {
       data: { companionIntroCompletedAt: now },
     });
   }
-  if (assignedCompanyId) {
+  if (createdMembershipCompanyId) {
     invalidatePermissionCache(targetUserId);
   }
   invalidateAccessUserCache(targetUserId, target.clerkId);
@@ -129,9 +143,14 @@ export async function updateCompanionAction(formData: FormData) {
   revalidatePath(`/staff/${targetUserId}`);
   revalidatePath("/onboarding/companion");
   revalidatePath("/settings/profile");
-  if (assignedCompanyId) {
-    revalidatePath(`/companies/${assignedCompanyId}`);
+  if (selectedCompanyId) {
+    revalidatePath(`/companies/${selectedCompanyId}`);
   }
   const next = String(formData.get("next") ?? "").trim();
-  if (next === "home") redirect("/home");
+  if (next === "home") {
+    if (selectedCompanyId && selectedCompanyOnboardingExists) {
+      redirect(`/onboarding/member?companyId=${selectedCompanyId}`);
+    }
+    redirect("/home");
+  }
 }

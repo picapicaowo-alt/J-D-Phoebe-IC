@@ -24,13 +24,15 @@ export default async function CompanionOnboardingPage({
   const manifest = getCompanionManifestForUser(user);
   const sp = (await searchParams) ?? {};
   const error = String(sp.error ?? "").trim();
-  const needsCompanySelection = !user.isSuperAdmin && user.companyMemberships.length === 0;
+  const needsCompanySelection = !user.isSuperAdmin;
+  const companyIds = [...new Set(user.companyMemberships.map((membership) => membership.companyId))];
   const companies = needsCompanySelection
     ? await prisma.company.findMany({
         where: {
           deletedAt: null,
           status: CompanyStatus.ACTIVE,
           orgGroup: { deletedAt: null, status: OrgGroupStatus.ACTIVE },
+          ...(companyIds.length ? { id: { in: companyIds } } : {}),
         },
         orderBy: { name: "asc" },
         select: { id: true, name: true },
