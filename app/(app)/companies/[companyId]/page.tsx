@@ -10,7 +10,7 @@ import { createDepartmentAction, deleteDepartmentAction, updateDepartmentAction 
 import { removeCompanyLogoAction, uploadCompanyLogoAction } from "@/app/actions/profile-media";
 import { CompanyOnboardingMaterialsManager } from "@/components/company-onboarding-materials-manager";
 import { requireUser } from "@/lib/auth";
-import { resolveCompanyOnboardingMaterials } from "@/lib/company-onboarding-materials";
+import { isMissingCompanyOnboardingMaterialsTableError, resolveCompanyOnboardingMaterials } from "@/lib/company-onboarding-materials";
 import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -38,25 +38,41 @@ export default async function CompanyDetailPage({
   const sp = (await searchParams) ?? {};
   const uploadError = Array.isArray(sp.uploadError) ? sp.uploadError[0] : sp.uploadError;
 
-  const company = await prisma.company.findFirst({
-    where: { id: companyId, deletedAt: null },
-    include: {
-      orgGroup: true,
-      projects: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" }, take: 30 },
-      memberships: {
-        where: { user: { deletedAt: null, active: true } },
-        include: { user: true, roleDefinition: true, department: true },
-      },
-      departments: { orderBy: { sortOrder: "asc" } },
-      onboardingMaterials: {
-        orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
-        include: {
-          packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
-          videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+  const company = await prisma.company
+    .findFirst({
+      where: { id: companyId, deletedAt: null },
+      include: {
+        orgGroup: true,
+        projects: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" }, take: 30 },
+        memberships: {
+          where: { user: { deletedAt: null, active: true } },
+          include: { user: true, roleDefinition: true, department: true },
+        },
+        departments: { orderBy: { sortOrder: "asc" } },
+        onboardingMaterials: {
+          orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+          include: {
+            packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
+            videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+          },
         },
       },
-    },
-  });
+    })
+    .catch((error) => {
+      if (!isMissingCompanyOnboardingMaterialsTableError(error)) throw error;
+      return prisma.company.findFirst({
+        where: { id: companyId, deletedAt: null },
+        include: {
+          orgGroup: true,
+          projects: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" }, take: 30 },
+          memberships: {
+            where: { user: { deletedAt: null, active: true } },
+            include: { user: true, roleDefinition: true, department: true },
+          },
+          departments: { orderBy: { sortOrder: "asc" } },
+        },
+      });
+    });
   if (!company) notFound();
 
   const knowledgeAssets = await prisma.knowledgeAsset.findMany({

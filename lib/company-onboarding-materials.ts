@@ -1,4 +1,4 @@
-import type { Attachment, Company, CompanyOnboardingMaterial } from "@prisma/client";
+import { Prisma, type Attachment, type Company, type CompanyOnboardingMaterial } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const DEFAULT_COMPANY_ONBOARDING_VERSION = "v1";
@@ -183,6 +183,14 @@ export function deserializeResolvedCompanyOnboardingMaterial(
 
 export function isLegacyCompanyOnboardingMaterialId(materialId: string) {
   return materialId.startsWith(LEGACY_COMPANY_ONBOARDING_MATERIAL_ID_PREFIX);
+}
+
+export function isMissingCompanyOnboardingMaterialsTableError(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2021" &&
+    String(error.meta?.table ?? "").includes("CompanyOnboardingMaterial")
+  );
 }
 
 export function resolveCompanyOnboardingMaterials(

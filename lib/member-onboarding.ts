@@ -3,6 +3,7 @@ import {
   DEFAULT_COMPANY_ONBOARDING_DEADLINE_DAYS,
   DEFAULT_COMPANY_ONBOARDING_VERSION,
   getCurrentCompanyOnboardingMaterial,
+  isMissingCompanyOnboardingMaterialsTableError,
 } from "@/lib/company-onboarding-materials";
 
 const DEFAULT_ITEM_KEYS = ["OB_READ_PACKAGE", "OB_ACK_POLICIES", "OB_SUPERVISOR_MEET"] as const;
@@ -20,14 +21,21 @@ export async function ensureMemberOnboardingForCompany(
   opts?: { createPlaceholder?: boolean },
 ) {
   const createPlaceholder = opts?.createPlaceholder ?? false;
-  const company = await prisma.company.findFirst({
-    where: { id: companyId, deletedAt: null },
-    include: {
-      onboardingMaterials: {
-        orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+  const company = await prisma.company
+    .findFirst({
+      where: { id: companyId, deletedAt: null },
+      include: {
+        onboardingMaterials: {
+          orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+        },
       },
-    },
-  });
+    })
+    .catch((error) => {
+      if (!isMissingCompanyOnboardingMaterialsTableError(error)) throw error;
+      return prisma.company.findFirst({
+        where: { id: companyId, deletedAt: null },
+      });
+    });
   if (!company) return null;
 
   const membership = await prisma.companyMembership.findUnique({

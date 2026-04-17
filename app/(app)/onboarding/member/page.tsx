@@ -13,6 +13,7 @@ import { acknowledgeMemberOnboardingMaterialsAction } from "@/app/actions/lifecy
 import { OnboardingVideoPanel } from "@/components/onboarding-video-panel";
 import {
   DEFAULT_COMPANY_ONBOARDING_VERSION,
+  isMissingCompanyOnboardingMaterialsTableError,
   resolveCompanyOnboardingMaterials,
   resolveMaterialDescription,
   resolveMaterialDisplayName,
@@ -33,30 +34,48 @@ export default async function MemberOnboardingPage({
   const { ensureMemberOnboardingForCompany } = await import("@/lib/member-onboarding");
   await ensureMemberOnboardingForCompany(user.id, companyId, { createPlaceholder: true });
 
-  const ob = await prisma.memberOnboarding.findUnique({
-    where: { userId_companyId: { userId: user.id, companyId } },
-    include: {
-      checklistItems: { orderBy: { sortOrder: "asc" } },
-      assignedMaterial: {
-        include: {
-          packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
-          videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+  const ob = await prisma.memberOnboarding
+    .findUnique({
+      where: { userId_companyId: { userId: user.id, companyId } },
+      include: {
+        checklistItems: { orderBy: { sortOrder: "asc" } },
+        assignedMaterial: {
+          include: {
+            packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
+            videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+          },
         },
+        company: {
+          include: {
+            onboardingMaterials: {
+              orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+              include: {
+                packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
+                videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+              },
+            },
+          },
+        },
+        liaison: true,
       },
-      company: {
+    })
+    .catch((error) => {
+      if (!isMissingCompanyOnboardingMaterialsTableError(error)) throw error;
+      return prisma.memberOnboarding.findUnique({
+        where: { userId_companyId: { userId: user.id, companyId } },
         include: {
-          onboardingMaterials: {
-            orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+          checklistItems: { orderBy: { sortOrder: "asc" } },
+          assignedMaterial: {
             include: {
               packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
               videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
             },
           },
+          company: true,
+          liaison: true,
         },
-      },
-      liaison: true,
-    },
-  });
+      });
+    });
   if (!ob) redirect("/onboarding");
 
   const locale = await getLocale();

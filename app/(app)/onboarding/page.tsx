@@ -4,7 +4,7 @@ import { CompanyOnboardingMaterialsManager } from "@/components/company-onboardi
 import { Card, CardTitle } from "@/components/ui/card";
 import { isSuperAdmin, type AccessUser } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
-import { resolveCompanyOnboardingMaterials } from "@/lib/company-onboarding-materials";
+import { isMissingCompanyOnboardingMaterialsTableError, resolveCompanyOnboardingMaterials } from "@/lib/company-onboarding-materials";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
@@ -40,37 +40,55 @@ export default async function OnboardingHubPage() {
         ],
       };
 
-  const [rows, managedCompanies] = await Promise.all([
-    prisma.memberOnboarding.findMany({
-      where: { userId: user.id },
-      include: { company: true },
-      orderBy: [{ completedAt: "asc" }, { deadlineAt: "asc" }],
-    }),
-    canManageCompanyOnboarding
-      ? prisma.company.findMany({
-          where: managedCompanyWhere,
-          orderBy: { name: "asc" },
-          include: {
-            onboardingMaterials: {
-              orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
-              include: {
-                packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
-                videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
-              },
-            },
-            memberOnboardings: {
-              where: { user: { deletedAt: null } },
-              include: {
-                user: {
-                  select: { id: true, name: true, email: true },
-                },
-              },
-              orderBy: [{ completedAt: "asc" }, { deadlineAt: "asc" }],
+  const rowsPromise = prisma.memberOnboarding.findMany({
+    where: { userId: user.id },
+    include: { company: true },
+    orderBy: [{ completedAt: "asc" }, { deadlineAt: "asc" }],
+  });
+  const managedCompaniesPromise = canManageCompanyOnboarding
+    ? prisma.company.findMany({
+        where: managedCompanyWhere,
+        orderBy: { name: "asc" },
+        include: {
+          onboardingMaterials: {
+            orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+            include: {
+              packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
+              videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
             },
           },
-        })
-      : Promise.resolve([]),
-  ]);
+          memberOnboardings: {
+            where: { user: { deletedAt: null } },
+            include: {
+              user: {
+                select: { id: true, name: true, email: true },
+              },
+            },
+            orderBy: [{ completedAt: "asc" }, { deadlineAt: "asc" }],
+          },
+        },
+      })
+    : Promise.resolve([]);
+
+  const rows = await rowsPromise;
+  let managedCompanies = await managedCompaniesPromise.catch(async (error) => {
+    if (!isMissingCompanyOnboardingMaterialsTableError(error)) throw error;
+    return prisma.company.findMany({
+      where: managedCompanyWhere,
+      orderBy: { name: "asc" },
+      include: {
+        memberOnboardings: {
+          where: { user: { deletedAt: null } },
+          include: {
+            user: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+          orderBy: [{ completedAt: "asc" }, { deadlineAt: "asc" }],
+        },
+      },
+    });
+  });
 
   return (
     <div className="mx-auto max-w-container space-y-6">

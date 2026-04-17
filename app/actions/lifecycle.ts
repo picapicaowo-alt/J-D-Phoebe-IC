@@ -14,7 +14,7 @@ import {
   getDefaultCalendarLabelId,
   normalizeCalendarLabelColor,
 } from "@/lib/calendar-labels";
-import { getCurrentCompanyOnboardingMaterial } from "@/lib/company-onboarding-materials";
+import { getCurrentCompanyOnboardingMaterial, isMissingCompanyOnboardingMaterialsTableError } from "@/lib/company-onboarding-materials";
 import { canManageCompanyMemberships } from "@/lib/scoped-role-access";
 import { formatInTimeZone, normalizeTimeZone, parseDatetimeLocalInTimeZone } from "@/lib/timezone";
 
@@ -96,19 +96,30 @@ async function notifyCalendarInvitees(
 export async function acknowledgeMemberOnboardingMaterialsAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   const onboardingId = must(formData, "onboardingId");
-  const ob = await prisma.memberOnboarding.findFirst({
-    where: { id: onboardingId, userId: user.id },
-    include: {
-      assignedMaterial: true,
-      company: {
-        include: {
-          onboardingMaterials: {
-            orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+  const ob = await prisma.memberOnboarding
+    .findFirst({
+      where: { id: onboardingId, userId: user.id },
+      include: {
+        assignedMaterial: true,
+        company: {
+          include: {
+            onboardingMaterials: {
+              orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+            },
           },
         },
       },
-    },
-  });
+    })
+    .catch((error) => {
+      if (!isMissingCompanyOnboardingMaterialsTableError(error)) throw error;
+      return prisma.memberOnboarding.findFirst({
+        where: { id: onboardingId, userId: user.id },
+        include: {
+          assignedMaterial: true,
+          company: true,
+        },
+      });
+    });
   if (!ob) throw new Error("Forbidden");
   const fallbackMaterial = !ob.packageUrl.trim() ? getCurrentCompanyOnboardingMaterial(ob.company) : null;
   const packageUrl = ob.packageUrl.trim() || fallbackMaterial?.packageUrl?.trim() || "";
@@ -280,19 +291,30 @@ export async function skipMemberOnboardingAction(formData: FormData) {
   const companyIdRaw = String(formData.get("companyId") ?? "").trim();
 
   let ob = onboardingIdRaw
-    ? await prisma.memberOnboarding.findFirst({
-        where: { id: onboardingIdRaw },
-        include: {
-          assignedMaterial: true,
-          company: {
-            include: {
-              onboardingMaterials: {
-                orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+    ? await prisma.memberOnboarding
+        .findFirst({
+          where: { id: onboardingIdRaw },
+          include: {
+            assignedMaterial: true,
+            company: {
+              include: {
+                onboardingMaterials: {
+                  orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+                },
               },
             },
           },
-        },
-      })
+        })
+        .catch((error) => {
+          if (!isMissingCompanyOnboardingMaterialsTableError(error)) throw error;
+          return prisma.memberOnboarding.findFirst({
+            where: { id: onboardingIdRaw },
+            include: {
+              assignedMaterial: true,
+              company: true,
+            },
+          });
+        })
     : null;
 
   if (!ob && userIdRaw && companyIdRaw) {
@@ -304,19 +326,30 @@ export async function skipMemberOnboardingAction(formData: FormData) {
     if (!created) {
       return { ok: false, code: "not_found" } satisfies SkipMemberOnboardingActionResult;
     }
-    ob = await prisma.memberOnboarding.findFirst({
-      where: { id: created.id },
-      include: {
-        assignedMaterial: true,
-        company: {
-          include: {
-            onboardingMaterials: {
-              orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+    ob = await prisma.memberOnboarding
+      .findFirst({
+        where: { id: created.id },
+        include: {
+          assignedMaterial: true,
+          company: {
+            include: {
+              onboardingMaterials: {
+                orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+              },
             },
           },
         },
-      },
-    });
+      })
+      .catch((error) => {
+        if (!isMissingCompanyOnboardingMaterialsTableError(error)) throw error;
+        return prisma.memberOnboarding.findFirst({
+          where: { id: created.id },
+          include: {
+            assignedMaterial: true,
+            company: true,
+          },
+        });
+      });
   }
 
   if (!ob) {
