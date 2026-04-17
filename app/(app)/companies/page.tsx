@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { canCreateProjectInCompanyWithRoleIds, getActorRoleIdsByPermission } from "@/lib/scoped-role-access";
 import { Button } from "@/components/ui/button";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,7 @@ export default async function CompaniesPage() {
 
   const canCreate =
     (await userHasPermission(user, "company.create")) && (isSuperAdmin(user) || isGroupAdmin(user, group.id));
+  const projectCreateRoleIds = (await getActorRoleIdsByPermission(user, ["project.create"])).get("project.create") ?? new Set();
 
   const rows = companies.map((c) => ({
     id: c.id,
@@ -48,6 +50,7 @@ export default async function CompaniesPage() {
     projects: c._count.projects,
     members: c._count.memberships,
     activeProjects: c.projects,
+    canCreateProject: canCreateProjectInCompanyWithRoleIds(user, { id: c.id, orgGroupId: c.orgGroupId }, projectCreateRoleIds),
   }));
 
   return (

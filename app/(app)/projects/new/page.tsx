@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { canManageCompanyProjects, type AccessUser } from "@/lib/access";
+import type { AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { canCreateProjectInCompanyWithRoleIds, getActorRoleIdsByPermission } from "@/lib/scoped-role-access";
 import { Card, CardTitle } from "@/components/ui/card";
 import { ProjectCreateForm } from "@/components/project-create-form";
 import { getLocale } from "@/lib/locale";
@@ -19,7 +20,10 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
     where: { deletedAt: null },
     orderBy: { name: "asc" },
   });
-  const manageable = companies.filter((c) => canManageCompanyProjects(user, { id: c.id, orgGroupId: c.orgGroupId }));
+  const projectCreateRoleIds = (await getActorRoleIdsByPermission(user, ["project.create"])).get("project.create") ?? new Set();
+  const manageable = companies.filter((c) =>
+    canCreateProjectInCompanyWithRoleIds(user, { id: c.id, orgGroupId: c.orgGroupId }, projectCreateRoleIds),
+  );
   if (!manageable.length) {
     return <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "projCreateNoPermission")}</p>;
   }

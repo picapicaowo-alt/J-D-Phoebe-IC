@@ -20,6 +20,7 @@ export type CompanyRow = {
   projects: number;
   members: number;
   activeProjects: { id: string; name: string; status: ProjectStatus; progressPercent: number }[];
+  canCreateProject: boolean;
 };
 
 const gradients = [
@@ -142,11 +143,13 @@ function CompanyPreviewCard({ c, index, locale }: { c: CompanyRow; index: number
           <div className="px-5 py-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{t(locale, "companyPreviewActiveProjects")}</h3>
-              <Link href={`/projects/new?companyId=${c.id}`} onClick={() => dialogRef.current?.close()} prefetch={false}>
-                <Button type="button" className="h-8 rounded-lg px-3 text-xs">
-                  + {t(locale, "companyNewProjectHere")}
-                </Button>
-              </Link>
+              {c.canCreateProject ? (
+                <Link href={`/projects/new?companyId=${c.id}`} onClick={() => dialogRef.current?.close()} prefetch={false}>
+                  <Button type="button" className="h-8 rounded-lg px-3 text-xs">
+                    + {t(locale, "companyNewProjectHere")}
+                  </Button>
+                </Link>
+              ) : null}
             </div>
             <ul className="space-y-3">
               {c.activeProjects.length ? (

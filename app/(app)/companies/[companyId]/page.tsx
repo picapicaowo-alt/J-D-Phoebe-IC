@@ -14,6 +14,7 @@ import { resolveCompanyOnboardingMaterials } from "@/lib/company-onboarding-mate
 import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { canCreateProjectInCompany } from "@/lib/scoped-role-access";
 import { Button } from "@/components/ui/button";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -60,6 +61,7 @@ export default async function CompanyDetailPage({
 
   const canManage =
     isSuperAdmin(user) || isGroupAdmin(user, company.orgGroupId) || isCompanyAdmin(user, companyId);
+  const canCreateProject = await canCreateProjectInCompany(user, { id: company.id, orgGroupId: company.orgGroupId });
 
   const canSoftDeleteCompany =
     (await userHasPermission(user, "company.soft_delete")) &&
@@ -384,7 +386,7 @@ export default async function CompanyDetailPage({
             <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "companyNoProjectsYet")}</p>
           ) : null}
         </div>
-        {canManage ? (
+        {canCreateProject ? (
           <Link href={`/projects/new?companyId=${company.id}`}>
             <Button type="button" variant="secondary">
               {t(locale, "companyNewProjectHere")}

@@ -5,9 +5,10 @@ import { redirect } from "next/navigation";
 import { Priority, ProjectRelationType, ProjectStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
-import { canManageCompanyProjects, canManageProject, type AccessUser } from "@/lib/access";
+import { canManageProject, type AccessUser } from "@/lib/access";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { canCreateProjectInCompany } from "@/lib/scoped-role-access";
 import { parseDatetimeLocalInTimeZone } from "@/lib/timezone";
 
 function requireString(formData: FormData, key: string) {
@@ -29,7 +30,7 @@ export async function createProjectAction(formData: FormData) {
   const companyId = requireString(formData, "companyId");
   const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
   if (!company) throw new Error("Company not found");
-  if (!canManageCompanyProjects(user, { id: company.id, orgGroupId: company.orgGroupId })) {
+  if (!(await canCreateProjectInCompany(user, { id: company.id, orgGroupId: company.orgGroupId }))) {
     throw new Error("Forbidden");
   }
 

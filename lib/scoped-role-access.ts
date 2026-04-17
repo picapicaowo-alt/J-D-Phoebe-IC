@@ -126,6 +126,41 @@ export function canManageProjectScopeWithRoleIds(
   );
 }
 
+export function canCreateProjectInCompanyWithRoleIds(
+  user: AccessUser,
+  company: CompanyScope,
+  allowedRoleIds: ReadonlySet<string>,
+) {
+  if (user.isSuperAdmin) return true;
+  if (!allowedRoleIds.size) return false;
+
+  return (
+    user.groupMemberships.some(
+      (membership) =>
+        membership.orgGroupId === company.orgGroupId &&
+        !!membership.roleDefinitionId &&
+        allowedRoleIds.has(membership.roleDefinitionId),
+    ) ||
+    user.companyMemberships.some(
+      (membership) =>
+        membership.companyId === company.id &&
+        !!membership.roleDefinitionId &&
+        allowedRoleIds.has(membership.roleDefinitionId),
+    ) ||
+    user.projectMemberships.some(
+      (membership) =>
+        membership.project.companyId === company.id &&
+        !!membership.roleDefinitionId &&
+        allowedRoleIds.has(membership.roleDefinitionId),
+    )
+  );
+}
+
+export async function canCreateProjectInCompany(user: AccessUser, company: CompanyScope) {
+  const byPermission = await getActorRoleIdsByPermission(user, ["project.create"]);
+  return canCreateProjectInCompanyWithRoleIds(user, company, byPermission.get("project.create") ?? new Set());
+}
+
 export async function canManageCompanyMemberships(user: AccessUser, company: CompanyScope) {
   const byPermission = await getActorRoleIdsByPermission(user, ["staff.assign_company"]);
   return canManageCompanyScopeWithRoleIds(user, company, byPermission.get("staff.assign_company") ?? new Set());

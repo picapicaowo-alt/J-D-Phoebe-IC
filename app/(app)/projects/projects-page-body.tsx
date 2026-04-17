@@ -16,6 +16,7 @@ import {
 } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { canCreateProjectInCompanyWithRoleIds, getActorRoleIdsByPermission } from "@/lib/scoped-role-access";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -96,15 +97,22 @@ export async function ProjectsPageBody({
   const priorityRaw = typeof sp.priority === "string" ? sp.priority.trim() : "";
   const due = typeof sp.due === "string" ? sp.due.trim() : "";
 
-  const [companyOptions, canCreate, canSoftDeletePermission] = await Promise.all([
+  const [companyOptions, allCompanies, canSoftDeletePermission, projectCreateRoleIds] = await Promise.all([
     prisma.company.findMany({
       where: { deletedAt: null, ...companyVisibilityWhere(user) },
       orderBy: { name: "asc" },
       select: { id: true, name: true, orgGroupId: true },
     }),
-    userHasPermission(user, "project.create"),
+    prisma.company.findMany({
+      where: { deletedAt: null },
+      select: { id: true, orgGroupId: true },
+    }),
     userHasPermission(user, "project.soft_delete"),
+    getActorRoleIdsByPermission(user, ["project.create"]).then((byPermission) => byPermission.get("project.create") ?? new Set<string>()),
   ]);
+  const canCreate = allCompanies.some((company) =>
+    canCreateProjectInCompanyWithRoleIds(user, { id: company.id, orgGroupId: company.orgGroupId }, projectCreateRoleIds),
+  );
   const companyId =
     companyIdRaw && companyOptions.some((c) => c.id === companyIdRaw) ? companyIdRaw : "";
 
