@@ -1,10 +1,14 @@
-import { WorkflowNodeStatus } from "@prisma/client";
+import { ProjectStatus, WorkflowNodeStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export function statusFromAggregatedProgress(p: number): WorkflowNodeStatus {
   if (p >= 100) return "DONE";
   if (p > 0) return "IN_PROGRESS";
   return "NOT_STARTED";
+}
+
+export function projectProgressPercentForStatusWithoutTasks(status: ProjectStatus) {
+  return status === "COMPLETED" ? 100 : 0;
 }
 
 /**
@@ -19,7 +23,15 @@ export async function syncProjectTaskRollups(projectId: string) {
   });
 
   if (!nodes.length) {
-    await prisma.project.update({ where: { id: projectId }, data: { progressPercent: 0 } });
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { status: true },
+    });
+    if (!project) return;
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { progressPercent: projectProgressPercentForStatusWithoutTasks(project.status) },
+    });
     return;
   }
 

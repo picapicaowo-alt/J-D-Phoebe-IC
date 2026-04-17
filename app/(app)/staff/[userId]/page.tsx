@@ -264,6 +264,7 @@ export default async function StaffDetailPage({
               {t(locale, "profilePhoneLabel")}: {target.phone}
             </p>
           ) : null}
+          {target.signature ? <p className="mt-2 max-w-2xl whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]">{target.signature}</p> : null}
         </div>
       </div>
 
@@ -304,6 +305,21 @@ export default async function StaffDetailPage({
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "staffTitle")}</label>
               <Input name="title" defaultValue={target.title ?? ""} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium" htmlFor="staff-signature">
+                {t(locale, "profileSignatureLabel")}
+              </label>
+              <textarea
+                id="staff-signature"
+                name="signature"
+                rows={3}
+                defaultValue={target.signature ?? ""}
+                maxLength={280}
+                placeholder={t(locale, "profileSignaturePlaceholder")}
+                className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileSignatureHelp")}</p>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "profileContactEmailsLabel")}</label>

@@ -28,6 +28,7 @@ export async function updateStaffAction(formData: FormData) {
 
   const name = requireString(formData, "name");
   const title = String(formData.get("title") ?? "").trim() || null;
+  const signature = String(formData.get("signature") ?? "").trim() || null;
   const active = String(formData.get("active") ?? "") === "on";
   const nextIsSuperAdmin = isSuperAdmin(actor) ? String(formData.get("isSuperAdmin") ?? "") === "on" : target.isSuperAdmin;
 
@@ -58,6 +59,7 @@ export async function updateStaffAction(formData: FormData) {
   const data: {
     name: string;
     title: string | null;
+    signature?: string | null;
     active?: boolean;
     isSuperAdmin?: boolean;
     contactEmails?: string | null;
@@ -70,6 +72,9 @@ export async function updateStaffAction(formData: FormData) {
   };
   if (formData.has("contactEmails")) {
     data.contactEmails = String(formData.get("contactEmails") ?? "").trim() || null;
+  }
+  if (formData.has("signature")) {
+    data.signature = signature;
   }
   if (formData.has("phone")) {
     data.phone = String(formData.get("phone") ?? "").trim() || null;

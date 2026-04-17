@@ -14,6 +14,7 @@ import {
   updateWorkflowNodeDetailsAction,
   updateWorkflowNodeOperationalAction,
 } from "@/app/actions/project-tasks";
+import { toggleProjectCompletionAction } from "@/app/actions/project";
 import { statusFromAggregatedProgress } from "@/lib/project-task-progress";
 import { CloseDialogButton, OpenDialogButton } from "@/components/dialog-launcher";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +60,8 @@ export type ProjectTaskRow = {
 
 export type ProjectTasksCopy = {
   title: string;
+  projectCompleteLabel: string;
+  projectIncompleteLabel: string;
   undo: string;
   undoHint: string;
   undoDisabledHint: string;
@@ -1009,6 +1012,8 @@ function NodeLabelsDialog({
 export function ProjectTasksPanel({
   projectId,
   tasks,
+  projectCompleted,
+  canToggleProjectCompletion,
   canEdit,
   undoAvailable,
   memberOptions,
@@ -1019,6 +1024,8 @@ export function ProjectTasksPanel({
 }: {
   projectId: string;
   tasks: ProjectTaskRow[];
+  projectCompleted: boolean;
+  canToggleProjectCompletion: boolean;
   canEdit: boolean;
   undoAvailable: boolean;
   memberOptions: { id: string; name: string }[];
@@ -1119,6 +1126,13 @@ export function ProjectTasksPanel({
   );
 
   const isSubmitting = useCallback((key: string) => !!submittingKeys[key], [submittingKeys]);
+  const showProjectCompletionToggle = visibleTasks.length === 0;
+  const projectCompletionBusy = isSubmitting("toggle-project-completion");
+  const projectCompletionClasses = `flex h-4 w-4 shrink-0 items-center justify-center rounded border shadow-sm ${
+    projectCompleted
+      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+      : "border-[hsl(var(--border))] bg-[hsl(var(--card))]"
+  }`;
 
   return (
     <div
@@ -1128,7 +1142,38 @@ export function ProjectTasksPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--border))] px-4 py-4">
         <div className="flex items-center gap-3">
-          <span className="h-4 w-4 shrink-0 rounded border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/15" aria-hidden />
+          {showProjectCompletionToggle && canToggleProjectCompletion ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                void runTrackedMutation("toggle-project-completion", () => toggleProjectCompletionAction(fd));
+              }}
+              className="shrink-0"
+            >
+              <input type="hidden" name="projectId" value={projectId} />
+              <button
+                type="submit"
+                disabled={projectCompletionBusy}
+                className={projectCompletionClasses}
+                aria-label={projectCompleted ? copy.projectIncompleteLabel : copy.projectCompleteLabel}
+              >
+                {projectCompleted ? (
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                    <path d="M2 6l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                ) : null}
+              </button>
+            </form>
+          ) : (
+            <span className={showProjectCompletionToggle || projectCompleted ? projectCompletionClasses : "h-4 w-4 shrink-0 rounded border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/15"} aria-hidden>
+              {projectCompleted ? (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                  <path d="M2 6l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              ) : null}
+            </span>
+          )}
           <h2 className="text-base font-semibold tracking-tight text-[hsl(var(--foreground))]">{copy.title}</h2>
         </div>
         {canEdit ? (

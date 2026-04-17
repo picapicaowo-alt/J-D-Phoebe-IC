@@ -203,6 +203,65 @@ export async function ProjectsPageBody({
     groupSortOrder: p.groupSortOrder,
   }));
   const projectDetailHrefs = visible.map((p) => `/projects/${p.id}`);
+  const activeVisible = visible.filter((p) => p.status !== "COMPLETED");
+  const completedVisible = visible.filter((p) => p.status === "COMPLETED");
+
+  const renderProjectCard = (p: (typeof visible)[number]) => (
+    <Card key={p.id} className="flex flex-wrap items-center justify-between gap-4 p-4">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <label className="inline-flex shrink-0 items-center pt-1">
+          <input
+            type="checkbox"
+            name="projectIds"
+            value={p.id}
+            disabled={!selectableProjectIds.includes(p.id)}
+            aria-label={`${t(locale, "projectsSelectAria")}: ${p.name}`}
+            className="h-4 w-4 rounded border-[hsl(var(--border))] text-[hsl(var(--accent))] focus:ring-[hsl(var(--accent))]"
+          />
+        </label>
+        <div>
+          <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
+            {p.name}
+          </Link>
+          <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
+            {p.company.name} · {t(locale, "projectsOwnerPrefix")} {p.owner.name}
+            {p.department ? (
+              <>
+                {" · "}
+                {p.department.name}
+              </>
+            ) : null}
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-sm leading-6 text-[hsl(var(--foreground))]">
+            <span>{tProjectStatus(locale, p.status)}</span>
+            <span>·</span>
+            <span>{tPriority(locale, p.priority)}</span>
+            <span>·</span>
+            <span>
+              {t(locale, "projectsMetaRelations")} {p._count.outgoingRelations + p._count.incomingRelations}
+            </span>
+            <span>·</span>
+            <span>
+              {t(locale, "projectsMetaKnowledge")} {p._count.knowledgeAssets}
+            </span>
+            {p.deadline ? (
+              <>
+                <span>·</span>
+                <span className={isOverdue(p.deadline, new Date(), user.timezone) && p.status !== "COMPLETED" ? "text-rose-600" : ""}>
+                  {countdownPhrase(p.deadline, new Date(), user.timezone)}
+                </span>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <div className="flex gap-2 text-sm">
+        <Link className="text-[hsl(var(--accent))] hover:underline" href={`/projects/${p.id}`}>
+          {t(locale, "projectsLinkDetail")}
+        </Link>
+      </div>
+    </Card>
+  );
 
   return (
     <div className="space-y-6">
@@ -360,6 +419,7 @@ export async function ProjectsPageBody({
               checkboxName="projectIds"
               copy={{
                 ungroupedTitle: t(locale, "projectsUngroupedSection"),
+                completedTitle: tProjectStatus(locale, "COMPLETED"),
                 dragHint: t(locale, "projectsDragBetweenGroups"),
                 detail: t(locale, "projectsLinkDetail"),
                 ownerPrefix: t(locale, "projectsOwnerPrefix"),
@@ -386,65 +446,15 @@ export async function ProjectsPageBody({
                   {t(locale, "projectsBulkTrashButton")}
                 </FormSubmitButton>
               </div>
-              {visible.map((p) => (
-                <Card key={p.id} className="flex flex-wrap items-center justify-between gap-4 p-4">
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <label className="inline-flex shrink-0 items-center pt-1">
-                      <input
-                        type="checkbox"
-                        name="projectIds"
-                        value={p.id}
-                        disabled={!selectableProjectIds.includes(p.id)}
-                        aria-label={`${t(locale, "projectsSelectAria")}: ${p.name}`}
-                        className="h-4 w-4 rounded border-[hsl(var(--border))] text-[hsl(var(--accent))] focus:ring-[hsl(var(--accent))]"
-                      />
-                    </label>
-                    <div>
-                      <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
-                        {p.name}
-                      </Link>
-                      <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
-                        {p.company.name} · {t(locale, "projectsOwnerPrefix")} {p.owner.name}
-                        {p.department ? (
-                          <>
-                            {" · "}
-                            {p.department.name}
-                          </>
-                        ) : null}
-                      </div>
-                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-sm leading-6 text-[hsl(var(--foreground))]">
-                        <span>{tProjectStatus(locale, p.status)}</span>
-                        <span>·</span>
-                        <span>{tPriority(locale, p.priority)}</span>
-                        <span>·</span>
-                        <span>
-                          {t(locale, "projectsMetaRelations")}{" "}
-                          {p._count.outgoingRelations + p._count.incomingRelations}
-                        </span>
-                        <span>·</span>
-                        <span>
-                          {t(locale, "projectsMetaKnowledge")} {p._count.knowledgeAssets}
-                        </span>
-                        {p.deadline ? (
-                          <>
-                            <span>·</span>
-                            <span
-                              className={isOverdue(p.deadline, new Date(), user.timezone) && p.status !== "COMPLETED" ? "text-rose-600" : ""}
-                            >
-                              {countdownPhrase(p.deadline, new Date(), user.timezone)}
-                            </span>
-                          </>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 text-sm">
-                    <Link className="text-[hsl(var(--accent))] hover:underline" href={`/projects/${p.id}`}>
-                      {t(locale, "projectsLinkDetail")}
-                    </Link>
-                  </div>
-                </Card>
-              ))}
+              {activeVisible.map(renderProjectCard)}
+              {completedVisible.length ? (
+                <details className="overflow-hidden rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm">
+                  <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium">
+                    {tProjectStatus(locale, "COMPLETED")} ({completedVisible.length})
+                  </summary>
+                  <div className="grid gap-3 border-t border-[hsl(var(--border))] p-3">{completedVisible.map(renderProjectCard)}</div>
+                </details>
+              ) : null}
             </form>
           ) : (
             <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "projectsFilteredEmpty")}</p>

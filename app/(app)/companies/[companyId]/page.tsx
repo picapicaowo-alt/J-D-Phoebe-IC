@@ -43,7 +43,10 @@ export default async function CompanyDetailPage({
     include: {
       orgGroup: true,
       projects: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" }, take: 30 },
-      memberships: { include: { user: true, roleDefinition: true, department: true } },
+      memberships: {
+        where: { user: { deletedAt: null, active: true } },
+        include: { user: true, roleDefinition: true, department: true },
+      },
       departments: { orderBy: { sortOrder: "asc" } },
       onboardingMaterials: {
         orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],

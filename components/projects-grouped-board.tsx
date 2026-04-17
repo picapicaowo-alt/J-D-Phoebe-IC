@@ -25,6 +25,7 @@ export type GroupedProjectCard = {
 
 type Copy = {
   ungroupedTitle: string;
+  completedTitle: string;
   dragHint: string;
   detail: string;
   ownerPrefix: string;
@@ -76,7 +77,7 @@ export function ProjectsGroupedBoard({
   );
 
   const [open, setOpen] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = { __ungrouped: true };
+    const init: Record<string, boolean> = { __ungrouped: true, __completed: false };
     for (const g of sortedGroups) init[g.id] = true;
     return init;
   });
@@ -84,6 +85,7 @@ export function ProjectsGroupedBoard({
   const byGroup = useMemo(() => {
     const map = new Map<string | null, GroupedProjectCard[]>();
     for (const p of optimisticProjects) {
+      if (p.statusCompleted) continue;
       const k = p.projectGroupId;
       if (!map.has(k)) map.set(k, []);
       map.get(k)!.push(p);
@@ -92,6 +94,12 @@ export function ProjectsGroupedBoard({
       list.sort((a, b) => a.groupSortOrder - b.groupSortOrder || a.name.localeCompare(b.name));
     }
     return map;
+  }, [optimisticProjects]);
+
+  const completedList = useMemo(() => {
+    return optimisticProjects
+      .filter((p) => p.statusCompleted)
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [optimisticProjects]);
 
   const moveProject = useCallback(
@@ -137,7 +145,7 @@ export function ProjectsGroupedBoard({
   );
 
   const renderCard = (p: GroupedProjectCard) => {
-    const draggable = movable.has(p.id);
+    const draggable = movable.has(p.id) && !p.statusCompleted;
     const selectableProject = selectable.has(p.id);
     return (
       <div
@@ -259,6 +267,23 @@ export function ProjectsGroupedBoard({
           </section>
         );
       })}
+
+      {completedList.length ? (
+        <section className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 shadow-sm">
+          <button
+            type="button"
+            onClick={() => toggle("__completed")}
+            className="flex w-full items-center gap-1 rounded-md px-1 py-2 text-left text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5"
+          >
+            {chevron(isExpanded("__completed"))}
+            <span>{copy.completedTitle}</span>
+            <span className="text-xs font-normal text-[hsl(var(--muted))]">({completedList.length})</span>
+          </button>
+          {isExpanded("__completed") ? (
+            <div className="ml-6 space-y-2 border-l border-[hsl(var(--border))]/60 pl-3">{completedList.map(renderCard)}</div>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   );
 }

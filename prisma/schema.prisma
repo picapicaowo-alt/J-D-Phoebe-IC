@@ -348,6 +348,8 @@ model User {
   clerkId                   String?   @unique
   name                      String
   title                     String?
+  /// Short public signature shown on staff cards and profile surfaces.
+  signature                 String?
   /// Extra contact emails (comma / semicolon separated); login email stays in `email`.
   contactEmails             String?
   phone                     String?

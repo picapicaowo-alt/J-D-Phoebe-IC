@@ -92,6 +92,21 @@ export default async function ProfileSettingsPage({
             <Input name="title" defaultValue={user.title ?? ""} className="text-sm" />
           </div>
           <div className="space-y-1">
+            <label className="text-sm font-medium" htmlFor="profile-signature">
+              {t(locale, "profileSignatureLabel")}
+            </label>
+            <textarea
+              id="profile-signature"
+              name="signature"
+              rows={3}
+              defaultValue={user.signature ?? ""}
+              maxLength={280}
+              placeholder={t(locale, "profileSignaturePlaceholder")}
+              className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+            />
+            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileSignatureHelp")}</p>
+          </div>
+          <div className="space-y-1">
             <label className="text-sm font-medium">{t(locale, "profileContactEmailsLabel")}</label>
             <Input name="contactEmails" defaultValue={user.contactEmails ?? ""} className="text-sm" placeholder="name@firm.com; alias@…" />
             <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileContactEmailsHelp")}</p>

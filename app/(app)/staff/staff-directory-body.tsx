@@ -6,11 +6,10 @@ import { companyVisibilityWhere, staffVisibilityWhere, type AccessUser } from "@
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
-import { FormSubmitButton } from "@/components/form-submit-button";
-import { Input } from "@/components/ui/input";
 import { getLocale, type Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { StaffDirectoryRows } from "@/components/staff-directory-rows";
+import { StaffDirectoryFilters } from "@/components/staff-directory-filters";
 
 const ACTIVE_PROJECT_STATUSES = ["PLANNING", "ACTIVE", "AT_RISK", "ON_HOLD"] as const;
 
@@ -49,24 +48,35 @@ export async function StaffDirectoryBody({
 
   const sp = await searchParams;
   const q = String(sp.q ?? "").trim();
-  const companyFilter = String(sp.companyId ?? "").trim();
+  const companyFilterRaw = String(sp.companyId ?? "").trim();
   const departmentFilterRaw = String(sp.departmentId ?? "").trim();
   const activeRaw = String(sp.active ?? "all").trim().toLowerCase();
+  const activeFilter = activeRaw === "active" || activeRaw === "inactive" ? activeRaw : "all";
 
   const canCreate =
     (await userHasPermission(user, "staff.create")) &&
     (user.isSuperAdmin || user.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN"));
   const showOnboardingTimeline = user.isSuperAdmin;
+  const visibleCompanyWhere: Prisma.CompanyWhereInput = { deletedAt: null, ...companyVisibilityWhere(user) };
+
+  const companies = await prisma.company.findMany({
+    where: visibleCompanyWhere,
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+  const companyFilter = companyFilterRaw && companies.some((company) => company.id === companyFilterRaw) ? companyFilterRaw : "";
+  const visibleCompanyIds = companies.map((company) => company.id);
 
   const whereClauses: Prisma.UserWhereInput[] = [{ deletedAt: null }, staffVisibilityWhere(user)];
   if (q) {
-    whereClauses.push({
-      OR: [
-        { name: { contains: q, mode: "insensitive" } },
-        { email: { contains: q, mode: "insensitive" } },
-        { title: { contains: q, mode: "insensitive" } },
-      ],
-    });
+      whereClauses.push({
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+          { title: { contains: q, mode: "insensitive" } },
+          { signature: { contains: q, mode: "insensitive" } },
+        ],
+      });
   }
   if (companyFilter) {
     whereClauses.push({ companyMemberships: { some: { companyId: companyFilter } } });
@@ -76,8 +86,9 @@ export async function StaffDirectoryBody({
     const dep = await prisma.department.findFirst({
       where: {
         id: departmentFilterRaw,
-        ...(companyFilter ? { companyId: companyFilter } : {}),
+        ...(companyFilter ? { companyId: companyFilter } : { companyId: { in: visibleCompanyIds } }),
       },
+      select: { id: true },
     });
     if (dep) departmentFilter = dep.id;
   }
@@ -91,13 +102,11 @@ export async function StaffDirectoryBody({
       },
     });
   }
-  if (activeRaw === "active") whereClauses.push({ active: true });
-  else if (activeRaw === "inactive") whereClauses.push({ active: false });
+  if (activeFilter === "active") whereClauses.push({ active: true });
+  else if (activeFilter === "inactive") whereClauses.push({ active: false });
 
   const where: Prisma.UserWhereInput = whereClauses.length === 1 ? whereClauses[0]! : { AND: whereClauses };
-  const visibleCompanyWhere: Prisma.CompanyWhereInput = { deletedAt: null, ...companyVisibilityWhere(user) };
-
-  const [staff, totalAll, companies] = await Promise.all([
+  const [staff, totalAll, departmentOptions] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: { name: "asc" },
@@ -115,18 +124,18 @@ export async function StaffDirectoryBody({
       },
     }),
     prisma.user.count({ where: { deletedAt: null, ...staffVisibilityWhere(user) } }),
-    prisma.company.findMany({ where: visibleCompanyWhere, orderBy: { name: "asc" } }),
+    prisma.department.findMany({
+      where: { companyId: { in: visibleCompanyIds } },
+      select: {
+        id: true,
+        name: true,
+        companyId: true,
+        company: { select: { name: true } },
+      },
+      orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
+      take: 200,
+    }),
   ]);
-
-  const departmentOptions = await prisma.department.findMany({
-    where: {
-      company: visibleCompanyWhere,
-      ...(companyFilter ? { companyId: companyFilter } : {}),
-    },
-    include: { company: true },
-    orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
-    take: 200,
-  });
 
   return (
     <div className="space-y-8">
@@ -149,63 +158,33 @@ export async function StaffDirectoryBody({
         ) : null}
       </div>
 
-      <div className="space-y-4 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/10 p-4">
-        <form action="/staff" method="get" className="space-y-3">
-          <Input name="q" defaultValue={q} placeholder={t(locale, "staffSearchPh")} className="h-11 rounded-[10px] border-[hsl(var(--border))] bg-[hsl(var(--card))] text-sm shadow-sm" />
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "staffFilterCompany")}</label>
-              <select
-                name="companyId"
-                defaultValue={companyFilter}
-                className="h-10 w-full rounded-[10px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 text-sm"
-              >
-                <option value="">{t(locale, "kbAllCompanies")}</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "staffFilterDepartment")}</label>
-              <select
-                name="departmentId"
-                defaultValue={departmentFilter}
-                className="h-10 w-full rounded-[10px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 text-sm"
-              >
-                <option value="">{t(locale, "staffFilterAnyDepartment")}</option>
-                {departmentOptions.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.company.name} / {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "staffFilterStatus")}</label>
-              <select
-                name="active"
-                defaultValue={activeRaw === "active" || activeRaw === "inactive" ? activeRaw : "all"}
-                className="h-10 w-full rounded-[10px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 text-sm"
-              >
-                <option value="all">{t(locale, "staffFilterStatusAll")}</option>
-                <option value="active">{t(locale, "staffStatusActive")}</option>
-                <option value="inactive">{t(locale, "staffStatusInactive")}</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <FormSubmitButton type="submit" variant="secondary" className="h-9 rounded-[10px]" pendingLabel={t(locale, "btnApply")}>
-              {t(locale, "btnApply")}
-            </FormSubmitButton>
-            <Link href="/staff" className="inline-flex h-9 items-center text-sm text-[hsl(var(--muted))] underline">
-              {t(locale, "btnReset")}
-            </Link>
-          </div>
-        </form>
-      </div>
+      <StaffDirectoryFilters
+        key={`${q}|${companyFilter}|${departmentFilter}|${activeFilter}`}
+        q={q}
+        companyId={companyFilter}
+        departmentId={departmentFilter}
+        active={activeFilter}
+        companies={companies}
+        departments={departmentOptions.map((department) => ({
+          id: department.id,
+          name: department.name,
+          companyId: department.companyId,
+          companyName: department.company.name,
+        }))}
+        labels={{
+          searchPlaceholder: t(locale, "staffSearchPh"),
+          company: t(locale, "staffFilterCompany"),
+          allCompanies: t(locale, "kbAllCompanies"),
+          department: t(locale, "staffFilterDepartment"),
+          anyDepartment: t(locale, "staffFilterAnyDepartment"),
+          status: t(locale, "staffFilterStatus"),
+          allStatus: t(locale, "staffFilterStatusAll"),
+          active: t(locale, "staffStatusActive"),
+          inactive: t(locale, "staffStatusInactive"),
+          apply: t(locale, "btnApply"),
+          reset: t(locale, "btnReset"),
+        }}
+      />
 
       <p className="text-sm text-[hsl(var(--muted))]">
         {t(locale, "staffShowingCounts").replace("{x}", String(staff.length)).replace("{y}", String(totalAll))}
@@ -217,6 +196,7 @@ export async function StaffDirectoryBody({
           name: s.name,
           email: s.email,
           title: s.title,
+          signature: s.signature,
           avatarUrl: s.avatarUrl,
           active: s.active,
           isSuperAdmin: s.isSuperAdmin,

@@ -5,10 +5,11 @@ import { redirect } from "next/navigation";
 import { Priority, ProjectRelationType, ProjectStatus } from "@prisma/client";
 import { invalidateAccessUserCache, requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
-import { canManageProjectSettings, canManageCompanyProjects, type AccessUser } from "@/lib/access";
+import { canManageProject, canManageProjectSettings, canManageCompanyProjects, type AccessUser } from "@/lib/access";
 import { assertPermission, invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { canCreateProjectInCompany } from "@/lib/scoped-role-access";
+import { projectProgressPercentForStatusWithoutTasks } from "@/lib/project-task-progress";
 import { parseDatetimeLocalInTimeZone } from "@/lib/timezone";
 
 function requireString(formData: FormData, key: string) {
@@ -22,6 +23,12 @@ function getStringArray(formData: FormData, key: string) {
     .getAll(key)
     .map((v) => String(v).trim())
     .filter(Boolean);
+}
+
+async function countActiveProjectNodes(projectId: string) {
+  return prisma.workflowNode.count({
+    where: { projectId, deletedAt: null },
+  });
 }
 
 export async function createProjectAction(formData: FormData) {
@@ -88,6 +95,7 @@ export async function createProjectAction(formData: FormData) {
       ownerId,
       priority,
       status,
+      progressPercent: projectProgressPercentForStatusWithoutTasks(status),
       deadline,
       departmentId,
       projectGroupId,
@@ -228,6 +236,8 @@ export async function updateProjectAction(formData: FormData) {
     nextGroupSortOrder = (maxInTargetBucket._max.groupSortOrder ?? -1) + 1;
   }
 
+  const activeNodeCount = await countActiveProjectNodes(projectId);
+
   await prisma.project.update({
     where: { id: projectId },
     data: {
@@ -240,6 +250,7 @@ export async function updateProjectAction(formData: FormData) {
       deadline: deadlineNorm,
       departmentId,
       projectGroupId,
+      ...(activeNodeCount === 0 ? { progressPercent: projectProgressPercentForStatusWithoutTasks(status) } : {}),
       ...(nextGroupSortOrder != null ? { groupSortOrder: nextGroupSortOrder } : {}),
     },
   });
@@ -271,6 +282,46 @@ export async function updateProjectAction(formData: FormData) {
   revalidatePath("/calendar");
   revalidatePath(`/companies/${project.companyId}`);
   if (companyId !== project.companyId) revalidatePath(`/companies/${companyId}`);
+}
+
+export async function toggleProjectCompletionAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  const projectId = requireString(formData, "projectId");
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    include: { company: true },
+  });
+  if (!project) throw new Error("Not found");
+  if (!canManageProject(user, project) && !canManageProjectSettings(user, project)) {
+    throw new Error("Forbidden");
+  }
+
+  const nextStatus = project.status === ProjectStatus.COMPLETED ? ProjectStatus.ACTIVE : ProjectStatus.COMPLETED;
+  const activeNodeCount = await countActiveProjectNodes(projectId);
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: {
+      status: nextStatus,
+      ...(activeNodeCount === 0 ? { progressPercent: projectProgressPercentForStatusWithoutTasks(nextStatus) } : {}),
+    },
+  });
+
+  await writeAudit({
+    actorId: user.id,
+    entityType: "PROJECT",
+    entityId: projectId,
+    action: nextStatus === ProjectStatus.COMPLETED ? "COMPLETE" : "REOPEN",
+    field: "status",
+    oldValue: project.status,
+    newValue: nextStatus,
+  });
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/projects");
+  revalidatePath("/calendar");
+  revalidatePath("/home");
+  revalidatePath(`/companies/${project.companyId}`);
 }
 
 export async function archiveProjectAction(formData: FormData) {

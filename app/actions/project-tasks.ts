@@ -7,7 +7,7 @@ import { getAppSession, requireUser } from "@/lib/auth";
 import { canEditWorkflow, canManageProject, canViewProject, type AccessUser } from "@/lib/access";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { syncProjectTaskRollups } from "@/lib/project-task-progress";
+import { projectProgressPercentForStatusWithoutTasks, syncProjectTaskRollups } from "@/lib/project-task-progress";
 import { parseDatetimeLocalInTimeZone } from "@/lib/timezone";
 import {
   APPROVAL_OUTCOME_LABELS,
@@ -780,7 +780,10 @@ export async function deleteAllProjectTasksAction(formData: FormData) {
   session.taskUndo = { projectId, mode: "nodes", nodeIds };
   await session.save();
 
-  await prisma.project.update({ where: { id: projectId }, data: { progressPercent: 0 } });
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { progressPercent: projectProgressPercentForStatusWithoutTasks(project.status) },
+  });
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
   revalidatePath("/calendar");

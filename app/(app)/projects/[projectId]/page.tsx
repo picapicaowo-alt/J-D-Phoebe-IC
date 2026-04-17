@@ -789,7 +789,11 @@ export default async function ProjectDetailPage({
 
       {focusedTask ? <TaskSpotlightCard task={focusedTask} projectId={project.id} projectName={project.name} locale={locale} /> : null}
 
-      <ProjectProgressProvider initialTasks={taskRows}>
+      <ProjectProgressProvider
+        initialTasks={taskRows}
+        fallbackProgressPercent={project.progressPercent}
+        projectCompleted={project.status === "COMPLETED"}
+      >
         <div className="overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm">
           <div className="relative grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <div className="space-y-1">
@@ -914,6 +918,8 @@ export default async function ProjectDetailPage({
         <ProjectTasksPanelWithProgress
           projectId={project.id}
           tasks={taskRows}
+          projectCompleted={project.status === "COMPLETED"}
+          canToggleProjectCompletion={canEditTasks}
           canEdit={canEditTasks}
           undoAvailable={undoAvailable}
           memberOptions={projectMemberOptions}
@@ -921,6 +927,8 @@ export default async function ProjectDetailPage({
           locale={locale}
           copy={{
             title: t(locale, "wfMapTitle"),
+            projectCompleteLabel: t(locale, "projMarkComplete"),
+            projectIncompleteLabel: t(locale, "projMarkIncomplete"),
             undo: t(locale, "projTasksUndo"),
             undoHint: t(locale, "projTasksUndoHint"),
             undoDisabledHint: t(locale, "projTasksUndoDisabledHint"),
