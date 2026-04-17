@@ -808,49 +808,45 @@ export default async function ProjectDetailPage({
               <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "projRelatedEventsEmpty")}</p>
             ) : (
               <ul className="divide-y divide-[hsl(var(--border))]">
-                {projectCalendarEvents.map((ev) => (
-                  <li key={ev.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0">
-                    <div>
-                      {(() => {
-                        const eventYearMonth = getZonedYearMonth(ev.startsAt, user.timezone) ?? {
-                          year: ev.startsAt.getFullYear(),
-                          month: ev.startsAt.getMonth() + 1,
-                        };
-                        return (
-                          <>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {ev.label ? (
-                          <span
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{ backgroundColor: ev.label.color }}
-                            aria-label={ev.label.name}
-                          />
-                        ) : null}
-                        <Link
-                          href={calendarHref({
-                            y: eventYearMonth.year,
-                            m: eventYearMonth.month,
-                            view: "month",
-                            eventId: ev.id,
-                          })}
-                          className="font-medium text-[hsl(var(--primary))] hover:underline"
-                        >
-                          {ev.title}
-                        </Link>
+                {projectCalendarEvents.map((ev) => {
+                  const eventYearMonth = getZonedYearMonth(ev.startsAt, user.timezone) ?? {
+                    year: ev.startsAt.getFullYear(),
+                    month: ev.startsAt.getMonth() + 1,
+                  };
+                  return (
+                    <li key={ev.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {ev.label ? (
+                            <span
+                              className="h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: ev.label.color }}
+                              aria-label={ev.label.name}
+                            />
+                          ) : null}
+                          <Link
+                            href={calendarHref({
+                              y: eventYearMonth.year,
+                              m: eventYearMonth.month,
+                              view: "month",
+                              eventId: ev.id,
+                            })}
+                            className="font-medium text-[hsl(var(--primary))] hover:underline"
+                          >
+                            {ev.title}
+                          </Link>
+                        </div>
+                        <p className="mt-1 text-base leading-relaxed text-[hsl(var(--muted))]">
+                          {formatDateTimeRangeInTimeZone(ev.startsAt, ev.endsAt, {
+                            locale,
+                            timeZone: user.timezone,
+                          })}{" "}
+                          — {ev.organizer.name}
+                        </p>
                       </div>
-                      <p className="mt-1 text-base leading-relaxed text-[hsl(var(--muted))]">
-                        {formatDateTimeRangeInTimeZone(ev.startsAt, ev.endsAt, {
-                          locale,
-                          timeZone: user.timezone,
-                        })}{" "}
-                        — {ev.organizer.name}
-                      </p>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
             <Link href="/calendar" className="inline-block text-base font-medium text-[hsl(var(--primary))] hover:underline">
