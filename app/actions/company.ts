@@ -12,10 +12,11 @@ import {
   isLegacyCompanyOnboardingMaterialId,
   migrateLegacyCompanyOnboardingMaterial,
 } from "@/lib/company-onboarding-materials";
-import { sanitizeFileName, storeUploadedFile } from "@/lib/file-storage";
+import { storeUploadedFile } from "@/lib/file-storage";
 import { backfillMemberOnboardingsForCompany } from "@/lib/member-onboarding";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { deriveUploadedDisplayFileName, sanitizeDisplayFileName } from "@/lib/upload-file-name";
 
 export type CompanyOnboardingMaterialActionResult = {
   ok: boolean;
@@ -35,12 +36,29 @@ function parseOnboardingDeadlineDays(raw: FormDataEntryValue | null) {
   );
 }
 
+function hasAnyOnboardingMaterialSource(params: {
+  packageUrl?: string | null;
+  videoUrl?: string | null;
+  packageUploadCount?: number;
+  keepsPackageAttachment?: boolean;
+  keepsVideoAttachment?: boolean;
+}) {
+  return Boolean(
+    params.packageUrl?.trim() ||
+      params.videoUrl?.trim() ||
+      (params.packageUploadCount ?? 0) > 0 ||
+      params.keepsPackageAttachment ||
+      params.keepsVideoAttachment,
+  );
+}
+
 function parseCompanyOnboardingMaterial(formData: FormData) {
   return {
     packageUrl: String(formData.get("onboardingPackageUrl") ?? "").trim(),
     videoUrl: String(formData.get("onboardingVideoUrl") ?? "").trim() || null,
     packageVersion: String(formData.get("onboardingPackageVersion") ?? "").trim() || DEFAULT_COMPANY_ONBOARDING_VERSION,
     deadlineDays: parseOnboardingDeadlineDays(formData.get("onboardingDeadlineDays")),
+    packageFileName: sanitizeDisplayFileName(String(formData.get("onboardingPackageFileName") ?? "")) || null,
   };
 }
 
@@ -57,6 +75,7 @@ type PendingUpload = {
 async function parsePendingUpload(
   formData: FormData,
   key: string,
+  fileNameKey: string,
   acceptMimePrefix?: string,
 ): Promise<PendingUpload | null> {
   const value = formData.get(key);
@@ -65,21 +84,31 @@ async function parsePendingUpload(
   if (acceptMimePrefix && !mimeType.startsWith(acceptMimePrefix)) {
     throw new Error(`Expected a ${acceptMimePrefix.replace("/", "")} file`);
   }
+  const requestedFileName = String(formData.get(fileNameKey) ?? "").trim();
   return {
     buf: Buffer.from(await value.arrayBuffer()),
-    fileName: sanitizeFileName(value.name || "upload"),
+    fileName: deriveUploadedDisplayFileName({
+      label: requestedFileName,
+      originalFileName: value.name || "upload",
+      fallbackBaseName: "upload",
+    }),
     mimeType,
   };
 }
 
-async function parsePendingUploads(formData: FormData, key: string): Promise<PendingUpload[]> {
+async function parsePendingUploads(formData: FormData, key: string, fileNameKey: string): Promise<PendingUpload[]> {
+  const requestedFileName = String(formData.get(fileNameKey) ?? "").trim();
   const values = formData.getAll(key);
+  const uploadableValues = values.filter((value): value is File => isFormDataFile(value) && value.size > 0);
   const uploads: PendingUpload[] = [];
-  for (const value of values) {
-    if (!isFormDataFile(value) || value.size <= 0) continue;
+  for (const value of uploadableValues) {
     uploads.push({
       buf: Buffer.from(await value.arrayBuffer()),
-      fileName: sanitizeFileName(value.name || "upload"),
+      fileName: deriveUploadedDisplayFileName({
+        label: uploadableValues.length === 1 ? requestedFileName : "",
+        originalFileName: value.name || "upload",
+        fallbackBaseName: "upload",
+      }),
       mimeType: value.type || "application/octet-stream",
     });
   }
@@ -199,10 +228,22 @@ async function createCompanyOnboardingMaterialMutation(formData: FormData) {
   await migrateLegacyCompanyOnboardingMaterial(companyId);
 
   const values = parseCompanyOnboardingMaterial(formData);
-  const packageUploads = await parsePendingUploads(formData, "onboardingPackageFiles");
+  const materialValues = {
+    packageUrl: values.packageUrl,
+    videoUrl: values.videoUrl,
+    packageVersion: values.packageVersion,
+    deadlineDays: values.deadlineDays,
+  };
+  const packageUploads = await parsePendingUploads(formData, "onboardingPackageFiles", "onboardingPackageFileName");
 
-  if (!values.packageUrl && packageUploads.length === 0) {
-    throw new Error("Provide a material URL or upload a material file.");
+  if (
+    !hasAnyOnboardingMaterialSource({
+      packageUrl: materialValues.packageUrl,
+      videoUrl: materialValues.videoUrl,
+      packageUploadCount: packageUploads.length,
+    })
+  ) {
+    throw new Error("Provide a material URL, onboarding video URL, or upload a material file.");
   }
 
   if (packageUploads.length > 0) {
@@ -212,8 +253,8 @@ async function createCompanyOnboardingMaterialMutation(formData: FormData) {
           companyId,
           packageUrl: "",
           videoUrl: null,
-          packageVersion: values.packageVersion,
-          deadlineDays: values.deadlineDays,
+          packageVersion: materialValues.packageVersion,
+          deadlineDays: materialValues.deadlineDays,
         },
       });
 
@@ -241,7 +282,7 @@ async function createCompanyOnboardingMaterialMutation(formData: FormData) {
     await prisma.companyOnboardingMaterial.create({
       data: {
         companyId,
-        ...values,
+        ...materialValues,
       },
     });
   }
@@ -276,23 +317,50 @@ export async function updateCompanyOnboardingMaterialAction(formData: FormData) 
 
   const targetMaterial = await requireEditableOnboardingMaterial(user, companyId, materialId);
   const nextValues = parseCompanyOnboardingMaterial(formData);
+  const { packageFileName, ...materialValues } = nextValues;
   const currentPackageHref = targetMaterial.packageAttachmentId ? attachmentHref(targetMaterial.packageAttachmentId) : null;
   const currentVideoHref = targetMaterial.videoAttachmentId ? attachmentHref(targetMaterial.videoAttachmentId) : null;
-  const keepsPackageAttachment = Boolean(currentPackageHref && nextValues.packageUrl === currentPackageHref);
+  const keepsPackageAttachment = Boolean(currentPackageHref && materialValues.packageUrl === currentPackageHref);
+  const keepsVideoAttachment = Boolean(currentVideoHref && materialValues.videoUrl === currentVideoHref);
 
-  if (!nextValues.packageUrl && !keepsPackageAttachment) {
-    throw new Error("Provide a material URL or upload a material file.");
+  if (
+    !hasAnyOnboardingMaterialSource({
+      packageUrl: materialValues.packageUrl,
+      videoUrl: materialValues.videoUrl,
+      keepsPackageAttachment,
+      keepsVideoAttachment,
+    })
+  ) {
+    throw new Error("Provide a material URL, onboarding video URL, or upload a material file.");
   }
 
   await prisma.companyOnboardingMaterial.update({
     where: { id: targetMaterial.id },
     data: {
-      ...nextValues,
-      packageAttachmentId: currentPackageHref && nextValues.packageUrl !== currentPackageHref ? null : targetMaterial.packageAttachmentId,
+      ...materialValues,
+      packageAttachmentId: currentPackageHref && materialValues.packageUrl !== currentPackageHref ? null : targetMaterial.packageAttachmentId,
       videoAttachmentId:
-        currentVideoHref && nextValues.videoUrl !== currentVideoHref ? null : targetMaterial.videoAttachmentId,
+        currentVideoHref && materialValues.videoUrl !== currentVideoHref ? null : targetMaterial.videoAttachmentId,
     },
   });
+
+  if (targetMaterial.packageAttachmentId && packageFileName) {
+    const currentPackageAttachment = await prisma.attachment.findFirst({
+      where: { id: targetMaterial.packageAttachmentId, deletedAt: null },
+      select: { fileName: true },
+    });
+    const nextAttachmentFileName = deriveUploadedDisplayFileName({
+      label: packageFileName,
+      originalFileName: currentPackageAttachment?.fileName || "upload",
+      fallbackBaseName: "upload",
+    });
+    if (nextAttachmentFileName !== currentPackageAttachment?.fileName) {
+      await prisma.attachment.update({
+        where: { id: targetMaterial.packageAttachmentId },
+        data: { fileName: nextAttachmentFileName },
+      });
+    }
+  }
 
   await backfillMemberOnboardingsForCompany(companyId);
   revalidateCompanyPaths(companyId);
@@ -403,7 +471,7 @@ async function uploadOnboardingMaterialFile(
   const materialId = requireString(formData, "materialId");
   await requireEditableOnboardingMaterial(user, companyId, materialId);
 
-  const upload = await parsePendingUpload(formData, "file", acceptMimePrefix);
+  const upload = await parsePendingUpload(formData, "file", "onboardingPackageFileName", acceptMimePrefix);
   if (!upload) throw new Error("Missing file");
 
   await uploadOnboardingMaterialBlob({

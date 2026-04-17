@@ -257,6 +257,9 @@ const M = {
     companyOnboardingVideoUrl: "Onboarding video URL (optional)",
     companyOnboardingVideoUrlHelp:
       "Direct .mp4 / .webm links get precise progress. YouTube links use embed + focused-time tracking. When set, members must satisfy the video step before confirming materials.",
+    companyOnboardingFileName: "Displayed file name (optional)",
+    companyOnboardingFileNameHelp:
+      "Leave blank to use the uploaded file's original name. If you omit the extension, the original extension is kept automatically.",
     companyOnboardingUploadPackage: "Upload material file (docs/photos/videos)",
     companyOnboardingUploadVideo: "Upload video file",
     companyOnboardingUploadedFile: "Uploaded file",
@@ -1312,6 +1315,8 @@ const M = {
     companyOnboardingVideoUrl: "入职视频链接（可选）",
     companyOnboardingVideoUrlHelp:
       "直接 .mp4 / .webm 可精确记录进度；YouTube 使用嵌入并统计专注停留。设置后，成员需先完成视频步骤再确认材料。",
+    companyOnboardingFileName: "显示文件名（可选）",
+    companyOnboardingFileNameHelp: "留空则使用原始上传文件名；若未填写扩展名，系统会自动保留原始扩展名。",
     companyOnboardingUploadPackage: "上传资料文件（文档/图片/视频）",
     companyOnboardingUploadVideo: "上传视频文件",
     companyOnboardingUploadedFile: "已上传文件",

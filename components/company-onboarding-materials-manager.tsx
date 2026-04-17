@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import type { ResolvedCompanyOnboardingMaterial } from "@/lib/company-onboarding-materials";
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
+import { deriveUploadedDisplayFileName, getDisplayFileNameStem } from "@/lib/upload-file-name";
 
 type PendingMaterial = ResolvedCompanyOnboardingMaterial & {
   pending: true;
@@ -52,15 +53,16 @@ function createPendingMaterial(params: {
   };
 }
 
-function buildPendingMaterials(formData: FormData) {
-  const companyId = String(formData.get("companyId") ?? "").trim();
-  const packageUrl = String(formData.get("onboardingPackageUrl") ?? "").trim();
-  const videoUrl = String(formData.get("onboardingVideoUrl") ?? "").trim() || null;
-  const packageVersion = String(formData.get("onboardingPackageVersion") ?? "").trim() || "v1";
-  const deadlineDays = Math.max(1, Math.min(365, Number(formData.get("onboardingDeadlineDays") ?? 14) || 14));
-  const files = formData
-    .getAll("onboardingPackageFiles")
-    .filter((entry): entry is File => typeof entry !== "string" && entry.size > 0);
+function buildPendingMaterials(params: {
+  companyId: string;
+  packageUrl: string;
+  videoUrl: string | null;
+  packageVersion: string;
+  deadlineDays: number;
+  requestedFileName: string;
+  files: File[];
+}) {
+  const { companyId, packageUrl, videoUrl, packageVersion, deadlineDays, requestedFileName, files } = params;
 
   if (files.length > 0) {
     return files.map((file, index) =>
@@ -70,7 +72,11 @@ function buildPendingMaterials(formData: FormData) {
         videoUrl,
         packageVersion,
         deadlineDays,
-        fileName: file.name || null,
+        fileName: deriveUploadedDisplayFileName({
+          label: files.length === 1 ? requestedFileName : "",
+          originalFileName: file.name || "upload",
+          fallbackBaseName: "upload",
+        }),
         index,
       }),
     );
@@ -102,12 +108,19 @@ export function CompanyOnboardingMaterialsManager({
 }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const packageUrlInputRef = useRef<HTMLInputElement>(null);
+  const videoUrlInputRef = useRef<HTMLInputElement>(null);
+  const packageFileNameInputRef = useRef<HTMLInputElement>(null);
+  const packageFilesInputRef = useRef<HTMLInputElement>(null);
+  const packageVersionInputRef = useRef<HTMLInputElement>(null);
+  const deadlineDaysInputRef = useRef<HTMLInputElement>(null);
   const initialCreateState: CompanyOnboardingMaterialActionResult = { ok: false, error: null };
   const [createState, createFormAction] = useFormState(createCompanyOnboardingMaterialAction, initialCreateState);
   const [pendingMaterials, setPendingMaterials] = useState<PendingMaterial[]>([]);
   const pendingBadgeLabel = locale === "zh" ? "上传中…" : "Uploading...";
   const pendingPackageLabel = locale === "zh" ? "文件上传中…" : "Upload in progress...";
-  const pendingQueuedLabel = locale === "zh" ? "已开始上传，完成后页面会自动刷新。" : "Upload queued. The page will refresh automatically when it finishes.";
+  const pendingProgressLabel =
+    locale === "zh" ? "上传进行中。完成后此卡片会自动更新。" : "Upload in progress. This card will update when it finishes.";
 
   useEffect(() => {
     if (createState.ok) {
@@ -199,7 +212,7 @@ export function CompanyOnboardingMaterialsManager({
               <div className="rounded-[10px] border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
                 {isPending ? (
                   <div className="grid gap-2 text-sm text-[hsl(var(--muted))]">
-                    <p>{pendingQueuedLabel}</p>
+                    <p>{pendingProgressLabel}</p>
                   </div>
                 ) : (
                   <>
@@ -214,6 +227,11 @@ export function CompanyOnboardingMaterialsManager({
                         <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
                         <Input name="onboardingVideoUrl" defaultValue={material.videoUrl ?? ""} placeholder="https://..." />
                         <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t(locale, "companyOnboardingFileName")}</label>
+                        <Input name="onboardingPackageFileName" defaultValue={material.packageAttachmentName ?? ""} placeholder="Onboarding video" />
+                        <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingFileNameHelp")}</p>
                       </div>
                       <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingUploadHelp")}</p>
                       <div className="grid gap-3 sm:grid-cols-2">
@@ -236,6 +254,14 @@ export function CompanyOnboardingMaterialsManager({
                       <form action={uploadCompanyOnboardingPackageAction} encType="multipart/form-data" className="grid gap-2">
                         <input type="hidden" name="companyId" value={companyId} />
                         <input type="hidden" name="materialId" value={material.id} />
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium">{t(locale, "companyOnboardingFileName")}</label>
+                          <Input
+                            name="onboardingPackageFileName"
+                            defaultValue={getDisplayFileNameStem(material.packageAttachmentName)}
+                            placeholder="Onboarding video"
+                          />
+                        </div>
                         <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadPackage")}</label>
                         <input type="file" name="file" required className="text-xs" />
                         <FormSubmitButton type="submit" variant="secondary">
@@ -271,34 +297,47 @@ export function CompanyOnboardingMaterialsManager({
           action={createFormAction}
           encType="multipart/form-data"
           className="mt-3 grid gap-3"
-          onSubmit={(event) => {
-            const nextPendingMaterials = buildPendingMaterials(new FormData(event.currentTarget));
+          onSubmit={() => {
+            const nextPendingMaterials = buildPendingMaterials({
+              companyId,
+              packageUrl: packageUrlInputRef.current?.value.trim() ?? "",
+              videoUrl: videoUrlInputRef.current?.value.trim() || null,
+              packageVersion: packageVersionInputRef.current?.value.trim() || "v1",
+              deadlineDays: Math.max(1, Math.min(365, Number(deadlineDaysInputRef.current?.value ?? 14) || 14)),
+              requestedFileName: packageFileNameInputRef.current?.value.trim() ?? "",
+              files: Array.from(packageFilesInputRef.current?.files ?? []).filter((file) => file.size > 0),
+            });
             setPendingMaterials(nextPendingMaterials);
           }}
         >
           <input type="hidden" name="companyId" value={companyId} />
           <div className="space-y-1">
             <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
-            <Input name="onboardingPackageUrl" placeholder="https://..." />
+            <Input ref={packageUrlInputRef} name="onboardingPackageUrl" placeholder="https://..." />
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
-            <Input name="onboardingVideoUrl" placeholder="https://..." />
+            <Input ref={videoUrlInputRef} name="onboardingVideoUrl" placeholder="https://..." />
             <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
           </div>
           <div className="space-y-1">
+            <label className="text-xs font-medium">{t(locale, "companyOnboardingFileName")}</label>
+            <Input ref={packageFileNameInputRef} name="onboardingPackageFileName" placeholder="Onboarding video" />
+            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingFileNameHelp")}</p>
+          </div>
+          <div className="space-y-1">
             <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadPackage")}</label>
-            <input type="file" name="onboardingPackageFiles" multiple className="text-xs" />
+            <input ref={packageFilesInputRef} type="file" name="onboardingPackageFiles" className="text-xs" />
           </div>
           <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingUploadHelp")}</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>
-              <Input name="onboardingPackageVersion" defaultValue="v1" />
+              <Input ref={packageVersionInputRef} name="onboardingPackageVersion" defaultValue="v1" />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "companyOnboardingDeadlineDays")}</label>
-              <Input name="onboardingDeadlineDays" type="number" min={1} max={365} defaultValue="14" />
+              <Input ref={deadlineDaysInputRef} name="onboardingDeadlineDays" type="number" min={1} max={365} defaultValue="14" />
             </div>
           </div>
           {createState.error ? <p className="text-sm text-[hsl(var(--error))]">{createState.error}</p> : null}
