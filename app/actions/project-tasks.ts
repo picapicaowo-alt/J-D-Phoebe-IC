@@ -8,6 +8,7 @@ import { canEditWorkflow, canManageProject, canViewProject, type AccessUser } fr
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { syncProjectTaskRollups } from "@/lib/project-task-progress";
+import { parseDatetimeLocalInTimeZone } from "@/lib/timezone";
 import {
   APPROVAL_OUTCOME_LABELS,
   PENDING_APPROVAL_LABELS,
@@ -93,9 +94,13 @@ function requireString(formData: FormData, key: string) {
   return v;
 }
 
-function parseOptionalDate(formData: FormData, key = "dueAt"): Date | null {
+function parseOptionalDate(formData: FormData, key = "dueAt", timeZone?: string): Date | null {
   const raw = String(formData.get(key) ?? "").trim();
   if (!raw) return null;
+  if (timeZone) {
+    const zoned = parseDatetimeLocalInTimeZone(raw, timeZone);
+    if (zoned) return zoned;
+  }
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
 }
@@ -253,10 +258,16 @@ async function createTaskOperationalNotifications(args: {
   }
 }
 
-async function parseOperationalInput(formData: FormData, projectId: string, opts?: { nodeType?: WorkflowNodeType }, db: DbClient = prisma): Promise<ParsedOperationalInput> {
+async function parseOperationalInput(
+  formData: FormData,
+  projectId: string,
+  timeZone: string,
+  opts?: { nodeType?: WorkflowNodeType },
+  db: DbClient = prisma,
+): Promise<ParsedOperationalInput> {
   const status = parseNodeStatus(formData);
   const operationalLabels = normalizeOperationalLabels(formData.getAll("operationalLabels").map((value) => String(value).trim()));
-  const waitingStartedInput = parseOptionalDate(formData, "waitingStartedAt");
+  const waitingStartedInput = parseOptionalDate(formData, "waitingStartedAt", timeZone);
   const waitingOnUserMention = String(formData.get("waitingOnUserMention") ?? "").trim() || null;
   const waitingOnExternalNameInput = String(formData.get("waitingOnExternalName") ?? "").trim() || null;
   const waitingDetailsInput = String(formData.get("waitingDetails") ?? "").trim() || null;
@@ -269,8 +280,8 @@ async function parseOperationalInput(formData: FormData, projectId: string, opts
     hasAnyOperationalLabel(operationalLabels, PENDING_APPROVAL_LABELS) ||
     hasAnyOperationalLabel(operationalLabels, APPROVAL_OUTCOME_LABELS) ||
     !!String(formData.get("approverUserId") ?? "").trim() ||
-    !!parseOptionalDate(formData, "approvalRequestedAt") ||
-    !!parseOptionalDate(formData, "approvalCompletedAt");
+    !!parseOptionalDate(formData, "approvalRequestedAt", timeZone) ||
+    !!parseOptionalDate(formData, "approvalCompletedAt", timeZone);
   let staffDirectoryPromise: Promise<ProjectStaffDirectoryEntry[]> | null = null;
   const getStaffDirectory = () => {
     if (!staffDirectoryPromise) {
@@ -279,7 +290,7 @@ async function parseOperationalInput(formData: FormData, projectId: string, opts
     return staffDirectoryPromise;
   };
 
-  const waitingStartedAt = hasWaitingState ? parseOptionalDate(formData, "waitingStartedAt") ?? new Date() : null;
+  const waitingStartedAt = hasWaitingState ? parseOptionalDate(formData, "waitingStartedAt", timeZone) ?? new Date() : null;
   const waitingOnUserIds = hasWaitingState ? filterDirectoryUserIds(await getStaffDirectory(), rawWaitingOnUserIds) : [];
   const fallbackWaitingOnUserId =
     hasWaitingState && waitingOnUserMention ? resolveMentionedUserIdFromDirectory(await getStaffDirectory(), waitingOnUserMention) : null;
@@ -287,8 +298,8 @@ async function parseOperationalInput(formData: FormData, projectId: string, opts
   const waitingOnExternalName = hasWaitingState ? waitingOnExternalNameInput : null;
   const waitingDetails = hasWaitingState ? waitingDetailsInput : null;
 
-  const approvalRequestedAt = hasApprovalState ? parseOptionalDate(formData, "approvalRequestedAt") ?? new Date() : null;
-  const approvalCompletedAt = hasApprovalState ? parseOptionalDate(formData, "approvalCompletedAt") : null;
+  const approvalRequestedAt = hasApprovalState ? parseOptionalDate(formData, "approvalRequestedAt", timeZone) ?? new Date() : null;
+  const approvalCompletedAt = hasApprovalState ? parseOptionalDate(formData, "approvalCompletedAt", timeZone) : null;
   const [approverUserId] = hasApprovalState
     ? filterDirectoryUserIds(await getStaffDirectory(), [String(formData.get("approverUserId") ?? "").trim()])
     : [];
@@ -344,8 +355,8 @@ export async function addProjectTaskAction(formData: FormData) {
   const project = await requireProjectForTasks(user, projectId);
   const title = requireString(formData, "title");
   const assigneeId = String(formData.get("assigneeId") ?? "").trim() || null;
-  const dueAt = parseOptionalDate(formData, "dueAt");
-  const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: WorkflowNodeType.TASK });
+  const dueAt = parseOptionalDate(formData, "dueAt", user.timezone);
+  const operationalInput = await parseOperationalInput(formData, projectId, user.timezone, { nodeType: WorkflowNodeType.TASK });
 
   const layerId = await defaultLayerId(projectId);
   const maxSort = await prisma.workflowNode.aggregate({
@@ -416,8 +427,8 @@ export async function addProjectSubtaskAction(formData: FormData) {
   const parentNodeId = requireString(formData, "parentNodeId");
   const title = requireString(formData, "title");
   const assigneeId = String(formData.get("assigneeId") ?? "").trim() || null;
-  const dueAt = parseOptionalDate(formData, "dueAt");
-  const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: WorkflowNodeType.TASK });
+  const dueAt = parseOptionalDate(formData, "dueAt", user.timezone);
+  const operationalInput = await parseOperationalInput(formData, projectId, user.timezone, { nodeType: WorkflowNodeType.TASK });
 
   const parent = await prisma.workflowNode.findFirst({
     where: { id: parentNodeId, projectId, deletedAt: null },
@@ -499,9 +510,9 @@ export async function updateWorkflowNodeMetaAction(formData: FormData) {
   if (!node) throw new Error("Not found");
 
   const description = String(formData.get("description") ?? "").trim() || null;
-  const dueAt = parseOptionalDate(formData, "dueAt");
+  const dueAt = parseOptionalDate(formData, "dueAt", user.timezone);
   const assigneeId = String(formData.get("assigneeId") ?? "").trim();
-  const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: node.nodeType });
+  const operationalInput = await parseOperationalInput(formData, projectId, user.timezone, { nodeType: node.nodeType });
 
   await prisma.$transaction(async (tx) => {
     const updatedNode = await tx.workflowNode.update({
@@ -566,7 +577,7 @@ export async function updateWorkflowNodeDetailsAction(formData: FormData) {
   if (!node) throw new Error("Not found");
 
   const description = String(formData.get("description") ?? "").trim() || null;
-  const dueAt = parseOptionalDate(formData, "dueAt");
+  const dueAt = parseOptionalDate(formData, "dueAt", user.timezone);
   const assigneeId = String(formData.get("assigneeId") ?? "").trim();
   const status = parseNodeStatus(formData);
 
@@ -619,7 +630,7 @@ export async function updateWorkflowNodeOperationalAction(formData: FormData) {
   if (!node) throw new Error("Not found");
 
   await prisma.$transaction(async (tx) => {
-    const operationalInput = await parseOperationalInput(formData, projectId, { nodeType: node.nodeType }, tx);
+    const operationalInput = await parseOperationalInput(formData, projectId, user.timezone, { nodeType: node.nodeType }, tx);
 
     const updatedNode = await tx.workflowNode.update({
       where: { id: nodeId },
@@ -706,7 +717,7 @@ export async function toggleProjectTaskLeafAction(formData: FormData) {
 
   const targetDone = !allDone;
   await prisma.workflowNode.updateMany({
-    where: { id: { in: leafIds } },
+    where: { id: { in: leafIds }, projectId, deletedAt: null },
     data: targetDone
       ? { status: WorkflowNodeStatus.DONE, progressPercent: 100 }
       : { status: WorkflowNodeStatus.NOT_STARTED, progressPercent: 0 },
@@ -732,7 +743,7 @@ export async function deleteProjectTaskAction(formData: FormData) {
   const nodeIds = targets.map((t) => t.id);
   const now = new Date();
   await prisma.workflowNode.updateMany({
-    where: { id: { in: nodeIds } },
+    where: { id: { in: nodeIds }, projectId, deletedAt: null },
     data: { deletedAt: now },
   });
 
