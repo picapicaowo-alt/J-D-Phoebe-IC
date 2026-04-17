@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { companyVisibilityWhere, staffVisibilityWhere, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
@@ -12,6 +12,16 @@ import { StaffDirectoryRows } from "@/components/staff-directory-rows";
 import { StaffDirectoryFilters } from "@/components/staff-directory-filters";
 
 const ACTIVE_PROJECT_STATUSES = ["PLANNING", "ACTIVE", "AT_RISK", "ON_HOLD"] as const;
+
+function isMissingColumnError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022";
+}
+
+function readOptionalString(obj: unknown, key: string): string | null {
+  if (!obj || typeof obj !== "object" || !(key in obj)) return null;
+  const value = (obj as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : null;
+}
 
 function onboardingBadgeText(rows: { completedAt: Date | null }[], locale: Locale): { label: string; tone: "done" | "pending" | "none" } {
   if (!rows.length) return { label: t(locale, "staffOnboardingNone"), tone: "none" };
@@ -106,35 +116,88 @@ export async function StaffDirectoryBody({
   else if (activeFilter === "inactive") whereClauses.push({ active: false });
 
   const where: Prisma.UserWhereInput = whereClauses.length === 1 ? whereClauses[0]! : { AND: whereClauses };
-  const [staff, totalAll, departmentOptions] = await Promise.all([
-    prisma.user.findMany({
-      where,
-      orderBy: { name: "asc" },
-      include: {
-        companyMemberships: { include: { company: true, roleDefinition: true, department: true } },
-        memberOnboardings: { select: { completedAt: true, companyId: true, company: { select: { name: true } } } },
-        projectMemberships: {
-          where: {
-            project: {
-              deletedAt: null,
-              status: { in: [...ACTIVE_PROJECT_STATUSES] },
+  const totalAllPromise = prisma.user.count({ where: { deletedAt: null, ...staffVisibilityWhere(user) } });
+
+  const loadStaffAndDepartments = async () => {
+    try {
+      const [staffRows, departmentRows] = await Promise.all([
+        prisma.user.findMany({
+          where,
+          orderBy: { name: "asc" },
+          include: {
+            companyMemberships: { include: { company: true, roleDefinition: true, department: true } },
+            memberOnboardings: { select: { completedAt: true, companyId: true, company: { select: { name: true } } } },
+            projectMemberships: {
+              where: {
+                project: {
+                  deletedAt: null,
+                  status: { in: [...ACTIVE_PROJECT_STATUSES] },
+                },
+              },
             },
           },
-        },
-      },
-    }),
-    prisma.user.count({ where: { deletedAt: null, ...staffVisibilityWhere(user) } }),
-    prisma.department.findMany({
-      where: { companyId: { in: visibleCompanyIds } },
-      select: {
-        id: true,
-        name: true,
-        companyId: true,
-        company: { select: { name: true } },
-      },
-      orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
-      take: 200,
-    }),
+        }),
+        prisma.department.findMany({
+          where: { companyId: { in: visibleCompanyIds } },
+          select: {
+            id: true,
+            name: true,
+            companyId: true,
+            company: { select: { name: true } },
+          },
+          orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
+          take: 200,
+        }),
+      ]);
+      return { staffRows, departmentRows };
+    } catch (error) {
+      if (!isMissingColumnError(error)) throw error;
+      console.warn("[staff] falling back to legacy-compatible query after missing-column error", error);
+
+      const [staffRows, departmentRows] = await Promise.all([
+        prisma.user.findMany({
+          where,
+          orderBy: { name: "asc" },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            title: true,
+            avatarUrl: true,
+            active: true,
+            isSuperAdmin: true,
+            companyMemberships: { include: { company: true, roleDefinition: true, department: true } },
+            memberOnboardings: { select: { completedAt: true, companyId: true, company: { select: { name: true } } } },
+            projectMemberships: {
+              where: {
+                project: {
+                  deletedAt: null,
+                  status: { in: [...ACTIVE_PROJECT_STATUSES] },
+                },
+              },
+              select: { id: true },
+            },
+          },
+        }),
+        prisma.department.findMany({
+          where: { companyId: { in: visibleCompanyIds } },
+          select: {
+            id: true,
+            name: true,
+            companyId: true,
+            company: { select: { name: true } },
+          },
+          orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
+          take: 200,
+        }),
+      ]);
+      return { staffRows, departmentRows };
+    }
+  };
+
+  const [{ staffRows: staff, departmentRows: departmentOptions }, totalAll] = await Promise.all([
+    loadStaffAndDepartments(),
+    totalAllPromise,
   ]);
 
   return (
@@ -196,7 +259,7 @@ export async function StaffDirectoryBody({
           name: s.name,
           email: s.email,
           title: s.title,
-          signature: s.signature,
+          signature: readOptionalString(s, "signature"),
           avatarUrl: s.avatarUrl,
           active: s.active,
           isSuperAdmin: s.isSuperAdmin,
@@ -216,7 +279,7 @@ export async function StaffDirectoryBody({
             key: m.id,
             label: `${m.company.name}${m.department ? ` · ${m.department.name}` : ""}`,
           })),
-          contactLine: [s.contactEmails, s.phone].filter(Boolean).join(" · ").trim() || null,
+          contactLine: [readOptionalString(s, "contactEmails"), readOptionalString(s, "phone")].filter(Boolean).join(" · ").trim() || null,
         }))}
         copy={{
           active: t(locale, "staffStatusActive"),
