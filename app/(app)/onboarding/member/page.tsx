@@ -233,26 +233,24 @@ export default async function MemberOnboardingPage({
                     <p className="mt-2 text-sm text-[hsl(var(--muted))]">{material.displayDescription}</p>
                   ) : null}
                   {material.packageHref ? (
-                    <a
+                    <OnboardingResourceLink
+                      onboardingId={ob.id}
                       href={material.packageHref}
-                      target="_blank"
-                      rel="noreferrer"
                       className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
                     >
                       {t(locale, "onboardingOpenPackage")}
-                    </a>
+                    </OnboardingResourceLink>
                   ) : (
                     <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "onboardingNoPackage")}</p>
                   )}
                   {material.videoHref ? (
-                    <a
+                    <OnboardingResourceLink
+                      onboardingId={ob.id}
                       href={material.videoHref}
-                      target="_blank"
-                      rel="noreferrer"
                       className="mt-2 inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
                     >
                       {t(locale, "onboardingVideoOpenLink")}
-                    </a>
+                    </OnboardingResourceLink>
                   ) : null}
                 </div>
               ))}
@@ -321,14 +319,13 @@ export default async function MemberOnboardingPage({
           <CardTitle className="font-display text-base font-bold">{t(locale, "onboardingResourcesAfterComplete")}</CardTitle>
           <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "onboardingResourcesAfterCompleteHelp")}</p>
           {hasPackageUrl ? (
-            <a
+            <OnboardingResourceLink
+              onboardingId={ob.id}
               href={packageUrl}
-              target="_blank"
-              rel="noreferrer"
               className="inline-flex font-medium text-[hsl(var(--primary))] hover:underline"
             >
               {t(locale, "onboardingOpenPackage")}
-            </a>
+            </OnboardingResourceLink>
           ) : (
             <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "onboardingNoPackageHelp")}</p>
           )}

@@ -156,7 +156,6 @@ export async function updateOnboardingVideoProgressAction(formData: FormData) {
   if (!ob) throw new Error("Forbidden");
   const videoUrl = ob?.videoUrl?.trim() || ob?.assignedMaterial?.videoUrl?.trim() || ob?.company.onboardingVideoUrl?.trim();
   if (!videoUrl) throw new Error("Forbidden");
-  const packageUrl = ob?.packageUrl?.trim() || ob?.assignedMaterial?.packageUrl?.trim() || ob?.company.onboardingPackageUrl?.trim() || "";
 
   if (ob.videoCompletedAt) {
     revalidatePath("/onboarding/member");
@@ -185,7 +184,7 @@ export async function updateOnboardingVideoProgressAction(formData: FormData) {
     where: { id: onboardingId },
     data: {
       videoProgressSeconds: nextProgress,
-      ...(!packageUrl && nextProgress > 0 && !ob.materialsOpenedAt ? { materialsOpenedAt: new Date() } : {}),
+      ...(nextProgress > 0 && !ob.materialsOpenedAt ? { materialsOpenedAt: new Date() } : {}),
       ...(completedAt ? { videoCompletedAt: completedAt } : {}),
     },
   });
