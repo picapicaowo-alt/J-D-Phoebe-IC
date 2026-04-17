@@ -16,13 +16,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return jsonError("Unauthorized", 401);
   }
 
-  const payload = (await request.json().catch(() => null)) as { name?: string; memberIds?: string[] } | null;
   const { id } = await params;
 
   try {
+    const formData = await request.formData();
+    const memberIdsRaw = String(formData.get("memberIds") ?? "[]");
+    const adminIdsRaw = String(formData.get("adminIds") ?? "[]");
+    const groupPhoto = formData.get("groupPhoto");
+
     const result = await updateMessageGroup(user as AccessUser, id, {
-      name: String(payload?.name ?? ""),
-      memberIds: Array.isArray(payload?.memberIds) ? payload!.memberIds.map((value) => String(value)) : [],
+      name: String(formData.get("name") ?? ""),
+      memberIds: Array.isArray(JSON.parse(memberIdsRaw)) ? JSON.parse(memberIdsRaw).map((value: unknown) => String(value)) : [],
+      adminIds: Array.isArray(JSON.parse(adminIdsRaw)) ? JSON.parse(adminIdsRaw).map((value: unknown) => String(value)) : [],
+      groupPhoto: groupPhoto && typeof groupPhoto !== "string" ? groupPhoto : null,
     });
     return NextResponse.json(result);
   } catch (error) {

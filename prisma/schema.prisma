@@ -1121,6 +1121,7 @@ model MessageGroup {
   id          String   @id @default(cuid())
   companyId   String
   name        String
+  avatarUrl   String?
   createdById String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -1139,6 +1140,7 @@ model MessageGroupMember {
   groupId    String
   userId     String
   addedById  String
+  isAdmin    Boolean   @default(false)
   lastReadAt DateTime?
   mutedAt    DateTime?
   createdAt  DateTime @default(now())
@@ -1150,6 +1152,7 @@ model MessageGroupMember {
   @@unique([groupId, userId])
   @@index([userId, createdAt])
   @@index([groupId, createdAt])
+  @@index([groupId, isAdmin])
 }
 
 model DirectMessagePreference {

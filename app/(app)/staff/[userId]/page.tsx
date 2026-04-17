@@ -25,7 +25,7 @@ import { canManageProject, isAnyAdmin, isSuperAdmin, staffVisibilityWhere, type 
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { tLedgerReason } from "@/lib/ledger-labels";
-import { formatBirthdayLabel, getZodiacSignLabel, MBTI_OPTIONS } from "@/lib/profile-labels";
+import { formatBirthdayLabel, getMbtiBadgeTone, getZodiacSignLabel, MBTI_OPTIONS } from "@/lib/profile-labels";
 import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/companion-manifest";
 import { sumAbilityByUser } from "@/lib/scoring";
 import { userHasPermission } from "@/lib/permissions";
@@ -314,6 +314,7 @@ export default async function StaffDetailPage({
     ),
   ]);
   const zodiacLabel = getZodiacSignLabel(target.birthday, locale);
+  const mbtiBadgeTone = getMbtiBadgeTone(target.mbti);
   const formattedBirthday = formatBirthdayLabel(target.birthday, locale);
   const canSeeExactBirthday = !!target.birthday && (!target.birthdayHidden || actor.id === target.id || isSuperAdmin(actor));
   const projectAssignmentRoleIds = mergeRoleIdSets(
@@ -411,7 +412,7 @@ export default async function StaffDetailPage({
           {zodiacLabel || target.mbti ? (
             <div className="mt-2 flex flex-wrap gap-2">
               {zodiacLabel ? <Badge tone="info">{zodiacLabel}</Badge> : null}
-              {target.mbti ? <Badge>{target.mbti}</Badge> : null}
+              {target.mbti ? <Badge tone={mbtiBadgeTone}>{target.mbti}</Badge> : null}
             </div>
           ) : null}
           {target.contactEmails ? (

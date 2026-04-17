@@ -20,6 +20,10 @@ export const MBTI_OPTIONS = [
 ] as const;
 
 const MBTI_SET = new Set<string>(MBTI_OPTIONS);
+const MBTI_ANALYSTS = new Set(["INTJ", "INTP", "ENTJ", "ENTP"]);
+const MBTI_DIPLOMATS = new Set(["INFJ", "INFP", "ENFJ", "ENFP"]);
+const MBTI_SENTINELS = new Set(["ISTJ", "ISFJ", "ESTJ", "ESFJ"]);
+const MBTI_EXPLORERS = new Set(["ISTP", "ISFP", "ESTP", "ESFP"]);
 
 const ZODIAC_SIGNS = [
   { start: [1, 20], key: "aquarius", en: "Aquarius", zh: "水瓶座" },
@@ -57,6 +61,18 @@ export function normalizeMbti(value: string): string | null {
   if (!trimmed) return null;
   if (!MBTI_SET.has(trimmed)) throw new Error("MBTI must be one of the 16 standard types");
   return trimmed;
+}
+
+export type MbtiBadgeTone = "neutral" | "good" | "warn" | "bad" | "info" | "violet";
+
+export function getMbtiBadgeTone(mbti: string | null | undefined): MbtiBadgeTone {
+  if (!mbti) return "neutral";
+  const normalized = mbti.toUpperCase();
+  if (MBTI_ANALYSTS.has(normalized)) return "violet";
+  if (MBTI_DIPLOMATS.has(normalized)) return "good";
+  if (MBTI_SENTINELS.has(normalized)) return "info";
+  if (MBTI_EXPLORERS.has(normalized)) return "warn";
+  return "neutral";
 }
 
 export function getZodiacSignLabel(birthday: string | null | undefined, locale: Locale): string | null {

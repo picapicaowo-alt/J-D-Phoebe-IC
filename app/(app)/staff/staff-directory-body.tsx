@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
 import { getLocale, type Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
-import { getZodiacSignLabel } from "@/lib/profile-labels";
+import { getMbtiBadgeTone, getZodiacSignLabel } from "@/lib/profile-labels";
 import { StaffDirectoryRows } from "@/components/staff-directory-rows";
 import { StaffDirectoryFilters } from "@/components/staff-directory-filters";
 
@@ -287,7 +287,7 @@ export async function StaffDirectoryBody({
               [readOptionalString(s, "contactEmails"), readOptionalString(s, "phone")].filter(Boolean).join(" · ").trim() || null,
             labels: [
               ...(zodiacLabel ? [{ key: "zodiac", label: zodiacLabel, tone: "info" as const }] : []),
-              ...(mbti ? [{ key: `mbti:${mbti}`, label: mbti, tone: "neutral" as const }] : []),
+              ...(mbti ? [{ key: `mbti:${mbti}`, label: mbti, tone: getMbtiBadgeTone(mbti) }] : []),
             ],
           };
         })}

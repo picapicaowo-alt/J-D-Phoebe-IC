@@ -21,7 +21,7 @@ export type StaffDirectoryRowDTO = {
   onboarding: { label: string; tone: "done" | "pending" | "none" };
   onboardingTimeline?: { key: string; label: string }[];
   companies: { key: string; label: string }[];
-  labels?: { key: string; label: string; tone?: "neutral" | "good" | "warn" | "bad" | "info" }[];
+  labels?: { key: string; label: string; tone?: "neutral" | "good" | "warn" | "bad" | "info" | "violet" }[];
 };
 
 type Copy = {

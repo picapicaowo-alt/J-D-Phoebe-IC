@@ -332,18 +332,18 @@ export async function KnowledgeBrowseBody({
         <form
           action="/knowledge/browse"
           method="get"
-          className="flex flex-wrap items-end gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs"
+          className="flex flex-wrap items-end gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm"
         >
           <input type="hidden" name="layer" value={layerFilter} />
           <input type="hidden" name="q" value={q} />
           <div className="flex min-w-[120px] flex-col gap-0.5">
-            <label className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
+            <label className="text-sm font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
               {t(locale, "commonCompany")}
             </label>
             <select
               name="companyId"
               defaultValue={companyFilter}
-              className="h-8 rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+              className="h-8 rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-sm"
             >
               <option value="">{t(locale, "kbAllCompanies")}</option>
               {companies.map((c) => (
@@ -354,13 +354,13 @@ export async function KnowledgeBrowseBody({
             </select>
           </div>
           <div className="flex min-w-[120px] flex-col gap-0.5">
-            <label className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
+            <label className="text-sm font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
               {t(locale, "commonProject")}
             </label>
             <select
               name="projectId"
               defaultValue={projectFilter}
-              className="h-8 rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+              className="h-8 rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-sm"
             >
               <option value="">{t(locale, "kbAllProjects")}</option>
               {projects.map((p) => (
@@ -371,13 +371,13 @@ export async function KnowledgeBrowseBody({
             </select>
           </div>
           <div className="flex min-w-[100px] flex-col gap-0.5">
-            <label className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
+            <label className="text-sm font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
               {t(locale, "commonAuthor")}
             </label>
             <select
               name="authorId"
               defaultValue={authorFilter}
-              className="h-8 rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+              className="h-8 rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-sm"
             >
               <option value="">{t(locale, "kbAllAuthors")}</option>
               {authors.map((a) => (
@@ -388,15 +388,15 @@ export async function KnowledgeBrowseBody({
             </select>
           </div>
           <div className="flex min-w-[100px] flex-col gap-0.5">
-            <label className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
+            <label className="text-sm font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
               {t(locale, "commonTagContains")}
             </label>
-            <Input name="tag" defaultValue={tagFilter} placeholder="…" className="h-8 text-xs" />
+            <Input name="tag" defaultValue={tagFilter} placeholder="…" className="h-8 text-sm" />
           </div>
-          <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+          <FormSubmitButton type="submit" variant="secondary" className="h-8 text-sm">
             {t(locale, "btnApply")}
           </FormSubmitButton>
-          <a className="inline-flex h-8 items-center text-xs underline" href={`/knowledge/browse?layer=${layerFilter}`}>
+          <a className="inline-flex h-8 items-center text-sm underline" href={`/knowledge/browse?layer=${layerFilter}`}>
             {t(locale, "btnReset")}
           </a>
         </form>
