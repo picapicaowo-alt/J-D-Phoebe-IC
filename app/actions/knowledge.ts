@@ -9,6 +9,7 @@ import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { appendKnowledgeReuseScore } from "@/lib/scoring";
+import { createKnowledgeFileAttachment } from "@/app/actions/attachments";
 
 function req(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -35,9 +36,16 @@ export async function createKnowledgeAssetAction(formData: FormData) {
   const title = req(formData, "title");
   const contentRaw = String(formData.get("content") ?? "").trim();
   const sourceUrlEarly = String(formData.get("sourceUrl") ?? "").trim() || null;
+  const file = formData.get("file");
+  const hasUploadedFile = Boolean(file && typeof file !== "string" && "arrayBuffer" in file && file.size > 0);
+  const uploadFile = hasUploadedFile && file && typeof file !== "string" && "arrayBuffer" in file ? file : null;
   const content =
     contentRaw ||
-    (sourceUrlEarly ? "(External resource — see primary link below.)" : "");
+    (sourceUrlEarly
+      ? "(External resource — see primary link below.)"
+      : hasUploadedFile
+        ? "(Attached file — see uploads below.)"
+        : "");
   if (!content) {
     const returnTo = getSafeReturnTo(formData) ?? "/knowledge/browse?create=1#knowledge-create";
     redirect(withQueryParam(returnTo, "error", "missing_content_or_url"));
@@ -84,6 +92,14 @@ export async function createKnowledgeAssetAction(formData: FormData) {
     action: "KNOWLEDGE_CREATE",
     meta: JSON.stringify({ layer, projectId }),
   });
+
+  if (uploadFile) {
+    await createKnowledgeFileAttachment({
+      user: actor,
+      knowledgeAssetId: asset.id,
+      file: uploadFile,
+    });
+  }
 
   revalidatePath("/knowledge");
   revalidatePath("/knowledge/browse");

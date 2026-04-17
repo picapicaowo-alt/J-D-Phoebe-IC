@@ -2,14 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useFormState } from "react-dom";
 import {
   createCompanyOnboardingMaterialAction,
+  type CompanyOnboardingMaterialActionResult,
   deleteCompanyOnboardingMaterialAction,
   updateCompanyOnboardingMaterialAction,
   uploadCompanyOnboardingPackageAction,
 } from "@/app/actions/company";
 import { FormSubmitButton } from "@/components/form-submit-button";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ResolvedCompanyOnboardingMaterial } from "@/lib/company-onboarding-materials";
 import type { Locale } from "@/lib/locale";
@@ -18,10 +19,6 @@ import { t } from "@/lib/messages";
 type PendingMaterial = ResolvedCompanyOnboardingMaterial & {
   pending: true;
 };
-
-function toErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
-}
 
 function createPendingMaterial(params: {
   companyId: string;
@@ -105,45 +102,26 @@ export function CompanyOnboardingMaterialsManager({
 }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const initialCreateState: CompanyOnboardingMaterialActionResult = { ok: false, error: null };
+  const [createState, createFormAction] = useFormState(createCompanyOnboardingMaterialAction, initialCreateState);
   const [pendingMaterials, setPendingMaterials] = useState<PendingMaterial[]>([]);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
   const pendingBadgeLabel = locale === "zh" ? "上传中…" : "Uploading...";
   const pendingPackageLabel = locale === "zh" ? "文件上传中…" : "Upload in progress...";
   const pendingQueuedLabel = locale === "zh" ? "已开始上传，完成后页面会自动刷新。" : "Upload queued. The page will refresh automatically when it finishes.";
-  const createPendingLabel = locale === "zh" ? "上传中…" : "Uploading...";
-  const createMissingLabel = locale === "zh" ? "请提供资料链接或上传资料文件。" : "Provide a material URL or upload a material file.";
 
   useEffect(() => {
-    setPendingMaterials([]);
-  }, [materials]);
-
-  const visibleMaterials = [...pendingMaterials, ...materials];
-
-  async function handleCreate(formData: FormData) {
-    setCreateError(null);
-
-    const nextPendingMaterials = buildPendingMaterials(formData);
-    if (nextPendingMaterials.length === 0) {
-      setCreateError(createMissingLabel);
-      return;
-    }
-
-    const pendingIds = new Set(nextPendingMaterials.map((material) => material.id));
-    setPendingMaterials((current) => [...nextPendingMaterials, ...current]);
-    setIsCreating(true);
-
-    try {
-      await createCompanyOnboardingMaterialAction(formData);
+    if (createState.ok) {
+      setPendingMaterials([]);
       formRef.current?.reset();
       router.refresh();
-    } catch (error) {
-      setPendingMaterials((current) => current.filter((material) => !pendingIds.has(material.id)));
-      setCreateError(toErrorMessage(error));
-    } finally {
-      setIsCreating(false);
+      return;
     }
-  }
+    if (createState.error) {
+      setPendingMaterials([]);
+    }
+  }, [createState, router]);
+
+  const visibleMaterials = [...pendingMaterials, ...materials];
 
   return (
     <div className="space-y-3">
@@ -288,37 +266,46 @@ export function CompanyOnboardingMaterialsManager({
         <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
           {t(locale, "onboardingHubManageAddContent")}
         </p>
-        <form ref={formRef} action={handleCreate} encType="multipart/form-data" className="mt-3 grid gap-3">
+        <form
+          ref={formRef}
+          action={createFormAction}
+          encType="multipart/form-data"
+          className="mt-3 grid gap-3"
+          onSubmit={(event) => {
+            const nextPendingMaterials = buildPendingMaterials(new FormData(event.currentTarget));
+            setPendingMaterials(nextPendingMaterials);
+          }}
+        >
           <input type="hidden" name="companyId" value={companyId} />
           <div className="space-y-1">
             <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
-            <Input name="onboardingPackageUrl" placeholder="https://..." disabled={isCreating} />
+            <Input name="onboardingPackageUrl" placeholder="https://..." />
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
-            <Input name="onboardingVideoUrl" placeholder="https://..." disabled={isCreating} />
+            <Input name="onboardingVideoUrl" placeholder="https://..." />
             <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadPackage")}</label>
-            <input type="file" name="onboardingPackageFiles" multiple className="text-xs" disabled={isCreating} />
+            <input type="file" name="onboardingPackageFiles" multiple className="text-xs" />
           </div>
           <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingUploadHelp")}</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>
-              <Input name="onboardingPackageVersion" defaultValue="v1" disabled={isCreating} />
+              <Input name="onboardingPackageVersion" defaultValue="v1" />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "companyOnboardingDeadlineDays")}</label>
-              <Input name="onboardingDeadlineDays" type="number" min={1} max={365} defaultValue="14" disabled={isCreating} />
+              <Input name="onboardingDeadlineDays" type="number" min={1} max={365} defaultValue="14" />
             </div>
           </div>
-          {createError ? <p className="text-sm text-[hsl(var(--error))]">{createError}</p> : null}
+          {createState.error ? <p className="text-sm text-[hsl(var(--error))]">{createState.error}</p> : null}
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={isCreating}>
-              {isCreating ? createPendingLabel : t(locale, "onboardingHubManageAddContent")}
-            </Button>
+            <FormSubmitButton type="submit" pendingLabel={locale === "zh" ? "上传中…" : "Uploading..."}>
+              {t(locale, "onboardingHubManageAddContent")}
+            </FormSubmitButton>
           </div>
         </form>
       </div>

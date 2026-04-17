@@ -17,6 +17,11 @@ import { backfillMemberOnboardingsForCompany } from "@/lib/member-onboarding";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
+export type CompanyOnboardingMaterialActionResult = {
+  ok: boolean;
+  error: string | null;
+};
+
 function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
   if (!v) throw new Error(`Missing ${key}`);
@@ -186,7 +191,7 @@ export async function updateCompanyAction(formData: FormData) {
   revalidatePath("/group");
 }
 
-export async function createCompanyOnboardingMaterialAction(formData: FormData) {
+async function createCompanyOnboardingMaterialMutation(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   await assertPermission(user, "company.update");
   const companyId = requireString(formData, "companyId");
@@ -243,6 +248,23 @@ export async function createCompanyOnboardingMaterialAction(formData: FormData) 
 
   await backfillMemberOnboardingsForCompany(companyId);
   revalidateCompanyPaths(companyId);
+}
+
+function toCompanyOnboardingMaterialError(error: unknown) {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Unable to save the uploaded onboarding file.";
+}
+
+export async function createCompanyOnboardingMaterialAction(
+  _prevState: CompanyOnboardingMaterialActionResult | null,
+  formData: FormData,
+): Promise<CompanyOnboardingMaterialActionResult> {
+  try {
+    await createCompanyOnboardingMaterialMutation(formData);
+    return { ok: true, error: null };
+  } catch (error) {
+    return { ok: false, error: toCompanyOnboardingMaterialError(error) };
+  }
 }
 
 export async function updateCompanyOnboardingMaterialAction(formData: FormData) {

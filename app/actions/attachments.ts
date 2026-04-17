@@ -17,6 +17,12 @@ function metaFromForm(formData: FormData) {
   };
 }
 
+type UploadableFile = {
+  name?: string;
+  type?: string;
+  arrayBuffer(): Promise<ArrayBuffer>;
+};
+
 function mustHttpUrl(formData: FormData, key = "externalUrl") {
   const raw = String(formData.get(key) ?? "").trim();
   if (!raw) throw new Error("Missing URL");
@@ -94,10 +100,6 @@ export async function uploadKnowledgeAttachmentAction(formData: FormData) {
 
   const file = formData.get("file");
   if (!file || typeof file === "string" || !("arrayBuffer" in file)) throw new Error("Missing file");
-
-  const buf = Buffer.from(await file.arrayBuffer());
-  const fileName = sanitizeFileName(file.name || "upload");
-  const mimeType = file.type || "application/octet-stream";
   const meta = metaFromForm(formData);
   const prevRaw = String(formData.get("previousVersionId") ?? "").trim();
   let previousVersionId: string | null = null;
@@ -109,6 +111,39 @@ export async function uploadKnowledgeAttachmentAction(formData: FormData) {
     previousVersionId = p.id;
   }
 
+  await createKnowledgeFileAttachment({
+    user,
+    knowledgeAssetId,
+    file,
+    previousVersionId,
+    meta,
+  });
+
+  revalidatePath("/knowledge");
+  revalidatePath("/knowledge/browse");
+  if (asset.projectId) revalidatePath(`/projects/${asset.projectId}`);
+}
+
+export async function createKnowledgeFileAttachment({
+  user,
+  knowledgeAssetId,
+  file,
+  previousVersionId = null,
+  meta = {},
+}: {
+  user: AccessUser;
+  knowledgeAssetId: string;
+  file: UploadableFile;
+  previousVersionId?: string | null;
+  meta?: Partial<ReturnType<typeof metaFromForm>>;
+}) {
+  const asset = await prisma.knowledgeAsset.findFirst({ where: { id: knowledgeAssetId, deletedAt: null } });
+  if (!asset) throw new Error("Not found");
+  if (!user.isSuperAdmin && asset.authorId !== user.id) throw new Error("Forbidden");
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  const fileName = sanitizeFileName(file.name || "upload");
+  const mimeType = file.type || "application/octet-stream";
   const { storageKey, blobUrl } = await storeUploadedFile(buf, fileName, mimeType, `knowledge/${knowledgeAssetId}`);
 
   await prisma.attachment.create({
@@ -122,13 +157,14 @@ export async function uploadKnowledgeAttachmentAction(formData: FormData) {
       storageKey,
       blobUrl,
       uploadedById: user.id,
-      ...meta,
+      description: meta.description ?? null,
+      labels: meta.labels ?? null,
+      titleEn: meta.titleEn ?? null,
+      titleZh: meta.titleZh ?? null,
     },
   });
 
-  revalidatePath("/knowledge");
-  revalidatePath("/knowledge/browse");
-  if (asset.projectId) revalidatePath(`/projects/${asset.projectId}`);
+  return asset;
 }
 
 /** Phase 1: external links (Drive, docs, etc.) instead of file uploads. */

@@ -88,7 +88,7 @@ export async function KnowledgeBrowseBody({
               {t(locale, "kbCreateNeedsContentOrUrl")}
             </p>
           ) : null}
-          <form action={createKnowledgeAssetAction} className="grid gap-2 md:grid-cols-2">
+          <form action={createKnowledgeAssetAction} encType="multipart/form-data" className="grid gap-2 md:grid-cols-2">
             <input type="hidden" name="returnTo" value="/knowledge/browse?create=1#knowledge-create" />
             <div className="space-y-1 md:col-span-2">
               <label className="text-sm font-medium">{t(locale, "commonTitle")}</label>
@@ -154,6 +154,10 @@ export async function KnowledgeBrowseBody({
             <div className="space-y-1">
               <label className="text-sm font-medium">{t(locale, "commonSourceUrl")}</label>
               <Input name="sourceUrl" type="url" placeholder="https://drive.google.com/..." />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">{t(locale, "kbUploadFile")}</label>
+              <input type="file" name="file" className="block h-10 w-full text-sm" />
             </div>
             <div className="md:col-span-2">
               <FormSubmitButton type="submit" variant="secondary">
