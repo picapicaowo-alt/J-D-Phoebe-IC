@@ -892,8 +892,8 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
           if (event.target === event.currentTarget) createDialogRef.current?.close();
         }}
       >
-        <form onSubmit={handleCreateGroup} className="space-y-5 p-6">
-          <div className="flex items-start justify-between gap-4">
+        <form onSubmit={handleCreateGroup} className="flex max-h-[min(calc(100dvh-1rem),720px)] flex-col">
+          <div className="flex items-start justify-between gap-4 border-b border-[hsl(var(--border))] px-6 py-5">
             <div>
               <h3 className="font-display text-xl font-semibold text-[hsl(var(--foreground))]">{copy.newGroup}</h3>
               <p className="mt-1 text-sm text-[hsl(var(--muted))]">{copy.groupMemberHint}</p>
@@ -903,76 +903,78 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
             </Button>
           </div>
 
-          {!groupOptions.length ? (
-            <p className="text-sm text-[hsl(var(--muted))]">{copy.noAdminCompanies}</p>
-          ) : (
-            <>
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupName}</span>
-                <Input value={createGroupName} onChange={(event) => setCreateGroupName(event.target.value)} placeholder={copy.groupNamePlaceholder} />
-              </label>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            {!groupOptions.length ? (
+              <p className="text-sm text-[hsl(var(--muted))]">{copy.noAdminCompanies}</p>
+            ) : (
+              <div className="space-y-5">
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupName}</span>
+                  <Input value={createGroupName} onChange={(event) => setCreateGroupName(event.target.value)} placeholder={copy.groupNamePlaceholder} />
+                </label>
 
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupCompany}</span>
-                <Select
-                  value={createCompanyId}
-                  onChange={(event) => {
-                    setCreateCompanyId(event.target.value);
-                    setCreateMemberIds([]);
-                  }}
-                >
-                  {groupOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupCompany}</span>
+                  <Select
+                    value={createCompanyId}
+                    onChange={(event) => {
+                      setCreateCompanyId(event.target.value);
+                      setCreateMemberIds([]);
+                    }}
+                  >
+                    {groupOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
 
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupMembers}</span>
-                <div className="rounded-[18px] border border-[hsl(var(--border))] p-3">
-                  <div className="mb-3 rounded-[14px] border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm text-[hsl(var(--muted))]">
-                    {copy.currentUserLocked}
-                  </div>
-                  <div className="max-h-72 space-y-2 overflow-y-auto">
-                    {createOption?.members
-                      .filter((member) => member.id !== currentUserId)
-                      .map((member) => {
-                        const checked = createMemberIds.includes(member.id);
-                        return (
-                          <label
-                            key={member.id}
-                            className="flex cursor-pointer items-center justify-between gap-3 rounded-[14px] border border-[hsl(var(--border))] px-3 py-2"
-                          >
-                            <span className="flex min-w-0 items-center gap-3">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(event) =>
-                                  setCreateMemberIds((current) =>
-                                    event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id),
-                                  )
-                                }
-                              />
-                              <UserFace name={member.name} avatarUrl={member.avatarUrl} size={28} />
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
-                                <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
+                <div className="space-y-2">
+                  <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupMembers}</span>
+                  <div className="rounded-[18px] border border-[hsl(var(--border))] p-3">
+                    <div className="mb-3 rounded-[14px] border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm text-[hsl(var(--muted))]">
+                      {copy.currentUserLocked}
+                    </div>
+                    <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                      {createOption?.members
+                        .filter((member) => member.id !== currentUserId)
+                        .map((member) => {
+                          const checked = createMemberIds.includes(member.id);
+                          return (
+                            <label
+                              key={member.id}
+                              className="flex cursor-pointer items-center justify-between gap-3 rounded-[14px] border border-[hsl(var(--border))] px-3 py-2"
+                            >
+                              <span className="flex min-w-0 items-center gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(event) =>
+                                    setCreateMemberIds((current) =>
+                                      event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id),
+                                    )
+                                  }
+                                />
+                                <UserFace name={member.name} avatarUrl={member.avatarUrl} size={28} />
+                                <span className="min-w-0">
+                                  <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
+                                  <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
+                                </span>
                               </span>
-                            </span>
-                          </label>
-                        );
-                      })}
+                            </label>
+                          );
+                        })}
+                    </div>
                   </div>
                 </div>
               </div>
-            </>
-          )}
+            )}
 
-          {groupError ? <p className="text-sm text-[hsl(var(--error))]">{groupError}</p> : null}
+            {groupError ? <p className="mt-5 text-sm text-[hsl(var(--error))]">{groupError}</p> : null}
+          </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 border-t border-[hsl(var(--border))] px-6 py-4">
             <Button type="button" variant="ghost" onClick={() => createDialogRef.current?.close()}>
               {copy.cancel}
             </Button>
@@ -990,8 +992,8 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
           if (event.target === event.currentTarget) manageDialogRef.current?.close();
         }}
       >
-        <form onSubmit={handleUpdateGroup} className="space-y-5 p-6">
-          <div className="flex items-start justify-between gap-4">
+        <form onSubmit={handleUpdateGroup} className="flex max-h-[min(calc(100dvh-1rem),720px)] flex-col">
+          <div className="flex items-start justify-between gap-4 border-b border-[hsl(var(--border))] px-6 py-5">
             <div>
               <h3 className="font-display text-xl font-semibold text-[hsl(var(--foreground))]">{copy.manageGroup}</h3>
               <p className="mt-1 text-sm text-[hsl(var(--muted))]">{copy.groupMemberHint}</p>
@@ -1001,53 +1003,57 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
             </Button>
           </div>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupName}</span>
-            <Input value={manageGroupName} onChange={(event) => setManageGroupName(event.target.value)} placeholder={copy.groupNamePlaceholder} />
-          </label>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <div className="space-y-5">
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupName}</span>
+                <Input value={manageGroupName} onChange={(event) => setManageGroupName(event.target.value)} placeholder={copy.groupNamePlaceholder} />
+              </label>
 
-          <div className="space-y-2">
-            <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupMembers}</span>
-            <div className="rounded-[18px] border border-[hsl(var(--border))] p-3">
-              <div className="mb-3 rounded-[14px] border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm text-[hsl(var(--muted))]">
-                {copy.currentUserLocked}
-              </div>
-              <div className="max-h-72 space-y-2 overflow-y-auto">
-                {selectedGroupOption?.members
-                  .filter((member) => member.id !== currentUserId)
-                  .map((member) => {
-                    const checked = manageMemberIds.includes(member.id);
-                    return (
-                      <label
-                        key={member.id}
-                        className="flex cursor-pointer items-center justify-between gap-3 rounded-[14px] border border-[hsl(var(--border))] px-3 py-2"
-                      >
-                        <span className="flex min-w-0 items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(event) =>
-                              setManageMemberIds((current) =>
-                                event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id),
-                              )
-                            }
-                          />
-                          <UserFace name={member.name} avatarUrl={member.avatarUrl} size={28} />
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
-                            <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
-                          </span>
-                        </span>
-                      </label>
-                    );
-                  })}
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupMembers}</span>
+                <div className="rounded-[18px] border border-[hsl(var(--border))] p-3">
+                  <div className="mb-3 rounded-[14px] border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm text-[hsl(var(--muted))]">
+                    {copy.currentUserLocked}
+                  </div>
+                  <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                    {selectedGroupOption?.members
+                      .filter((member) => member.id !== currentUserId)
+                      .map((member) => {
+                        const checked = manageMemberIds.includes(member.id);
+                        return (
+                          <label
+                            key={member.id}
+                            className="flex cursor-pointer items-center justify-between gap-3 rounded-[14px] border border-[hsl(var(--border))] px-3 py-2"
+                          >
+                            <span className="flex min-w-0 items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) =>
+                                  setManageMemberIds((current) =>
+                                    event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id),
+                                  )
+                                }
+                              />
+                              <UserFace name={member.name} avatarUrl={member.avatarUrl} size={28} />
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
+                                <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                </div>
               </div>
             </div>
+
+            {groupError ? <p className="mt-5 text-sm text-[hsl(var(--error))]">{groupError}</p> : null}
           </div>
 
-          {groupError ? <p className="text-sm text-[hsl(var(--error))]">{groupError}</p> : null}
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[hsl(var(--border))] px-6 py-4">
             <Button type="button" variant="ghost" className="text-rose-600 hover:text-rose-700" onClick={() => void handleDeleteGroup()}>
               {copy.groupDelete}
             </Button>
