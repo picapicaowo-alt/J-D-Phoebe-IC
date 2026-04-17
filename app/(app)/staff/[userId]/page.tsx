@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { updateCompanionAction } from "@/app/actions/companion";
 import { softDeleteUserAction } from "@/app/actions/trash";
 import {
-  assignCompanyAction,
   assignProjectAction,
   removeCompanyMembershipAction,
   removeProjectMembershipAction,
@@ -317,117 +316,6 @@ export default async function StaffDetailPage({
       ) : (
         <Card className="p-4 text-sm text-[hsl(var(--muted))]">{t(locale, "staffNoEdit")}</Card>
       )}
-
-      {canAssignCompanyUI || canAssignProjectUI ? (
-        <Card className="space-y-4 p-4">
-          <CardTitle>{locale === "zh" ? "权限与角色" : "Access & Roles"}</CardTitle>
-          <p className="text-xs text-[hsl(var(--muted))]">
-            {locale === "zh"
-              ? "直接在这里用下拉框调整成员角色。部门和主管等高级设置仍在下面。"
-              : "Use the dropdowns here to quickly adjust this member's roles. Department and supervisor settings stay below."}
-          </p>
-
-          {canAssignCompanyUI ? (
-            <div className="space-y-3">
-              <div className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "staffAssignCompany")}</div>
-              <form action={assignCompanyAction} className="flex flex-wrap gap-2">
-                <input type="hidden" name="userId" value={target.id} />
-                <Select name="companyId" required className="min-w-[220px]">
-                  <option value="">{t(locale, "staffSelectCompany")}</option>
-                  {manageableCompanies.map((company) => (
-                    <option key={company.id} value={company.id}>
-                      {company.name}
-                    </option>
-                  ))}
-                </Select>
-                <Select name="roleDefinitionId" required defaultValue={defaultCompanyRoleId} className="min-w-[220px]">
-                  {companyRoles.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.displayName}
-                    </option>
-                  ))}
-                </Select>
-                <FormSubmitButton type="submit">{t(locale, "projAssignBtn")}</FormSubmitButton>
-              </form>
-
-              {target.companyMemberships.filter((membership) => manageableCompanyIds.has(membership.companyId)).length ? (
-                <div className="space-y-2">
-                  {target.companyMemberships
-                    .filter((membership) => manageableCompanyIds.has(membership.companyId))
-                    .map((membership) => (
-                      <form key={membership.id} action={updateCompanyMembershipRoleAction} className="flex flex-wrap items-end gap-2">
-                        <input type="hidden" name="userId" value={target.id} />
-                        <input type="hidden" name="companyId" value={membership.companyId} />
-                        <div className="min-w-[220px] text-sm text-[hsl(var(--foreground))]">{membership.company.name}</div>
-                        <Select name="roleDefinitionId" defaultValue={membership.roleDefinitionId} className="min-w-[220px]">
-                          {companyRoles.map((role) => (
-                            <option key={role.id} value={role.id}>
-                              {role.displayName}
-                            </option>
-                          ))}
-                        </Select>
-                        <FormSubmitButton type="submit" variant="secondary">
-                          {t(locale, "btnSave")}
-                        </FormSubmitButton>
-                      </form>
-                    ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {canAssignProjectUI ? (
-            <div className={canAssignCompanyUI ? "space-y-3 border-t border-[hsl(var(--border))] pt-4" : "space-y-3"}>
-              <div className="text-xs font-medium text-[hsl(var(--muted))]">{t(locale, "staffAssignProject")}</div>
-              <form action={assignProjectAction} className="flex flex-wrap gap-2">
-                <input type="hidden" name="userId" value={target.id} />
-                <Select name="projectId" required className="min-w-[220px]">
-                  <option value="">{t(locale, "staffSelectProject")}</option>
-                  {manageableProjects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.company.name} · {project.name}
-                    </option>
-                  ))}
-                </Select>
-                <Select name="roleDefinitionId" required defaultValue={defaultProjectRoleId} className="min-w-[220px]">
-                  {projectRoles.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.displayName}
-                    </option>
-                  ))}
-                </Select>
-                <FormSubmitButton type="submit">{t(locale, "projAssignBtn")}</FormSubmitButton>
-              </form>
-
-              {target.projectMemberships.filter((membership) => manageableProjectIds.has(membership.projectId)).length ? (
-                <div className="space-y-2">
-                  {target.projectMemberships
-                    .filter((membership) => manageableProjectIds.has(membership.projectId))
-                    .map((membership) => (
-                      <form key={membership.id} action={updateProjectMembershipRoleAction} className="flex flex-wrap items-end gap-2">
-                        <input type="hidden" name="userId" value={target.id} />
-                        <input type="hidden" name="projectId" value={membership.projectId} />
-                        <div className="min-w-[220px] text-sm text-[hsl(var(--foreground))]">
-                          {membership.project.company.name} · {membership.project.name}
-                        </div>
-                        <Select name="roleDefinitionId" defaultValue={membership.roleDefinitionId} className="min-w-[220px]">
-                          {projectRoles.map((role) => (
-                            <option key={role.id} value={role.id}>
-                              {role.displayName}
-                            </option>
-                          ))}
-                        </Select>
-                        <FormSubmitButton type="submit" variant="secondary">
-                          {t(locale, "btnSave")}
-                        </FormSubmitButton>
-                      </form>
-                    ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </Card>
-      ) : null}
 
       {canSkipStaffOnboarding ? (
         <Card className="space-y-4 p-4">
