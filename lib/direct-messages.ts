@@ -1406,6 +1406,10 @@ export async function getMessagingUnreadCount(userId: string) {
     where: {
       recipientId: userId,
       readAt: null,
+      sender: {
+        active: true,
+        deletedAt: null,
+      },
       ...(mutedPeerIds.length ? { senderId: { notIn: mutedPeerIds } } : {}),
     },
   });
