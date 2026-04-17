@@ -13,7 +13,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: ["var(--font-dm-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
-        display: ["General Sans", "var(--font-dm-sans)", "ui-sans-serif", "sans-serif"],
+        display: ["var(--font-dm-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       colors: {
