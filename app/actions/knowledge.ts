@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { KnowledgeLayer } from "@prisma/client";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { type AccessUser } from "@/lib/access";
 import { assertPermission } from "@/lib/permissions";
@@ -15,6 +16,18 @@ function req(formData: FormData, key: string) {
   return v;
 }
 
+function getSafeReturnTo(formData: FormData) {
+  const raw = String(formData.get("returnTo") ?? "").trim();
+  if (!raw.startsWith("/")) return null;
+  return raw;
+}
+
+function withQueryParam(path: string, key: string, value: string) {
+  const [base, hash = ""] = path.split("#", 2);
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}${hash ? `#${hash}` : ""}`;
+}
+
 export async function createKnowledgeAssetAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
   await assertPermission(actor, "knowledge.create");
@@ -25,7 +38,10 @@ export async function createKnowledgeAssetAction(formData: FormData) {
   const content =
     contentRaw ||
     (sourceUrlEarly ? "(External resource — see primary link below.)" : "");
-  if (!content) throw new Error("Add body text or a primary resource URL.");
+  if (!content) {
+    const returnTo = getSafeReturnTo(formData) ?? "/knowledge/browse?create=1#knowledge-create";
+    redirect(withQueryParam(returnTo, "error", "missing_content_or_url"));
+  }
   const layer = req(formData, "layer") as KnowledgeLayer;
   const projectIdRaw = String(formData.get("projectId") ?? "").trim();
   const projectId = projectIdRaw || null;

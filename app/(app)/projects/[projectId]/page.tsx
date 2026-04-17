@@ -419,9 +419,10 @@ export default async function ProjectDetailPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ task?: string; section?: string }>;
+  searchParams: Promise<{ task?: string; section?: string; error?: string }>;
 }) {
   const [user, { projectId }, sp] = await Promise.all([requireUser() as Promise<AccessUser>, params, searchParams]);
+  const showKnowledgeCreateError = String(sp.error ?? "").trim() === "missing_content_or_url";
   const localePromise = getLocale();
   const sessionPromise = getAppSession();
   const permissionPromise = Promise.all([
@@ -1119,7 +1120,13 @@ export default async function ProjectDetailPage({
             {canEditKnowledge ? (
               <details className="rounded-md border border-[hsl(var(--border))] bg-black/[0.02] p-2 dark:bg-white/[0.02]">
                 <summary className="cursor-pointer text-sm font-medium">{t(locale, "projKnowledgeAddOnProject")}</summary>
+                {showKnowledgeCreateError ? (
+                  <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+                    {t(locale, "kbCreateNeedsContentOrUrl")}
+                  </p>
+                ) : null}
                 <form action={createKnowledgeAssetAction} className="mt-2 grid gap-2">
+                  <input type="hidden" name="returnTo" value={`/projects/${project.id}#section-knowledge`} />
                   <input type="hidden" name="projectId" value={project.id} />
                   <input type="hidden" name="companyId" value={project.companyId} />
                   <div className="space-y-1">

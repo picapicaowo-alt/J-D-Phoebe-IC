@@ -43,6 +43,7 @@ export async function KnowledgeBrowseBody({
 }: {
   searchParams: Promise<{
     q?: string;
+    error?: string;
     layer?: KnowledgeLayer | "ALL";
     projectId?: string;
     companyId?: string;
@@ -56,6 +57,8 @@ export async function KnowledgeBrowseBody({
   const locale = await getLocale();
   const canCreate = await userHasPermission(user, "knowledge.create");
   const sp = await searchParams;
+  const createError = String(sp.error ?? "").trim();
+  const showCreateError = createError === "missing_content_or_url";
   const isCreateMode = String(sp.create ?? "").trim() === "1";
 
   if (isCreateMode) {
@@ -79,7 +82,13 @@ export async function KnowledgeBrowseBody({
         </div>
         <Card id="knowledge-create" className="scroll-mt-24 space-y-3 p-4">
           <CardTitle>{t(locale, "knowledgeAddNew")}</CardTitle>
+          {showCreateError ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+              {t(locale, "kbCreateNeedsContentOrUrl")}
+            </p>
+          ) : null}
           <form action={createKnowledgeAssetAction} className="grid gap-2 md:grid-cols-2">
+            <input type="hidden" name="returnTo" value="/knowledge/browse?create=1#knowledge-create" />
             <div className="space-y-1 md:col-span-2">
               <label className="text-sm font-medium">{t(locale, "commonTitle")}</label>
               <Input name="title" required />
@@ -484,7 +493,13 @@ export async function KnowledgeBrowseBody({
               {t(locale, "knowledgeAddNew")}
             </summary>
             <div className="border-t border-[hsl(var(--border))] p-4">
+              {showCreateError ? (
+                <p className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+                  {t(locale, "kbCreateNeedsContentOrUrl")}
+                </p>
+              ) : null}
               <form action={createKnowledgeAssetAction} className="grid gap-2 md:grid-cols-2">
+                <input type="hidden" name="returnTo" value={`/knowledge/browse?projectId=${scopedProject?.id ?? ""}#knowledge-create`} />
                 {scopedProject ? (
                   <>
                     <input type="hidden" name="projectId" value={scopedProject.id} />
@@ -545,7 +560,13 @@ export async function KnowledgeBrowseBody({
         ) : (
         <Card id="knowledge-create" className="scroll-mt-24 space-y-3 p-4">
           <CardTitle>{t(locale, "knowledgeAddNew")}</CardTitle>
+          {showCreateError ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+              {t(locale, "kbCreateNeedsContentOrUrl")}
+            </p>
+          ) : null}
           <form action={createKnowledgeAssetAction} className="grid gap-2 md:grid-cols-2">
+            <input type="hidden" name="returnTo" value="/knowledge/browse#knowledge-create" />
             <div className="space-y-1 md:col-span-2">
               <label className="text-sm font-medium">{t(locale, "commonTitle")}</label>
               <Input name="title" required />

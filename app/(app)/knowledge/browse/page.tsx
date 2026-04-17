@@ -12,6 +12,7 @@ export default async function KnowledgeBrowsePage({
 }: {
   searchParams: Promise<{
     q?: string;
+    error?: string;
     layer?: KnowledgeLayer | "ALL";
     projectId?: string;
     companyId?: string;
