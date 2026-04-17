@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { AccessUser } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
-import { createDirectMessage, getDirectMessagesPageData } from "@/lib/direct-messages";
+import { createThreadMessage, getMessagingPageData } from "@/lib/direct-messages";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,8 +21,8 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const peerId = String(url.searchParams.get("peerId") ?? "").trim() || null;
-  const data = await getDirectMessagesPageData(user as AccessUser, peerId);
+  const threadKey = String(url.searchParams.get("threadKey") ?? "").trim() || null;
+  const data = await getMessagingPageData(user as AccessUser, threadKey);
   return NextResponse.json(data);
 }
 
@@ -33,12 +33,12 @@ export async function POST(request: Request) {
   }
 
   const formData = await request.formData();
-  const peerId = String(formData.get("peerId") ?? "").trim();
+  const threadKey = String(formData.get("threadKey") ?? "").trim();
   const body = String(formData.get("body") ?? "");
   const files = formData.getAll("files").filter(isUpload);
 
   try {
-    const message = await createDirectMessage(user as AccessUser, peerId, body, files);
+    const message = await createThreadMessage(user as AccessUser, threadKey, body, files);
     return NextResponse.json({ message }, { status: 201 });
   } catch (error) {
     const text = error instanceof Error ? error.message : "Could not send the message.";

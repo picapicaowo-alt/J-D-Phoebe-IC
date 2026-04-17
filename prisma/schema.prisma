@@ -292,6 +292,7 @@ model Company {
   onboardingMaterials   CompanyOnboardingMaterial[]
   offboardingRuns       OffboardingRun[]
   lifecycleTriggerRules LifecycleTriggerRule[]
+  messageGroups         MessageGroup[]
 }
 
 model CompanyOnboardingMaterial {
@@ -405,6 +406,12 @@ model User {
   staffInvitesCreated      StaffInvite[]
   directMessagesSent       DirectMessage[]        @relation("DirectMessageSender")
   directMessagesReceived   DirectMessage[]        @relation("DirectMessageRecipient")
+  messageGroupsCreated     MessageGroup[]         @relation("MessageGroupCreator")
+  messageGroupMemberships  MessageGroupMember[]
+  messageGroupMessagesSent MessageGroupMessage[]  @relation("MessageGroupMessageSender")
+  messageGroupMembersAdded MessageGroupMember[]   @relation("MessageGroupMemberAdder")
+  directMessagePreferences DirectMessagePreference[] @relation("DirectMessagePreferenceUser")
+  directMessageAsPreferencePeer DirectMessagePreference[] @relation("DirectMessagePreferencePeer")
 }
 
 model Session {
@@ -1092,6 +1099,87 @@ model DirectMessageAttachment {
   createdAt DateTime @default(now())
 
   message DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId, createdAt])
+}
+
+model MessageGroup {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company   Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy User                  @relation("MessageGroupCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members   MessageGroupMember[]
+  messages  MessageGroupMessage[]
+
+  @@index([companyId, updatedAt])
+  @@index([createdById, createdAt])
+}
+
+model MessageGroupMember {
+  id        String    @id @default(cuid())
+  groupId    String
+  userId     String
+  addedById  String
+  lastReadAt DateTime?
+  mutedAt    DateTime?
+  createdAt  DateTime @default(now())
+
+  group   MessageGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addedBy User         @relation("MessageGroupMemberAdder", fields: [addedById], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId, createdAt])
+  @@index([groupId, createdAt])
+}
+
+model DirectMessagePreference {
+  id        String    @id @default(cuid())
+  userId    String
+  peerId    String
+  mutedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation("DirectMessagePreferenceUser", fields: [userId], references: [id], onDelete: Cascade)
+  peer User @relation("DirectMessagePreferencePeer", fields: [peerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, peerId])
+  @@index([peerId])
+  @@index([userId, mutedAt])
+}
+
+model MessageGroupMessage {
+  id        String    @id @default(cuid())
+  groupId   String
+  senderId  String
+  body      String?
+  createdAt DateTime  @default(now())
+
+  group       MessageGroup                  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender      User                          @relation("MessageGroupMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  attachments MessageGroupMessageAttachment[]
+
+  @@index([groupId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+model MessageGroupMessageAttachment {
+  id        String   @id @default(cuid())
+  messageId String
+  fileName  String
+  mimeType  String?
+  sizeBytes Int      @default(0)
+  storageKey String?
+  blobUrl   String?
+  createdAt DateTime @default(now())
+
+  message MessageGroupMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@index([messageId, createdAt])
 }

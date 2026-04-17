@@ -30,7 +30,7 @@ import { sumAbilityByUser } from "@/lib/scoring";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import {
-  canManageCompanyScopeWithRoleIds,
+  canManageCompanyMemberships,
   canManageProjectScopeWithRoleIds,
   getActorRoleIdsByPermission,
   mergeRoleIdSets,
@@ -259,7 +259,7 @@ export default async function StaffDetailPage({
           take: 20,
         })
       : Promise.resolve([]),
-    getActorRoleIdsByPermission(actor, ["staff.assign_company", "staff.assign_project", "project.member.manage"]),
+    getActorRoleIdsByPermission(actor, ["staff.assign_project", "project.member.manage"]),
     prisma.user.findMany({
       where: { deletedAt: null, active: true },
       select: { id: true, name: true, email: true },
@@ -308,14 +308,17 @@ export default async function StaffDetailPage({
       [],
     ),
   ]);
-  const companyAssignmentRoleIds = actorRoleIdsByPermission.get("staff.assign_company") ?? new Set<string>();
   const projectAssignmentRoleIds = mergeRoleIdSets(
     actorRoleIdsByPermission.get("staff.assign_project"),
     actorRoleIdsByPermission.get("project.member.manage"),
   );
-  const manageableCompanies = companies.filter((company) =>
-    canManageCompanyScopeWithRoleIds(actor, company, companyAssignmentRoleIds),
+  const manageableCompanyEntries = await Promise.all(
+    companies.map(async (company) => ({
+      company,
+      canManage: await canManageCompanyMemberships(actor, company),
+    })),
   );
+  const manageableCompanies = manageableCompanyEntries.filter((entry) => entry.canManage).map((entry) => entry.company);
   const manageableCompanyIds = new Set(manageableCompanies.map((company) => company.id));
   const manageableOffboardingCompanies = manageableCompanies.filter((company) =>
     target.companyMemberships.some((membership) => membership.companyId === company.id),

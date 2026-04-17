@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { getCurrentShellUser } from "@/lib/auth";
 import { isClerkEnabled } from "@/lib/clerk-config";
+import { getMessagingUnreadCount } from "@/lib/direct-messages";
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { SignOutControl } from "@/components/sign-out-control";
 import { LocaleToggleHeader } from "@/components/locale-toggle-header";
+import { MessagesHeaderLink } from "@/components/messages-header-link";
 import { UserFace } from "@/components/user-face";
 
 export async function AppShellHeaderControls({ locale }: { locale: Locale }) {
@@ -21,10 +23,13 @@ export async function AppShellHeaderControls({ locale }: { locale: Locale }) {
     );
   }
 
+  const unreadCount = await getMessagingUnreadCount(user.id);
+
   return (
     <>
       <LocaleToggleHeader locale={locale} />
       <div className="hidden h-4 w-px bg-[hsl(var(--border))] sm:block" aria-hidden />
+      <MessagesHeaderLink locale={locale} initialUnreadCount={unreadCount} />
       <Link
         href="/settings/profile"
         prefetch={false}

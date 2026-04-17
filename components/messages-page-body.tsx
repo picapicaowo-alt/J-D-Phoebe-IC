@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import Link from "next/link";
+import { useDeferredValue, useEffect, useEffectEvent, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { UserFace } from "@/components/user-face";
 import { cn } from "@/lib/utils";
-import type { ChatMessage, ChatPageData, ChatPeer } from "@/lib/direct-messages";
+import type { ChatMessage, ChatPageData, ChatThreadSummary } from "@/lib/direct-messages";
 
 type Props = {
   locale: "en" | "zh";
@@ -19,19 +23,18 @@ function copyFor(locale: "en" | "zh") {
   return locale === "zh"
     ? {
         title: "即时通讯",
-        subtitle: "与同事实时收发文本、图片和文件，消息会自动同步到对方屏幕。",
-        contacts: "联系人",
-        live: "实时同步",
-        noPeers: "你当前还没有可聊天的同事。",
-        noConversation: "选择一位同事开始聊天。",
-        noMessages: "还没有消息，先打个招呼吧。",
+        subtitle: "支持私聊和群聊，文本、图片与文件都会实时同步到在线成员屏幕上。",
+        threads: "聊天",
+        noThreads: "还没有任何聊天。你可以先发起私聊，或者由管理员创建群聊。",
+        noConversation: "选择一个聊天开始查看消息。",
+        noMessages: "这个聊天还没有消息，先发第一条吧。",
         loading: "正在加载对话…",
         placeholder: "输入消息内容…",
         attach: "添加图片或文件",
         clearFiles: "清空附件",
         send: "发送",
         sending: "发送中…",
-        uploadHint: "最多 5 个附件，可与文本一起发送。",
+        uploadHint: "最多 5 个附件，可和文本一起发送。",
         attachmentOne: "1 个附件",
         attachmentMany: (count: number) => `${count} 个附件`,
         noPreview: "还没有消息",
@@ -41,15 +44,41 @@ function copyFor(locale: "en" | "zh") {
         titleFallback: "未设置职位",
         sendError: "发送失败，请稍后再试。",
         loadError: "对话加载失败，请稍后再试。",
+        groupLabel: "群聊",
+        directLabel: "私聊",
+        live: "实时同步",
+        newGroup: "新建群聊",
+        manageGroup: "管理群聊",
+        groupName: "群聊名称",
+        groupNamePlaceholder: "例如：Phoebe Consulting Team",
+        groupCompany: "所属公司",
+        groupMembers: "群成员",
+        groupMemberHint: "创建人会自动加入。请选择至少一位其他成员。",
+        groupCreate: "创建群聊",
+        groupCreating: "创建中…",
+        groupSave: "保存修改",
+        groupSaving: "保存中…",
+        groupDelete: "删除群聊",
+        groupDeleteConfirm: "确认删除这个群聊吗？聊天记录和成员关系会一起移除。",
+        membersCount: (count: number) => `${count} 人`,
+        noAdminCompanies: "你当前没有可创建群聊的管理范围。",
+        currentUserLocked: "你（自动加入）",
+        refreshInfo: "右上角会显示消息未读数。",
+        close: "关闭",
+        cancel: "取消",
+        searchPlaceholder: "搜索联系人或群聊…",
+        noSearchResults: "没有匹配的联系人或群聊。",
+        mutedLabel: "已静音",
+        mute: "静音通知",
+        unmute: "恢复通知",
       }
     : {
         title: "Messaging",
-        subtitle: "Chat with teammates in real time and share text, images, and files in one place.",
-        contacts: "Contacts",
-        live: "Live sync",
-        noPeers: "You do not have any available teammates to message yet.",
-        noConversation: "Choose a teammate to start chatting.",
-        noMessages: "No messages yet. Start the conversation.",
+        subtitle: "Private chats and group chats now support live text, image, and file delivery.",
+        threads: "Chats",
+        noThreads: "No chats yet. Start a direct chat or create a group as an admin.",
+        noConversation: "Choose a chat to view messages.",
+        noMessages: "No messages in this chat yet. Send the first one.",
         loading: "Loading conversation…",
         placeholder: "Type your message…",
         attach: "Add image or file",
@@ -66,6 +95,33 @@ function copyFor(locale: "en" | "zh") {
         titleFallback: "No title set",
         sendError: "Could not send the message. Please try again.",
         loadError: "Could not load the conversation. Please try again.",
+        groupLabel: "Group",
+        directLabel: "Direct",
+        live: "Live sync",
+        newGroup: "New group",
+        manageGroup: "Manage group",
+        groupName: "Group name",
+        groupNamePlaceholder: "Example: Phoebe Consulting Team",
+        groupCompany: "Company",
+        groupMembers: "Members",
+        groupMemberHint: "The creator is always included. Select at least one more member.",
+        groupCreate: "Create group",
+        groupCreating: "Creating…",
+        groupSave: "Save changes",
+        groupSaving: "Saving…",
+        groupDelete: "Delete group",
+        groupDeleteConfirm: "Delete this group chat? Messages and membership will be removed.",
+        membersCount: (count: number) => `${count} members`,
+        noAdminCompanies: "You do not currently manage any companies that can create group chats.",
+        currentUserLocked: "You (included)",
+        refreshInfo: "Unread totals also appear in the top-right header.",
+        close: "Close",
+        cancel: "Cancel",
+        searchPlaceholder: "Search contacts or groups…",
+        noSearchResults: "No matching contacts or groups.",
+        mutedLabel: "Muted",
+        mute: "Mute notifications",
+        unmute: "Unmute notifications",
       };
 }
 
@@ -77,8 +133,8 @@ function parseJson<T>(value: string): T | null {
   }
 }
 
-function sortPeers(peers: ChatPeer[]) {
-  return [...peers].sort((a, b) => {
+function sortThreads(threads: ChatThreadSummary[]) {
+  return [...threads].sort((a, b) => {
     if (a.latestMessageAt && b.latestMessageAt) {
       const diff = Date.parse(b.latestMessageAt) - Date.parse(a.latestMessageAt);
       if (diff !== 0) return diff;
@@ -97,10 +153,10 @@ function appendMessage(messages: ChatMessage[], incoming: ChatMessage) {
   return [...messages, incoming].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
 
-function previewText(peer: ChatPeer, copy: ReturnType<typeof copyFor>) {
-  if (peer.latestMessageText) return peer.latestMessageText;
-  if (peer.latestAttachmentCount > 1) return copy.attachmentMany(peer.latestAttachmentCount);
-  if (peer.latestAttachmentCount === 1) return copy.attachmentOne;
+function previewText(thread: ChatThreadSummary, copy: ReturnType<typeof copyFor>) {
+  if (thread.latestMessageText) return thread.latestMessageText;
+  if (thread.latestAttachmentCount > 1) return copy.attachmentMany(thread.latestAttachmentCount);
+  if (thread.latestAttachmentCount === 1) return copy.attachmentOne;
   return copy.noPreview;
 }
 
@@ -128,77 +184,143 @@ async function readJson<T>(response: Response) {
   return data;
 }
 
+function notifyUnreadChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("messages:unread-changed"));
+}
+
 export function MessagesPageBody({ locale, currentUserId, initialData }: Props) {
   const copy = copyFor(locale);
-  const [peers, setPeers] = useState(initialData.peers);
-  const [selectedPeerId, setSelectedPeerId] = useState(initialData.selectedPeerId);
+  const [threads, setThreads] = useState(initialData.threads);
+  const [selectedThreadKey, setSelectedThreadKey] = useState(initialData.selectedThreadKey);
+  const [selectedThread, setSelectedThread] = useState(initialData.selectedThread);
   const [messages, setMessages] = useState(initialData.messages);
+  const [groupOptions, setGroupOptions] = useState(initialData.groupOptions);
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const selectedPeerRef = useRef<string | null>(initialData.selectedPeerId);
+  const [groupError, setGroupError] = useState<string | null>(null);
+  const [groupSaving, setGroupSaving] = useState(false);
+  const [createGroupName, setCreateGroupName] = useState("");
+  const [createCompanyId, setCreateCompanyId] = useState(initialData.groupOptions[0]?.id ?? "");
+  const [createMemberIds, setCreateMemberIds] = useState<string[]>([]);
+  const [manageGroupName, setManageGroupName] = useState("");
+  const [manageMemberIds, setManageMemberIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const selectedThreadRef = useRef<string | null>(initialData.selectedThreadKey);
   const requestRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const createDialogRef = useRef<HTMLDialogElement>(null);
+  const manageDialogRef = useRef<HTMLDialogElement>(null);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useEffect(() => {
-    selectedPeerRef.current = selectedPeerId;
-  }, [selectedPeerId]);
+    selectedThreadRef.current = selectedThreadKey;
+  }, [selectedThreadKey]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     scroller.scrollTop = scroller.scrollHeight;
-  }, [messages, selectedPeerId]);
+  }, [messages, selectedThreadKey]);
 
-  const markRead = useEffectEvent(async (peerId: string) => {
-    const cleanPeerId = String(peerId ?? "").trim();
-    if (!cleanPeerId) return;
+  useEffect(() => {
+    if (!groupOptions.some((option) => option.id === createCompanyId)) {
+      setCreateCompanyId(groupOptions[0]?.id ?? "");
+      setCreateMemberIds([]);
+    }
+  }, [createCompanyId, groupOptions]);
+
+  const applyPageData = useEffectEvent((data: ChatPageData) => {
+    setThreads(data.threads);
+    setSelectedThreadKey(data.selectedThreadKey);
+    setSelectedThread(data.selectedThread);
+    setMessages(data.messages);
+    setGroupOptions(data.groupOptions);
+    notifyUnreadChanged();
+  });
+
+  const refreshPage = useEffectEvent(async (threadKey?: string | null, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoadingConversation(true);
+    const requestId = ++requestRef.current;
+
+    try {
+      const search = threadKey ? `?threadKey=${encodeURIComponent(threadKey)}` : "";
+      const response = await fetch(`/api/messages${search}`, { cache: "no-store" });
+      const data = await readJson<ChatPageData & ApiErrorShape>(response);
+      if (requestId !== requestRef.current) return;
+      if (!response.ok || !data) {
+        setError(data?.error ?? copy.loadError);
+        return;
+      }
+      applyPageData(data);
+      setError(null);
+    } catch {
+      if (requestId !== requestRef.current) return;
+      setError(copy.loadError);
+    } finally {
+      if (requestId === requestRef.current && !opts?.silent) {
+        setLoadingConversation(false);
+      }
+    }
+  });
+
+  const markRead = useEffectEvent(async (threadKey: string) => {
+    const cleanThreadKey = String(threadKey ?? "").trim();
+    if (!cleanThreadKey) return;
     await fetch("/api/messages/read", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ peerId: cleanPeerId }),
+      body: JSON.stringify({ threadKey: cleanThreadKey }),
     }).catch(() => undefined);
-    setPeers((current) =>
-      current.map((peer) => (peer.id === cleanPeerId ? { ...peer, unreadCount: 0 } : peer)),
+    setThreads((current) =>
+      current.map((thread) => (thread.key === cleanThreadKey ? { ...thread, unreadCount: 0 } : thread)),
     );
+    notifyUnreadChanged();
   });
 
   useEffect(() => {
-    if (!selectedPeerId) return;
-    const unread = peers.find((peer) => peer.id === selectedPeerId)?.unreadCount ?? 0;
+    if (!selectedThreadKey) return;
+    const unread = threads.find((thread) => thread.key === selectedThreadKey)?.unreadCount ?? 0;
     if (unread > 0) {
-      void markRead(selectedPeerId);
+      void markRead(selectedThreadKey);
     }
-  }, [markRead, peers, selectedPeerId]);
+  }, [markRead, selectedThreadKey, threads]);
 
   const applyIncomingMessage = useEffectEvent((incoming: ChatMessage) => {
-    const peerId = incoming.senderId === currentUserId ? incoming.recipientId : incoming.senderId;
-    const isIncoming = incoming.senderId !== currentUserId;
-
-    setPeers((current) => {
-      const next = current.map((peer) => {
-        if (peer.id !== peerId) return peer;
-        const shouldClearUnread = !isIncoming || selectedPeerRef.current === peerId;
+    let found = false;
+    setThreads((current) => {
+      const next = current.map((thread) => {
+        if (thread.key !== incoming.threadKey) return thread;
+        found = true;
+        const shouldClearUnread = incoming.isOwn || selectedThreadRef.current === incoming.threadKey;
         return {
-          ...peer,
+          ...thread,
           latestMessageAt: incoming.createdAt,
           latestMessageText: incoming.body,
           latestAttachmentCount: incoming.attachments.length,
-          latestMessageFromSelf: !isIncoming,
-          unreadCount: shouldClearUnread ? 0 : peer.unreadCount + 1,
+          latestMessageFromSelf: incoming.isOwn,
+          unreadCount: shouldClearUnread ? 0 : thread.unreadCount + 1,
         };
       });
-      return sortPeers(next);
+      return sortThreads(next);
     });
 
-    if (selectedPeerRef.current === peerId) {
+    if (!found) {
+      void refreshPage(selectedThreadRef.current ?? incoming.threadKey, { silent: true });
+      return;
+    }
+
+    if (selectedThreadRef.current === incoming.threadKey) {
       setMessages((current) => appendMessage(current, incoming));
-      if (isIncoming) {
-        void markRead(peerId);
+      if (!incoming.isOwn) {
+        void markRead(incoming.threadKey);
       }
+    } else if (!incoming.isOwn) {
+      notifyUnreadChanged();
     }
   });
 
@@ -217,51 +339,23 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     };
   }, [applyIncomingMessage]);
 
-  async function openConversation(peerId: string) {
-    const cleanPeerId = String(peerId ?? "").trim();
-    if (!cleanPeerId) return;
-
-    setSelectedPeerId(cleanPeerId);
-    setLoadingConversation(true);
+  async function openThread(threadKey: string) {
+    const cleanThreadKey = String(threadKey ?? "").trim();
+    if (!cleanThreadKey) return;
+    setSelectedThreadKey(cleanThreadKey);
     setError(null);
-
-    const requestId = ++requestRef.current;
-    try {
-      const response = await fetch(`/api/messages?peerId=${encodeURIComponent(cleanPeerId)}`, {
-        cache: "no-store",
-      });
-      const data = await readJson<ChatPageData & ApiErrorShape>(response);
-      if (requestId !== requestRef.current) return;
-      if (!response.ok || !data) {
-        setError(data?.error ?? copy.loadError);
-        return;
-      }
-
-      setPeers(data.peers);
-      setSelectedPeerId(data.selectedPeerId);
-      setMessages(data.messages);
-      if (data.selectedPeerId) {
-        void markRead(data.selectedPeerId);
-      }
-    } catch {
-      if (requestId !== requestRef.current) return;
-      setError(copy.loadError);
-    } finally {
-      if (requestId === requestRef.current) {
-        setLoadingConversation(false);
-      }
-    }
+    await refreshPage(cleanThreadKey);
   }
 
   async function handleSend(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedPeerId || sending) return;
+    if (!selectedThreadKey || sending) return;
 
     setSending(true);
     setError(null);
 
     const formData = new FormData();
-    formData.set("peerId", selectedPeerId);
+    formData.set("threadKey", selectedThreadKey);
     formData.set("body", draft);
     for (const file of files) {
       formData.append("files", file);
@@ -276,19 +370,19 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
       }
 
       setMessages((current) => appendMessage(current, data.message!));
-      setPeers((current) =>
-        sortPeers(
-          current.map((peer) =>
-            peer.id === selectedPeerId
+      setThreads((current) =>
+        sortThreads(
+          current.map((thread) =>
+            thread.key === selectedThreadKey
               ? {
-                  ...peer,
+                  ...thread,
                   latestMessageAt: data.message!.createdAt,
                   latestMessageText: data.message!.body,
                   latestAttachmentCount: data.message!.attachments.length,
                   latestMessageFromSelf: true,
                   unreadCount: 0,
                 }
-              : peer,
+              : thread,
           ),
         ),
       );
@@ -304,7 +398,147 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     }
   }
 
-  const selectedPeer = peers.find((peer) => peer.id === selectedPeerId) ?? null;
+  function openCreateGroupDialog() {
+    if (!groupOptions.length) return;
+    setCreateGroupName("");
+    setCreateCompanyId(groupOptions[0]!.id);
+    setCreateMemberIds([]);
+    setGroupError(null);
+    if (!createDialogRef.current?.open) {
+      createDialogRef.current?.showModal();
+    }
+  }
+
+  function openManageGroupDialog() {
+    if (!selectedThread || selectedThread.type !== "group" || !selectedThread.canManage) return;
+    setManageGroupName(selectedThread.name);
+    setManageMemberIds(selectedThread.members.filter((member) => member.id !== currentUserId).map((member) => member.id));
+    setGroupError(null);
+    if (!manageDialogRef.current?.open) {
+      manageDialogRef.current?.showModal();
+    }
+  }
+
+  async function handleCreateGroup(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (groupSaving) return;
+
+    setGroupSaving(true);
+    setGroupError(null);
+    try {
+      const response = await fetch("/api/messages/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: createCompanyId,
+          name: createGroupName,
+          memberIds: createMemberIds,
+        }),
+      });
+      const data = await readJson<{ threadKey?: string; error?: string }>(response);
+      if (!response.ok || !data?.threadKey) {
+        setGroupError(data?.error ?? copy.loadError);
+        return;
+      }
+      createDialogRef.current?.close();
+      await refreshPage(data.threadKey);
+    } catch {
+      setGroupError(copy.loadError);
+    } finally {
+      setGroupSaving(false);
+    }
+  }
+
+  async function handleUpdateGroup(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (groupSaving || !selectedThread || selectedThread.type !== "group") return;
+
+    setGroupSaving(true);
+    setGroupError(null);
+    try {
+      const response = await fetch(`/api/messages/groups/${selectedThread.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: manageGroupName,
+          memberIds: manageMemberIds,
+        }),
+      });
+      const data = await readJson<{ threadKey?: string; error?: string }>(response);
+      if (!response.ok || !data?.threadKey) {
+        setGroupError(data?.error ?? copy.loadError);
+        return;
+      }
+      manageDialogRef.current?.close();
+      await refreshPage(data.threadKey);
+    } catch {
+      setGroupError(copy.loadError);
+    } finally {
+      setGroupSaving(false);
+    }
+  }
+
+  async function handleDeleteGroup() {
+    if (!selectedThread || selectedThread.type !== "group") return;
+    if (!window.confirm(copy.groupDeleteConfirm)) return;
+
+    setGroupSaving(true);
+    setGroupError(null);
+    try {
+      const response = await fetch(`/api/messages/groups/${selectedThread.id}`, { method: "DELETE" });
+      const data = await readJson<{ ok?: boolean; error?: string }>(response);
+      if (!response.ok || !data?.ok) {
+        setGroupError(data?.error ?? copy.loadError);
+        return;
+      }
+      manageDialogRef.current?.close();
+      await refreshPage(null);
+    } catch {
+      setGroupError(copy.loadError);
+    } finally {
+      setGroupSaving(false);
+    }
+  }
+
+  async function handleToggleMute(muted: boolean) {
+    if (!selectedThread) return;
+
+    setError(null);
+    try {
+      const response = await fetch("/api/messages/mute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadKey: selectedThread.key,
+          muted,
+        }),
+      });
+      const data = await readJson<{ ok?: boolean; error?: string }>(response);
+      if (!response.ok || !data?.ok) {
+        setError(data?.error ?? copy.loadError);
+        return;
+      }
+
+      setThreads((current) =>
+        current.map((thread) => (thread.key === selectedThread.key ? { ...thread, isMuted: muted } : thread)),
+      );
+      setSelectedThread((current) => (current && current.key === selectedThread.key ? { ...current, isMuted: muted } : current));
+      notifyUnreadChanged();
+    } catch {
+      setError(copy.loadError);
+    }
+  }
+
+  const selectedGroupOption = selectedThread?.type === "group" ? groupOptions.find((option) => option.id === selectedThread.companyId) ?? null : null;
+  const createOption = groupOptions.find((option) => option.id === createCompanyId) ?? null;
+  const normalizedSearch = deferredSearchQuery.trim().toLowerCase();
+  const filteredThreads = normalizedSearch
+    ? threads.filter((thread) =>
+        [thread.name, thread.subtitle, thread.companyName, thread.latestMessageText]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(normalizedSearch)),
+      )
+    : threads;
 
   return (
     <div className="space-y-6">
@@ -312,6 +546,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         <div>
           <h1 className="font-display text-3xl font-bold tracking-[-0.04em] text-[hsl(var(--foreground))]">{copy.title}</h1>
           <p className="mt-2 max-w-3xl text-sm text-[hsl(var(--muted))]">{copy.subtitle}</p>
+          <p className="mt-2 text-xs text-[hsl(var(--muted))]">{copy.refreshInfo}</p>
         </div>
         <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-700 dark:text-emerald-300">
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
@@ -319,27 +554,42 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         </div>
       </div>
 
-      {peers.length === 0 ? (
-        <Card className="rounded-[24px] border border-[hsl(var(--border))] p-8 text-center">
-          <CardTitle className="font-display text-lg">{copy.contacts}</CardTitle>
-          <p className="mt-3 text-sm text-[hsl(var(--muted))]">{copy.noPeers}</p>
-        </Card>
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[320px,minmax(0,1fr)]">
-          <Card className="rounded-[24px] border border-[hsl(var(--border))] p-0">
-            <div className="border-b border-[hsl(var(--border))] px-5 py-4">
-              <CardTitle className="font-display text-lg">{copy.contacts}</CardTitle>
-            </div>
-            <div className="max-h-[70vh] overflow-y-auto p-3">
+      <div className="grid gap-6 lg:grid-cols-[340px,minmax(0,1fr)]">
+        <Card className="rounded-[24px] border border-[hsl(var(--border))] p-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--border))] px-5 py-4">
+            <CardTitle className="font-display text-lg">{copy.threads}</CardTitle>
+            {groupOptions.length ? (
+              <Button type="button" variant="secondary" onClick={openCreateGroupDialog}>
+                {copy.newGroup}
+              </Button>
+            ) : null}
+          </div>
+          <div className="border-b border-[hsl(var(--border))] px-4 py-3">
+            <Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
+          </div>
+          <div className="max-h-[72vh] overflow-y-auto p-3">
+            {!threads.length ? (
+              <div className="space-y-3 rounded-[18px] border border-dashed border-[hsl(var(--border))] px-4 py-5 text-sm text-[hsl(var(--muted))]">
+                <p>{copy.noThreads}</p>
+                {!groupOptions.length ? <p>{copy.noAdminCompanies}</p> : null}
+              </div>
+            ) : !filteredThreads.length ? (
+              <div className="space-y-3 rounded-[18px] border border-dashed border-[hsl(var(--border))] px-4 py-5 text-sm text-[hsl(var(--muted))]">
+                <p>{copy.noSearchResults}</p>
+              </div>
+            ) : (
               <div className="space-y-2">
-                {peers.map((peer) => {
-                  const active = peer.id === selectedPeerId;
-                  const preview = previewText(peer, copy);
+                {filteredThreads.map((thread) => {
+                  const active = thread.key === selectedThreadKey;
+                  const subtitle =
+                    thread.type === "group"
+                      ? [thread.companyName, thread.memberCount ? copy.membersCount(thread.memberCount) : null].filter(Boolean).join(" · ")
+                      : (thread.subtitle || copy.titleFallback);
                   return (
                     <button
-                      key={peer.id}
+                      key={thread.key}
                       type="button"
-                      onClick={() => void openConversation(peer.id)}
+                      onClick={() => void openThread(thread.key)}
                       className={cn(
                         "w-full rounded-[18px] border px-3 py-3 text-left transition",
                         active
@@ -348,25 +598,29 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                       )}
                     >
                       <div className="flex items-start gap-3">
-                        <UserFace name={peer.name} avatarUrl={peer.avatarUrl} size={40} />
+                        <UserFace name={thread.name} avatarUrl={thread.avatarUrl} size={40} />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="truncate text-sm font-semibold text-[hsl(var(--foreground))]">{peer.name}</p>
-                            {peer.latestMessageAt ? (
+                            <p className="truncate text-sm font-semibold text-[hsl(var(--foreground))]">{thread.name}</p>
+                            {thread.latestMessageAt ? (
                               <span className="shrink-0 text-[11px] text-[hsl(var(--muted))]">
-                                {formatSidebarTime(peer.latestMessageAt, locale)}
+                                {formatSidebarTime(thread.latestMessageAt, locale)}
                               </span>
                             ) : null}
                           </div>
-                          <p className="truncate text-xs text-[hsl(var(--muted))]">{peer.title || copy.titleFallback}</p>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                            <Badge tone={thread.type === "group" ? "info" : "neutral"}>{thread.type === "group" ? copy.groupLabel : copy.directLabel}</Badge>
+                            {thread.isMuted ? <Badge tone="warn">{copy.mutedLabel}</Badge> : null}
+                            <p className="truncate text-xs text-[hsl(var(--muted))]">{subtitle}</p>
+                          </div>
                           <p className="mt-1 line-clamp-2 text-sm text-[hsl(var(--muted))]">
-                            {peer.latestMessageFromSelf && (peer.latestMessageText || peer.latestAttachmentCount > 0) ? `${copy.you}: ` : ""}
-                            {preview}
+                            {thread.latestMessageFromSelf && (thread.latestMessageText || thread.latestAttachmentCount > 0) ? `${copy.you}: ` : ""}
+                            {previewText(thread, copy)}
                           </p>
                         </div>
-                        {peer.unreadCount > 0 ? (
+                        {thread.unreadCount > 0 ? (
                           <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-[hsl(var(--primary))] px-1.5 py-0.5 text-xs font-semibold text-white">
-                            {peer.unreadCount}
+                            {thread.unreadCount}
                           </span>
                         ) : null}
                       </div>
@@ -374,164 +628,393 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                   );
                 })}
               </div>
+            )}
+          </div>
+        </Card>
+
+        <Card className="rounded-[28px] border border-[hsl(var(--border))] p-0">
+          {!selectedThread ? (
+            <div className="flex min-h-[640px] items-center justify-center px-6 text-center text-sm text-[hsl(var(--muted))]">
+              {copy.noConversation}
             </div>
-          </Card>
-
-          <Card className="rounded-[28px] border border-[hsl(var(--border))] p-0">
-            {!selectedPeer ? (
-              <div className="flex min-h-[640px] items-center justify-center px-6 text-center text-sm text-[hsl(var(--muted))]">
-                {copy.noConversation}
-              </div>
-            ) : (
-              <div className="flex min-h-[640px] flex-col">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[hsl(var(--border))] px-6 py-5">
-                  <div className="flex items-center gap-3">
-                    <UserFace name={selectedPeer.name} avatarUrl={selectedPeer.avatarUrl} size={44} />
-                    <div>
-                      <h2 className="font-display text-xl font-semibold tracking-[-0.02em] text-[hsl(var(--foreground))]">{selectedPeer.name}</h2>
-                      <p className="text-sm text-[hsl(var(--muted))]">{selectedPeer.title || copy.titleFallback}</p>
+          ) : (
+            <div className="flex min-h-[640px] flex-col">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[hsl(var(--border))] px-6 py-5">
+                <div className="flex items-start gap-3">
+                  <UserFace name={selectedThread.name} avatarUrl={selectedThread.avatarUrl} size={44} />
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {selectedThread.type === "direct" ? (
+                        <Link
+                          href={`/staff/${selectedThread.id}`}
+                          prefetch={false}
+                          className="font-display text-xl font-semibold tracking-[-0.02em] text-[hsl(var(--foreground))] underline-offset-4 hover:underline"
+                        >
+                          {selectedThread.name}
+                        </Link>
+                      ) : (
+                        <h2 className="font-display text-xl font-semibold tracking-[-0.02em] text-[hsl(var(--foreground))]">{selectedThread.name}</h2>
+                      )}
+                      <Badge tone={selectedThread.type === "group" ? "info" : "neutral"}>
+                        {selectedThread.type === "group" ? copy.groupLabel : copy.directLabel}
+                      </Badge>
+                      {selectedThread.isMuted ? <Badge tone="warn">{copy.mutedLabel}</Badge> : null}
                     </div>
-                  </div>
-                  {loadingConversation ? <p className="text-sm text-[hsl(var(--muted))]">{copy.loading}</p> : null}
-                </div>
-
-                <div ref={scrollerRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
-                  {messages.length === 0 ? (
-                    <div className="flex min-h-[320px] items-center justify-center rounded-[24px] border border-dashed border-[hsl(var(--border))] bg-black/[0.02] px-6 text-center text-sm text-[hsl(var(--muted))] dark:bg-white/[0.02]">
-                      {copy.noMessages}
-                    </div>
-                  ) : (
-                    messages.map((message) => (
-                      <div key={message.id} className={cn("flex gap-3", message.isOwn ? "justify-end" : "justify-start")}>
-                        {!message.isOwn ? <UserFace name={message.senderName} avatarUrl={message.senderAvatarUrl} size={36} className="mt-1" /> : null}
-                        <div className={cn("max-w-[min(100%,44rem)]", message.isOwn ? "items-end" : "items-start")}>
-                          <div
-                            className={cn(
-                              "rounded-[22px] border px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
-                              message.isOwn
-                                ? "border-[hsl(var(--primary))]/25 bg-[hsl(var(--primary))] text-white"
-                                : "border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))]",
-                            )}
+                    <p className="mt-1 text-sm text-[hsl(var(--muted))]">
+                      {selectedThread.type === "group"
+                        ? [selectedThread.companyName, selectedThread.memberCount ? copy.membersCount(selectedThread.memberCount) : null].filter(Boolean).join(" · ")
+                        : (selectedThread.subtitle || copy.titleFallback)}
+                    </p>
+                    {selectedThread.type === "group" && selectedThread.members.length ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedThread.members.slice(0, 8).map((member) => (
+                          <Link
+                            key={member.id}
+                            href={`/staff/${member.id}`}
+                            prefetch={false}
+                            className="inline-flex items-center gap-1 rounded-full border border-[hsl(var(--border))] bg-black/[0.03] px-2.5 py-1 text-xs text-[hsl(var(--muted))] dark:bg-white/[0.03]"
                           >
-                            {message.body ? <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p> : null}
-                            {message.attachments.length > 0 ? (
-                              <div className={cn("grid gap-3", message.body ? "mt-3" : "")}>
-                                {message.attachments.map((attachment) =>
-                                  attachment.isImage ? (
-                                    <a
-                                      key={attachment.id}
-                                      href={attachment.url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="block overflow-hidden rounded-[18px] border border-white/15 bg-black/5"
-                                    >
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img
-                                        src={attachment.url}
-                                        alt={attachment.fileName}
-                                        className="max-h-72 w-full object-cover"
-                                      />
-                                    </a>
-                                  ) : (
-                                    <a
-                                      key={attachment.id}
-                                      href={attachment.url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className={cn(
-                                        "flex items-center justify-between gap-3 rounded-[16px] border px-3 py-2 text-sm",
-                                        message.isOwn ? "border-white/15 bg-white/10" : "border-[hsl(var(--border))] bg-black/[0.03] dark:bg-white/[0.03]",
-                                      )}
-                                    >
-                                      <div className="min-w-0">
-                                        <p className="truncate font-medium">{attachment.fileName}</p>
-                                        <p className={cn("text-xs", message.isOwn ? "text-white/75" : "text-[hsl(var(--muted))]")}>
-                                          {copy.openFile}
-                                        </p>
-                                      </div>
-                                      <span className={cn("text-xs", message.isOwn ? "text-white/75" : "text-[hsl(var(--muted))]")}>
-                                        {Math.max(1, Math.round(attachment.sizeBytes / 1024))} KB
-                                      </span>
-                                    </a>
-                                  ),
-                                )}
-                              </div>
-                            ) : null}
-                          </div>
-                          <p className="mt-1.5 px-1 text-xs text-[hsl(var(--muted))]">{formatMessageTime(message.createdAt, locale)}</p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="border-t border-[hsl(var(--border))] px-5 py-4">
-                  <form onSubmit={handleSend} className="space-y-3">
-                    <textarea
-                      value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
-                      placeholder={copy.placeholder}
-                      className="min-h-[108px] w-full rounded-[22px] border border-[hsl(var(--border))] bg-transparent px-4 py-3 text-sm text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))]/20 transition focus:ring-2"
-                    />
-
-                    {files.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {files.map((file, index) => (
-                          <div
-                            key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
-                            className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-black/[0.03] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] dark:bg-white/[0.03]"
-                          >
-                            <span className="max-w-[14rem] truncate">{file.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index))}
-                              className="text-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
-                            >
-                              {copy.remove}
-                            </button>
-                          </div>
+                            <UserFace name={member.name} avatarUrl={member.avatarUrl} size={20} />
+                            <span>{member.name}</span>
+                          </Link>
                         ))}
                       </div>
                     ) : null}
+                  </div>
+                </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          multiple
-                          className="hidden"
-                          onChange={(event) => {
-                            const picked = Array.from(event.target.files ?? []);
-                            if (!picked.length) return;
-                            setFiles((current) => [...current, ...picked].slice(0, 5));
-                            event.target.value = "";
-                          }}
-                        />
-                        <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>
-                          {copy.attach}
-                        </Button>
-                        {files.length > 0 ? (
-                          <Button type="button" variant="ghost" onClick={() => setFiles([])}>
-                            {copy.clearFiles}
-                          </Button>
-                        ) : null}
-                        <p className="text-xs text-[hsl(var(--muted))]">{copy.uploadHint}</p>
-                      </div>
-
-                      <Button type="submit" disabled={sending || (!draft.trim() && files.length === 0)}>
-                        {sending ? copy.sending : copy.send}
-                      </Button>
-                    </div>
-
-                    {error ? <p className="text-sm text-[hsl(var(--error))]">{error}</p> : null}
-                  </form>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="secondary" onClick={() => void handleToggleMute(!selectedThread.isMuted)}>
+                    {selectedThread.isMuted ? copy.unmute : copy.mute}
+                  </Button>
+                  {selectedThread.type === "group" && selectedThread.canManage ? (
+                    <Button type="button" variant="secondary" onClick={openManageGroupDialog}>
+                      {copy.manageGroup}
+                    </Button>
+                  ) : null}
+                  {loadingConversation ? <p className="text-sm text-[hsl(var(--muted))]">{copy.loading}</p> : null}
                 </div>
               </div>
-            )}
-          </Card>
-        </div>
-      )}
+
+              <div ref={scrollerRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+                {messages.length === 0 ? (
+                  <div className="flex min-h-[320px] items-center justify-center rounded-[24px] border border-dashed border-[hsl(var(--border))] bg-black/[0.02] px-6 text-center text-sm text-[hsl(var(--muted))] dark:bg-white/[0.02]">
+                    {copy.noMessages}
+                  </div>
+                ) : (
+                  messages.map((message) => (
+                    <div key={message.id} className={cn("flex gap-3", message.isOwn ? "justify-end" : "justify-start")}>
+                      {!message.isOwn ? <UserFace name={message.senderName} avatarUrl={message.senderAvatarUrl} size={36} className="mt-1" /> : null}
+                      <div className={cn("max-w-[min(100%,46rem)]", message.isOwn ? "items-end" : "items-start")}>
+                      {!message.isOwn && selectedThread.type === "group" ? (
+                          <Link
+                            href={`/staff/${message.senderId}`}
+                            prefetch={false}
+                            className="mb-1 inline-block px-1 text-xs font-semibold text-[hsl(var(--muted))] underline-offset-4 hover:underline"
+                          >
+                            {message.senderName}
+                          </Link>
+                        ) : null}
+                        <div
+                          className={cn(
+                            "rounded-[22px] border px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
+                            message.isOwn
+                              ? "border-[hsl(var(--primary))]/25 bg-[hsl(var(--primary))] text-white"
+                              : "border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))]",
+                          )}
+                        >
+                          {message.body ? <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p> : null}
+                          {message.attachments.length > 0 ? (
+                            <div className={cn("grid gap-3", message.body ? "mt-3" : "")}>
+                              {message.attachments.map((attachment) =>
+                                attachment.isImage ? (
+                                  <a
+                                    key={attachment.id}
+                                    href={attachment.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="block overflow-hidden rounded-[18px] border border-white/15 bg-black/5"
+                                  >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={attachment.url} alt={attachment.fileName} className="max-h-72 w-full object-cover" />
+                                  </a>
+                                ) : (
+                                  <a
+                                    key={attachment.id}
+                                    href={attachment.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={cn(
+                                      "flex items-center justify-between gap-3 rounded-[16px] border px-3 py-2 text-sm",
+                                      message.isOwn ? "border-white/15 bg-white/10" : "border-[hsl(var(--border))] bg-black/[0.03] dark:bg-white/[0.03]",
+                                    )}
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="truncate font-medium">{attachment.fileName}</p>
+                                      <p className={cn("text-xs", message.isOwn ? "text-white/75" : "text-[hsl(var(--muted))]")}>
+                                        {copy.openFile}
+                                      </p>
+                                    </div>
+                                    <span className={cn("text-xs", message.isOwn ? "text-white/75" : "text-[hsl(var(--muted))]")}>
+                                      {Math.max(1, Math.round(attachment.sizeBytes / 1024))} KB
+                                    </span>
+                                  </a>
+                                ),
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                        <p className="mt-1.5 px-1 text-xs text-[hsl(var(--muted))]">{formatMessageTime(message.createdAt, locale)}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="border-t border-[hsl(var(--border))] px-5 py-4">
+                <form onSubmit={handleSend} className="space-y-3">
+                  <textarea
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    placeholder={copy.placeholder}
+                    className="min-h-[108px] w-full rounded-[22px] border border-[hsl(var(--border))] bg-transparent px-4 py-3 text-sm text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))]/20 transition focus:ring-2"
+                  />
+
+                  {files.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {files.map((file, index) => (
+                        <div
+                          key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                          className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-black/[0.03] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] dark:bg-white/[0.03]"
+                        >
+                          <span className="max-w-[14rem] truncate">{file.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                            className="text-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
+                          >
+                            {copy.remove}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={(event) => {
+                          const picked = Array.from(event.target.files ?? []);
+                          if (!picked.length) return;
+                          setFiles((current) => [...current, ...picked].slice(0, 5));
+                          event.target.value = "";
+                        }}
+                      />
+                      <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>
+                        {copy.attach}
+                      </Button>
+                      {files.length > 0 ? (
+                        <Button type="button" variant="ghost" onClick={() => setFiles([])}>
+                          {copy.clearFiles}
+                        </Button>
+                      ) : null}
+                      <p className="text-xs text-[hsl(var(--muted))]">{copy.uploadHint}</p>
+                    </div>
+
+                    <Button type="submit" disabled={sending || (!draft.trim() && files.length === 0)}>
+                      {sending ? copy.sending : copy.send}
+                    </Button>
+                  </div>
+
+                  {error ? <p className="text-sm text-[hsl(var(--error))]">{error}</p> : null}
+                </form>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <dialog
+        ref={createDialogRef}
+        className="app-modal-dialog z-50 w-[min(100vw-2rem,560px)] overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) createDialogRef.current?.close();
+        }}
+      >
+        <form onSubmit={handleCreateGroup} className="space-y-5 p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="font-display text-xl font-semibold text-[hsl(var(--foreground))]">{copy.newGroup}</h3>
+              <p className="mt-1 text-sm text-[hsl(var(--muted))]">{copy.groupMemberHint}</p>
+            </div>
+            <Button type="button" variant="ghost" onClick={() => createDialogRef.current?.close()}>
+              {copy.close}
+            </Button>
+          </div>
+
+          {!groupOptions.length ? (
+            <p className="text-sm text-[hsl(var(--muted))]">{copy.noAdminCompanies}</p>
+          ) : (
+            <>
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupName}</span>
+                <Input value={createGroupName} onChange={(event) => setCreateGroupName(event.target.value)} placeholder={copy.groupNamePlaceholder} />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupCompany}</span>
+                <Select
+                  value={createCompanyId}
+                  onChange={(event) => {
+                    setCreateCompanyId(event.target.value);
+                    setCreateMemberIds([]);
+                  }}
+                >
+                  {groupOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupMembers}</span>
+                <div className="rounded-[18px] border border-[hsl(var(--border))] p-3">
+                  <div className="mb-3 rounded-[14px] border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm text-[hsl(var(--muted))]">
+                    {copy.currentUserLocked}
+                  </div>
+                  <div className="max-h-72 space-y-2 overflow-y-auto">
+                    {createOption?.members
+                      .filter((member) => member.id !== currentUserId)
+                      .map((member) => {
+                        const checked = createMemberIds.includes(member.id);
+                        return (
+                          <label
+                            key={member.id}
+                            className="flex cursor-pointer items-center justify-between gap-3 rounded-[14px] border border-[hsl(var(--border))] px-3 py-2"
+                          >
+                            <span className="flex min-w-0 items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) =>
+                                  setCreateMemberIds((current) =>
+                                    event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id),
+                                  )
+                                }
+                              />
+                              <UserFace name={member.name} avatarUrl={member.avatarUrl} size={28} />
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
+                                <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {groupError ? <p className="text-sm text-[hsl(var(--error))]">{groupError}</p> : null}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => createDialogRef.current?.close()}>
+              {copy.cancel}
+            </Button>
+            <Button type="submit" disabled={groupSaving || !groupOptions.length}>
+              {groupSaving ? copy.groupCreating : copy.groupCreate}
+            </Button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog
+        ref={manageDialogRef}
+        className="app-modal-dialog z-50 w-[min(100vw-2rem,560px)] overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) manageDialogRef.current?.close();
+        }}
+      >
+        <form onSubmit={handleUpdateGroup} className="space-y-5 p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="font-display text-xl font-semibold text-[hsl(var(--foreground))]">{copy.manageGroup}</h3>
+              <p className="mt-1 text-sm text-[hsl(var(--muted))]">{copy.groupMemberHint}</p>
+            </div>
+            <Button type="button" variant="ghost" onClick={() => manageDialogRef.current?.close()}>
+              {copy.close}
+            </Button>
+          </div>
+
+          <label className="block space-y-2">
+            <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupName}</span>
+            <Input value={manageGroupName} onChange={(event) => setManageGroupName(event.target.value)} placeholder={copy.groupNamePlaceholder} />
+          </label>
+
+          <div className="space-y-2">
+            <span className="text-sm font-medium text-[hsl(var(--foreground))]">{copy.groupMembers}</span>
+            <div className="rounded-[18px] border border-[hsl(var(--border))] p-3">
+              <div className="mb-3 rounded-[14px] border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm text-[hsl(var(--muted))]">
+                {copy.currentUserLocked}
+              </div>
+              <div className="max-h-72 space-y-2 overflow-y-auto">
+                {selectedGroupOption?.members
+                  .filter((member) => member.id !== currentUserId)
+                  .map((member) => {
+                    const checked = manageMemberIds.includes(member.id);
+                    return (
+                      <label
+                        key={member.id}
+                        className="flex cursor-pointer items-center justify-between gap-3 rounded-[14px] border border-[hsl(var(--border))] px-3 py-2"
+                      >
+                        <span className="flex min-w-0 items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) =>
+                              setManageMemberIds((current) =>
+                                event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id),
+                              )
+                            }
+                          />
+                          <UserFace name={member.name} avatarUrl={member.avatarUrl} size={28} />
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
+                            <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+
+          {groupError ? <p className="text-sm text-[hsl(var(--error))]">{groupError}</p> : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Button type="button" variant="ghost" className="text-rose-600 hover:text-rose-700" onClick={() => void handleDeleteGroup()}>
+              {copy.groupDelete}
+            </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="ghost" onClick={() => manageDialogRef.current?.close()}>
+                {copy.cancel}
+              </Button>
+              <Button type="submit" disabled={groupSaving}>
+                {groupSaving ? copy.groupSaving : copy.groupSave}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </dialog>
     </div>
   );
 }

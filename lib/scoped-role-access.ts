@@ -163,8 +163,14 @@ export async function canCreateProjectInCompany(user: AccessUser, company: Compa
 }
 
 export async function canManageCompanyMemberships(user: AccessUser, company: CompanyScope) {
-  const byPermission = await getActorRoleIdsByPermission(user, ["staff.assign_company"]);
-  return canManageCompanyScopeWithRoleIds(user, company, byPermission.get("staff.assign_company") ?? new Set());
+  if (user.isSuperAdmin) return true;
+  const isGroupAdminForCompany = user.groupMemberships.some(
+    (membership) => membership.orgGroupId === company.orgGroupId && membership.roleDefinition.key === "GROUP_ADMIN",
+  );
+  if (isGroupAdminForCompany) return true;
+  return user.companyMemberships.some(
+    (membership) => membership.companyId === company.id && membership.roleDefinition.key === "COMPANY_ADMIN",
+  );
 }
 
 export async function canManageProjectMemberships(user: AccessUser, project: ProjectScope) {
