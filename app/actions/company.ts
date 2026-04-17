@@ -92,6 +92,64 @@ export async function updateCompanyAction(formData: FormData) {
   revalidatePath("/group");
 }
 
+export async function updateCompanyOnboardingAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  await assertPermission(user, "company.update");
+  const companyId = requireString(formData, "companyId");
+  const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
+  if (!company) throw new Error("Not found");
+  if (!isSuperAdmin(user) && !isGroupAdmin(user, company.orgGroupId) && !isCompanyAdmin(user, companyId)) {
+    throw new Error("Forbidden");
+  }
+
+  const onboardingPackageUrl = String(formData.get("onboardingPackageUrl") ?? "").trim() || null;
+  const onboardingVideoUrl = String(formData.get("onboardingVideoUrl") ?? "").trim() || null;
+  const onboardingPackageVersion = String(formData.get("onboardingPackageVersion") ?? "").trim() || "v1";
+  const onboardingDeadlineDays = Math.max(1, Math.min(365, Number(formData.get("onboardingDeadlineDays") ?? 14) || 14));
+  const prevPackageUrl = company.onboardingPackageUrl;
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data: {
+      onboardingPackageUrl,
+      onboardingVideoUrl,
+      onboardingPackageVersion,
+      onboardingDeadlineDays,
+    },
+  });
+  if (onboardingPackageUrl && onboardingPackageUrl !== prevPackageUrl) {
+    const { backfillMemberOnboardingsForCompany } = await import("@/lib/member-onboarding");
+    await backfillMemberOnboardingsForCompany(companyId);
+  }
+  revalidatePath("/onboarding");
+  revalidatePath(`/companies/${companyId}`);
+  revalidatePath("/companies");
+  revalidatePath("/group");
+}
+
+export async function clearCompanyOnboardingAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  await assertPermission(user, "company.update");
+  const companyId = requireString(formData, "companyId");
+  const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
+  if (!company) throw new Error("Not found");
+  if (!isSuperAdmin(user) && !isGroupAdmin(user, company.orgGroupId) && !isCompanyAdmin(user, companyId)) {
+    throw new Error("Forbidden");
+  }
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data: {
+      onboardingPackageUrl: null,
+      onboardingVideoUrl: null,
+    },
+  });
+  revalidatePath("/onboarding");
+  revalidatePath(`/companies/${companyId}`);
+  revalidatePath("/companies");
+  revalidatePath("/group");
+}
+
 export async function archiveCompanyAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   await assertPermission(user, "company.archive");
