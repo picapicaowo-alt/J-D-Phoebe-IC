@@ -973,6 +973,7 @@ const M = {
     onboardCompanionTitle: "Choose your companion",
     onboardCompanionLead:
       "Pick one official companion and give it a name. If this is your first staff setup, also choose your company so we can assign the right onboarding materials.",
+    onboardCompanionNameLabel: "Name Your Companion",
     onboardCompanionNamePh: "Name your companion",
     onboardCompanionLevelHint: "Your companion begins at level 1. Growth features will expand later.",
     onboardCompanionCompanyHint: "We use this company to assign your onboarding materials and contributor access.",
@@ -1972,6 +1973,7 @@ const M = {
     projUngroupedLayerOption: "未分组泳道",
     onboardCompanionTitle: "选择你的伙伴",
     onboardCompanionLead: "从官方伙伴中选一只并命名，初始等级为 1。若这是你首次完成成员 onboarding，还需要同时选择所属公司，系统会据此分配对应入职材料。",
+    onboardCompanionNameLabel: "为伙伴起名",
     onboardCompanionNamePh: "为伙伴起名",
     onboardCompanionLevelHint: "伙伴从等级 1 开始，后续将支持成长玩法。",
     onboardCompanionCompanyHint: "系统会根据这里选择的公司分配入职材料和「公司贡献者」权限。",

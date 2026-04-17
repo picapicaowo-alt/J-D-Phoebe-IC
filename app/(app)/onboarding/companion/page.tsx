@@ -97,7 +97,7 @@ export default async function CompanionOnboardingPage({
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "staffDisplayName")}</label>
+            <label className="text-xs font-medium">{t(locale, "onboardCompanionNameLabel")}</label>
             <Input name="name" placeholder={t(locale, "onboardCompanionNamePh")} required maxLength={40} />
           </div>
           <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "onboardCompanionLevelHint")}</p>
