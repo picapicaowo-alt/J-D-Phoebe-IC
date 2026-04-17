@@ -8,6 +8,38 @@ type QuoteRow = {
 };
 
 let cachedPool: QuoteRow[] | null = null;
+let didLogLoadFailure = false;
+
+const FALLBACK_POOL: QuoteRow[] = [
+  {
+    en: "Small steps today add up to the work you will be proud of tomorrow.",
+    zh: "今天的一小步，会堆成明天你引以为傲的成果。",
+  },
+  {
+    en: "You do not need to finish everything - just make the next right move.",
+    zh: "不必一次做完，先做下一个正确的动作。",
+  },
+  {
+    en: "Clarity comes from motion: ship a draft, then improve it.",
+    zh: "动起来才有清晰度：先出一版，再迭代。",
+  },
+  {
+    en: "Protect your focus; depth beats constant context switching.",
+    zh: "保护专注力，深度胜过不停切换。",
+  },
+  {
+    en: "Your calm is a feature when timelines get noisy.",
+    zh: "时间紧时，你的冷静就是团队资产。",
+  },
+  {
+    en: "Done is a gift to your future self.",
+    zh: "做完，是给未来自己的礼物。",
+  },
+  {
+    en: "Kindness and rigor can share the same desk.",
+    zh: "善意和严格可以同桌。",
+  },
+];
 
 function asText(v: unknown) {
   return typeof v === "string" ? v.trim() : String(v ?? "").trim();
@@ -21,29 +53,38 @@ function isActiveValue(v: unknown) {
 
 function loadQuotePool(): QuoteRow[] {
   if (cachedPool) return cachedPool;
-  const workbookPath = path.join(process.cwd(), "data/employee_portal_quotes_merged_bilingual.xlsx");
-  const workbook = XLSX.readFile(workbookPath);
-  const sheet = workbook.Sheets["Merged Quotes"] ?? workbook.Sheets[workbook.SheetNames[0] ?? ""];
+  try {
+    const workbookPath = path.join(process.cwd(), "data/employee_portal_quotes_merged_bilingual.xlsx");
+    const workbook = XLSX.readFile(workbookPath);
+    const sheet = workbook.Sheets["Merged Quotes"] ?? workbook.Sheets[workbook.SheetNames[0] ?? ""];
 
-  if (!sheet) {
-    throw new Error(`Quote workbook has no readable sheet: ${workbookPath}`);
+    if (!sheet) {
+      throw new Error(`Quote workbook has no readable sheet: ${workbookPath}`);
+    }
+
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    const pool = rows
+      .filter((row) => isActiveValue(row["Active"]))
+      .map((row) => ({
+        en: asText(row["Quote (EN)"]),
+        zh: asText(row["Quote (ZH)"]),
+      }))
+      .filter((row) => row.en || row.zh);
+
+    if (!pool.length) {
+      throw new Error(`No active bilingual quotes found in workbook: ${workbookPath}`);
+    }
+
+    cachedPool = pool;
+    return pool;
+  } catch (error) {
+    if (!didLogLoadFailure) {
+      didLogLoadFailure = true;
+      console.error("[companionPepTalkForDay] failed to load quote workbook, using fallback pool", error);
+    }
+    cachedPool = FALLBACK_POOL;
+    return cachedPool;
   }
-
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
-  const pool = rows
-    .filter((row) => isActiveValue(row["Active"]))
-    .map((row) => ({
-      en: asText(row["Quote (EN)"]),
-      zh: asText(row["Quote (ZH)"]),
-    }))
-    .filter((row) => row.en || row.zh);
-
-  if (!pool.length) {
-    throw new Error(`No active bilingual quotes found in workbook: ${workbookPath}`);
-  }
-
-  cachedPool = pool;
-  return pool;
 }
 
 function stableIndex(seed: string, len: number) {
