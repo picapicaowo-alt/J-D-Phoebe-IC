@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { ReactNode, Suspense } from "react";
 import { getLocale } from "@/lib/locale";
 import { BrandMark } from "@/components/brand-mark";
@@ -22,7 +21,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
           <Suspense fallback={<AppShellNavSkeleton />}>
-            <AppShellPrimaryNav />
+            <AppShellPrimaryNav locale={locale} />
           </Suspense>
         </div>
       </header>

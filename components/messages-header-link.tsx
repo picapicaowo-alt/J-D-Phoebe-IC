@@ -25,9 +25,9 @@ export function MessagesHeaderLink({
   initialUnreadCount,
 }: {
   locale: "en" | "zh";
-  initialUnreadCount: number;
+  initialUnreadCount?: number | null;
 }) {
-  const [count, setCount] = useState(initialUnreadCount);
+  const [count, setCount] = useState(initialUnreadCount ?? 0);
   const pathname = usePathname();
   const router = useRouter();
   const prefetchedRef = useRef(false);
@@ -44,6 +44,33 @@ export function MessagesHeaderLink({
     prefetchedRef.current = true;
     router.prefetch("/messages");
   }, [router]);
+
+  useEffect(() => {
+    if (typeof initialUnreadCount === "number") return;
+
+    let cancelled = false;
+    const scheduleRefresh = () => {
+      if (!cancelled) void refreshCount();
+    };
+    const browser = globalThis as typeof globalThis & {
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+
+    if (typeof browser.requestIdleCallback === "function" && typeof browser.cancelIdleCallback === "function") {
+      const idleId = browser.requestIdleCallback(scheduleRefresh, { timeout: 1500 });
+      return () => {
+        cancelled = true;
+        browser.cancelIdleCallback?.(idleId);
+      };
+    }
+
+    const timer = globalThis.setTimeout(scheduleRefresh, 300);
+    return () => {
+      cancelled = true;
+      globalThis.clearTimeout(timer);
+    };
+  }, [initialUnreadCount]);
 
   useEffect(() => {
     const handleUnreadChanged = () => void refreshCount();
@@ -67,7 +94,7 @@ export function MessagesHeaderLink({
       source.close();
       window.removeEventListener("messages:unread-changed", handleUnreadChanged);
     };
-  }, [pathname, refreshCount]);
+  }, [pathname]);
 
   return (
     <Link
