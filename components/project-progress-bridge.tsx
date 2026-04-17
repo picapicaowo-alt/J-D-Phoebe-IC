@@ -1,13 +1,17 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import type { ProjectStatus } from "@prisma/client";
 import { ProjectTasksPanel, type ProjectTaskRow, type ProjectTasksCopy } from "@/components/project-tasks-panel";
+import { tProjectStatus } from "@/lib/messages";
+import type { Locale } from "@/lib/locale";
 
 type ProjectProgressContextValue = {
   liveTasks: ProjectTaskRow[];
   setLiveTasks: (tasks: ProjectTaskRow[]) => void;
+  liveProjectCompleted: boolean;
+  setLiveProjectCompleted: (projectCompleted: boolean) => void;
   fallbackProgressPercent: number;
-  projectCompleted: boolean;
 };
 
 const ProjectProgressContext = createContext<ProjectProgressContextValue | null>(null);
@@ -31,21 +35,39 @@ function computeOverallProgress(tasks: ProjectTaskRow[], fallbackProgressPercent
   return Math.round(rootValues.reduce((sum, value) => sum + value, 0) / rootValues.length);
 }
 
+function computeLiveProjectCompleted(tasks: ProjectTaskRow[], explicitProjectCompleted: boolean): boolean {
+  if (!tasks.length) return explicitProjectCompleted;
+  return computeOverallProgress(tasks, 0, false) >= 100;
+}
+
+function computeLiveProjectStatus(baseStatus: ProjectStatus, tasks: ProjectTaskRow[], explicitProjectCompleted: boolean): ProjectStatus {
+  const complete = computeLiveProjectCompleted(tasks, explicitProjectCompleted);
+  if (complete) return "COMPLETED";
+  if (baseStatus === "COMPLETED") return "ACTIVE";
+  return baseStatus;
+}
+
 function useProjectProgressState(initialTasks: ProjectTaskRow[], fallbackProgressPercent: number, projectCompleted: boolean) {
   const [liveTasks, setLiveTasks] = useState(initialTasks);
+  const [liveProjectCompleted, setLiveProjectCompleted] = useState(projectCompleted);
 
   useEffect(() => {
     setLiveTasks(initialTasks);
   }, [initialTasks]);
 
+  useEffect(() => {
+    setLiveProjectCompleted(projectCompleted);
+  }, [projectCompleted]);
+
   return useMemo(
     () => ({
       liveTasks,
       setLiveTasks,
+      liveProjectCompleted,
+      setLiveProjectCompleted,
       fallbackProgressPercent,
-      projectCompleted,
     }),
-    [fallbackProgressPercent, liveTasks, projectCompleted],
+    [fallbackProgressPercent, liveProjectCompleted, liveTasks],
   );
 }
 
@@ -71,14 +93,14 @@ export function ProjectProgressProvider({
 }
 
 export function ProjectProgressDisplay() {
-  const { liveTasks, fallbackProgressPercent, projectCompleted } = useProjectProgressContext();
-  const pct = computeOverallProgress(liveTasks, fallbackProgressPercent, projectCompleted);
+  const { liveTasks, liveProjectCompleted, fallbackProgressPercent } = useProjectProgressContext();
+  const pct = computeOverallProgress(liveTasks, fallbackProgressPercent, liveProjectCompleted);
   return <p className="text-sm font-semibold tabular-nums text-[hsl(var(--foreground))]">{pct}%</p>;
 }
 
 export function ProjectProgressBar() {
-  const { liveTasks, fallbackProgressPercent, projectCompleted } = useProjectProgressContext();
-  const pct = computeOverallProgress(liveTasks, fallbackProgressPercent, projectCompleted);
+  const { liveTasks, liveProjectCompleted, fallbackProgressPercent } = useProjectProgressContext();
+  const pct = computeOverallProgress(liveTasks, fallbackProgressPercent, liveProjectCompleted);
   const width = clampProgressPercent(pct);
 
   return (
@@ -86,6 +108,20 @@ export function ProjectProgressBar() {
       <div className="h-full rounded-full bg-zinc-900 dark:bg-zinc-100 transition-[width] duration-300" style={{ width: `${width}%` }} />
     </div>
   );
+}
+
+export function ProjectLiveStatusText({ baseStatus, locale }: { baseStatus: ProjectStatus; locale: Locale }) {
+  const { liveTasks, liveProjectCompleted } = useProjectProgressContext();
+  const liveStatus = computeLiveProjectStatus(baseStatus, liveTasks, liveProjectCompleted);
+  return <>{tProjectStatus(locale, liveStatus)}</>;
+}
+
+export function ProjectLiveStatusDot({ baseStatus }: { baseStatus: ProjectStatus }) {
+  const { liveTasks, liveProjectCompleted } = useProjectProgressContext();
+  const liveStatus = computeLiveProjectStatus(baseStatus, liveTasks, liveProjectCompleted);
+  const tone =
+    liveStatus === "ACTIVE" ? "bg-emerald-500" : liveStatus === "COMPLETED" ? "bg-sky-500" : "bg-zinc-400 dark:bg-zinc-500";
+  return <span className={`h-2 w-2 shrink-0 rounded-full ${tone}`} aria-hidden />;
 }
 
 export function ProjectTasksPanelWithProgress({
@@ -111,13 +147,20 @@ export function ProjectTasksPanelWithProgress({
   copy: ProjectTasksCopy;
   locale: "en" | "zh";
 }) {
-  const { setLiveTasks } = useProjectProgressContext();
+  const { setLiveProjectCompleted, setLiveTasks } = useProjectProgressContext();
 
   const handleOptimisticChange = useCallback(
     (optimisticTasks: ProjectTaskRow[]) => {
       setLiveTasks(optimisticTasks);
     },
     [setLiveTasks],
+  );
+
+  const handleProjectCompletedChange = useCallback(
+    (nextProjectCompleted: boolean) => {
+      setLiveProjectCompleted(nextProjectCompleted);
+    },
+    [setLiveProjectCompleted],
   );
 
   return (
@@ -133,6 +176,7 @@ export function ProjectTasksPanelWithProgress({
       copy={copy}
       locale={locale}
       onOptimisticTasksChange={handleOptimisticChange}
+      onProjectCompletedChange={handleProjectCompletedChange}
     />
   );
 }

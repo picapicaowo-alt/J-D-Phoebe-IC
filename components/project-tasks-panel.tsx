@@ -1022,6 +1022,7 @@ export function ProjectTasksPanel({
   copy,
   locale,
   onOptimisticTasksChange,
+  onProjectCompletedChange,
 }: {
   projectId: string;
   tasks: ProjectTaskRow[];
@@ -1034,6 +1035,7 @@ export function ProjectTasksPanel({
   copy: ProjectTasksCopy;
   locale: "en" | "zh";
   onOptimisticTasksChange?: (tasks: ProjectTaskRow[]) => void;
+  onProjectCompletedChange?: (projectCompleted: boolean) => void;
 }) {
   const router = useRouter();
   const [, startRefreshTransition] = useTransition();
@@ -1062,7 +1064,8 @@ export function ProjectTasksPanel({
   useEffect(() => {
     projectCompletedRef.current = projectCompleted;
     setProjectCompletedState(projectCompleted);
-  }, [projectCompleted]);
+    onProjectCompletedChange?.(projectCompleted);
+  }, [onProjectCompletedChange, projectCompleted]);
 
   useEffect(() => {
     setOpen((current) => {
@@ -1167,9 +1170,11 @@ export function ProjectTasksPanel({
                     const next = !previous;
                     projectCompletedRef.current = next;
                     setProjectCompletedState(next);
+                    onProjectCompletedChange?.(next);
                     return () => {
                       projectCompletedRef.current = previous;
                       setProjectCompletedState(previous);
+                      onProjectCompletedChange?.(previous);
                     };
                   },
                 );

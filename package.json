@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "db:push": "node scripts/prisma-env.mjs db push",
     "db:seed": "node scripts/prisma-env.mjs db seed",
     "db:superadmins": "tsx scripts/upsert-demo-superadmins.ts",

@@ -156,6 +156,11 @@ export type ChatPageData = {
   totalUnreadCount: number;
 };
 
+export type ChatThreadData = {
+  thread: ChatThreadDetail | null;
+  messages: ChatMessage[];
+};
+
 function normalizeText(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   return text || null;
@@ -623,6 +628,57 @@ function detailToSummary(detail: ChatThreadDetail): ChatThreadSummary {
   return summary;
 }
 
+async function buildDirectThreadDetail(user: AccessUser, peerId: string) {
+  const peer = await findMessagePeer(user, peerId);
+  if (!peer) return null;
+
+  const [unreadCount, latestMessage, preference] = await Promise.all([
+    prisma.directMessage.count({
+      where: {
+        senderId: peer.id,
+        recipientId: user.id,
+        readAt: null,
+      },
+    }),
+    prisma.directMessage.findFirst({
+      where: directConversationWhere(user.id, peer.id),
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      include: directMessageInclude,
+    }),
+    prisma.directMessagePreference.findUnique({
+      where: {
+        userId_peerId: {
+          userId: user.id,
+          peerId: peer.id,
+        },
+      },
+      select: { mutedAt: true },
+    }),
+  ]);
+
+  return {
+    key: makeThreadKey("direct", peer.id),
+    type: "direct" as const,
+    id: peer.id,
+    name: peer.name,
+    subtitle: peer.title,
+    avatarUrl: peer.avatarUrl,
+    unreadCount,
+    latestMessageAt: latestMessage?.createdAt.toISOString() ?? null,
+    latestMessageText: latestMessage ? normalizeText(latestMessage.body) : null,
+    latestAttachmentCount: latestMessage?.attachments.length ?? 0,
+    latestMessageFromSelf: latestMessage ? latestMessage.senderId === user.id : false,
+    canManage: false,
+    canMentionAll: false,
+    isMuted: !!preference?.mutedAt,
+    memberCount: null,
+    companyId: null,
+    companyName: null,
+    members: [],
+    creatorId: "",
+  };
+}
+
 async function getGroupThreadDetail(user: AccessUser, groupId: string) {
   const membership = await findMessageGroupMembership(user, groupId);
   if (!membership) return null;
@@ -633,6 +689,13 @@ async function getGroupThreadDetail(user: AccessUser, groupId: string) {
   ]);
 
   return buildGroupThreadDetail(user, membership, latest.get(membership.groupId) ?? null, unreadCounts.get(membership.groupId) ?? 0);
+}
+
+export async function getThreadDetail(user: AccessUser, threadKey: string): Promise<ChatThreadDetail | null> {
+  const parsed = parseThreadKey(threadKey);
+  if (!parsed) return null;
+
+  return parsed.type === "direct" ? buildDirectThreadDetail(user, parsed.id) : getGroupThreadDetail(user, parsed.id);
 }
 
 async function buildDirectThreadSummaries(user: AccessUser, peers: VisiblePeerRow[]) {
@@ -788,6 +851,16 @@ export async function getMessagingPageData(user: AccessUser, preferredThreadKey?
     groupOptions,
     totalUnreadCount: threads.reduce((sum, thread) => sum + (thread.isMuted ? 0 : thread.unreadCount), 0),
   };
+}
+
+export async function getMessagingThreadData(user: AccessUser, threadKey: string): Promise<ChatThreadData> {
+  const cleanThreadKey = String(threadKey ?? "").trim();
+  if (!cleanThreadKey) {
+    return { thread: null, messages: [] };
+  }
+
+  const [thread, messages] = await Promise.all([getThreadDetail(user, cleanThreadKey), getThreadMessages(user, cleanThreadKey)]);
+  return { thread, messages };
 }
 
 async function storeMessageFile(

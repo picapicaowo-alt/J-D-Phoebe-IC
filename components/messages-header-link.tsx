@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useEffectEvent, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ export function MessagesHeaderLink({
   initialUnreadCount: number;
 }) {
   const [count, setCount] = useState(initialUnreadCount);
+  const pathname = usePathname();
 
   const refreshCount = useEffectEvent(async () => {
     const next = await fetchUnreadCount().catch(() => null);
@@ -36,11 +38,16 @@ export function MessagesHeaderLink({
   });
 
   useEffect(() => {
-    void refreshCount();
+    const handleUnreadChanged = () => void refreshCount();
+    window.addEventListener("messages:unread-changed", handleUnreadChanged);
+
+    if (pathname === "/messages") {
+      return () => {
+        window.removeEventListener("messages:unread-changed", handleUnreadChanged);
+      };
+    }
 
     const source = new EventSource("/api/messages/stream");
-    const handleUnreadChanged = () => void refreshCount();
-
     source.addEventListener("message", (event) => {
       const payload = parseJson<{ message?: { isOwn?: boolean } }>((event as MessageEvent<string>).data);
       if (payload?.message?.isOwn === false) {
@@ -48,13 +55,11 @@ export function MessagesHeaderLink({
       }
     });
 
-    window.addEventListener("messages:unread-changed", handleUnreadChanged);
-
     return () => {
       source.close();
       window.removeEventListener("messages:unread-changed", handleUnreadChanged);
     };
-  }, [refreshCount]);
+  }, [pathname, refreshCount]);
 
   return (
     <Link

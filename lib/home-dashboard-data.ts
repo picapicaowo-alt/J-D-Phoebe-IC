@@ -64,6 +64,30 @@ export const getHomeDashboardVisibleWorkflowNodes = cache(async function getHome
   });
 });
 
+export const getHomeDashboardVisibleWorkflowNodeSignals = cache(async function getHomeDashboardVisibleWorkflowNodeSignals(
+  user: AccessUser,
+) {
+  const { visibleIds } = await getHomeDashboardVisibleProjects(user);
+  if (!visibleIds.length) return [];
+
+  return prisma.workflowNode.findMany({
+    where: {
+      deletedAt: null,
+      projectId: { in: visibleIds },
+      status: { notIn: ["DONE", "SKIPPED"] },
+    },
+    select: {
+      status: true,
+      nodeType: true,
+      dueAt: true,
+      operationalLabels: true,
+      waitingStartedAt: true,
+      isProjectBottleneck: true,
+    },
+    orderBy: [{ updatedAt: "desc" }],
+  });
+});
+
 export function projectPriorityScore(p: { deadline: Date | null; priority: Priority; status: ProjectStatus }, nowMs: number): number {
   if (TERMINAL_PROJECT.includes(p.status)) return -1e18;
   const dl = p.deadline ? new Date(p.deadline).getTime() : Number.POSITIVE_INFINITY;

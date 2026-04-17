@@ -292,7 +292,7 @@ export async function KnowledgeBrowseBody({
             </Link>
           ) : (
             <Link href="/knowledge/browse">
-              <Button type="button" variant="secondary" className="text-xs">
+              <Button type="button" variant="secondary" className="text-sm">
                 {t(locale, "knowledgeSeeAll")}
               </Button>
             </Link>
@@ -318,10 +318,10 @@ export async function KnowledgeBrowseBody({
             />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <FormSubmitButton type="submit" variant="secondary" className="h-9 rounded-[10px] text-xs">
+            <FormSubmitButton type="submit" variant="secondary" className="h-9 rounded-[10px] text-sm">
               {t(locale, "knowledgeSearch")}
             </FormSubmitButton>
-            <a className="inline-flex h-9 items-center text-xs text-[hsl(var(--muted))] underline" href={`/knowledge/browse?layer=${layerFilter}`}>
+            <a className="inline-flex h-9 items-center text-sm text-[hsl(var(--muted))] underline" href={`/knowledge/browse?layer=${layerFilter}`}>
               {t(locale, "btnReset")}
             </a>
           </div>
@@ -405,11 +405,11 @@ export async function KnowledgeBrowseBody({
           <CardTitle>{t(locale, "knowledgeSearch")}</CardTitle>
           <form action="/knowledge/browse" method="get" className="grid gap-2 md:grid-cols-6">
             <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium">{t(locale, "commonKeyword")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonKeyword")}</label>
               <Input name="q" defaultValue={q} placeholder={t(locale, "kbPlaceholderKeyword")} />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonLayer")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonLayer")}</label>
               <select
                 name="layer"
                 defaultValue={layerFilter}
@@ -424,7 +424,7 @@ export async function KnowledgeBrowseBody({
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonCompany")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonCompany")}</label>
               <select
                 name="companyId"
                 defaultValue={companyFilter}
@@ -439,7 +439,7 @@ export async function KnowledgeBrowseBody({
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonProject")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonProject")}</label>
               <select
                 name="projectId"
                 defaultValue={projectFilter}
@@ -454,7 +454,7 @@ export async function KnowledgeBrowseBody({
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonAuthor")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonAuthor")}</label>
               <select
                 name="authorId"
                 defaultValue={authorFilter}
@@ -469,7 +469,7 @@ export async function KnowledgeBrowseBody({
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonTagContains")}</label>
+              <label className="text-sm font-medium">{t(locale, "commonTagContains")}</label>
               <Input name="tag" defaultValue={tagFilter} placeholder="legal, template..." />
             </div>
             <div className="md:col-span-6 flex gap-2">
@@ -670,7 +670,7 @@ export async function KnowledgeBrowseBody({
                       <>
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <h3 className="min-w-0 flex-1 text-lg font-semibold leading-snug text-[hsl(var(--foreground))]">{a.title}</h3>
-                          <span className="shrink-0 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/10 px-2.5 py-0.5 text-xs text-[hsl(var(--muted))]">
+                          <span className="shrink-0 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/10 px-2.5 py-0.5 text-sm text-[hsl(var(--muted))]">
                             {sourceTypeLabel(locale, openHref)}
                           </span>
                         </div>
@@ -700,12 +700,12 @@ export async function KnowledgeBrowseBody({
                     ) : (
                       <>
                         <div className="font-medium">{a.title}</div>
-                        <div className="text-xs text-[hsl(var(--muted))]">
+                        <div className="text-sm text-[hsl(var(--muted))]">
                           {t(locale, "kbByAuthor")} {a.author.name} ·{" "}
                           {a.project?.name ?? a.company?.name ?? t(locale, "kbUncategorizedShort")} ·{" "}
                           {t(locale, "kbReusedTimes")} {a.reuseCount} {t(locale, "kbTimesSuffix")}
                         </div>
-                        {a.summary ? <p className="mt-1 text-xs text-[hsl(var(--muted))]">{a.summary}</p> : null}
+                        {a.summary ? <p className="mt-1 text-sm text-[hsl(var(--muted))]">{a.summary}</p> : null}
                         <p className="mt-1 text-sm">{a.content}</p>
                       </>
                     )}
@@ -718,7 +718,7 @@ export async function KnowledgeBrowseBody({
                             href={openHref}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-transparent px-3 text-xs font-medium text-[hsl(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10"
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-transparent px-3 text-sm font-medium text-[hsl(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10"
                           >
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
                               <path
@@ -734,14 +734,14 @@ export async function KnowledgeBrowseBody({
                         ) : null}
                       <form action={incrementKnowledgeReuseAction}>
                         <input type="hidden" name="id" value={a.id} />
-                        <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                        <FormSubmitButton type="submit" variant="secondary" className="h-8 px-2 text-sm">
                           {t(locale, "kbMarkReused")}
                         </FormSubmitButton>
                       </form>
                       {canMutateKb ? (
                         <form action={softDeleteKnowledgeAssetAction}>
                           <input type="hidden" name="id" value={a.id} />
-                          <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                          <FormSubmitButton type="submit" variant="secondary" className="h-8 px-2 text-sm">
                             {t(locale, "btnArchive")}
                           </FormSubmitButton>
                         </form>
@@ -752,7 +752,7 @@ export async function KnowledgeBrowseBody({
                           <FormSubmitButton
                             type="submit"
                             variant="secondary"
-                            className="h-7 border-red-200 px-2 text-xs text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30"
+                            className="h-8 border-red-200 px-2 text-sm text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30"
                           >
                             {t(locale, "btnDelete")}
                           </FormSubmitButton>
@@ -761,7 +761,7 @@ export async function KnowledgeBrowseBody({
                       {hubEntryLayout && canMutateKb ? (
                         <OpenDialogButton
                           dialogId={`kb-edit-${a.id}`}
-                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-transparent px-3 text-xs font-medium text-[hsl(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-transparent px-3 text-sm font-medium text-[hsl(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10"
                         >
                           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
                             <path
@@ -1206,7 +1206,7 @@ export async function KnowledgeBrowseBody({
                 return (
                   <li key={a.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
                     <div className="font-medium">{a.title}</div>
-                    <div className="text-xs text-[hsl(var(--muted))]">
+                    <div className="text-sm text-[hsl(var(--muted))]">
                       {t(locale, "kbByAuthor")} {a.author.name} · {a.project?.name ?? t(locale, "kbUncategorizedShort")}
                     </div>
                     {canRestoreKb || canDeleteKb ? (
@@ -1214,7 +1214,7 @@ export async function KnowledgeBrowseBody({
                         {canRestoreKb ? (
                           <form action={restoreKnowledgeAssetAction}>
                             <input type="hidden" name="id" value={a.id} />
-                            <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                            <FormSubmitButton type="submit" variant="secondary" className="h-8 px-2 text-sm">
                               {t(locale, "btnRestore")}
                             </FormSubmitButton>
                           </form>
@@ -1225,7 +1225,7 @@ export async function KnowledgeBrowseBody({
                             <FormSubmitButton
                               type="submit"
                               variant="secondary"
-                              className="h-7 border-red-200 px-2 text-xs text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30"
+                              className="h-8 border-red-200 px-2 text-sm text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30"
                             >
                               {t(locale, "btnDelete")}
                             </FormSubmitButton>

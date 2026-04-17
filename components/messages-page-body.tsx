@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useEffectEvent, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useEffectEvent, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { UserFace } from "@/components/user-face";
 import { cn } from "@/lib/utils";
-import type { ChatMessage, ChatPageData, ChatThreadDetail, ChatThreadSummary } from "@/lib/direct-messages";
+import type { ChatMessage, ChatPageData, ChatThreadData, ChatThreadDetail, ChatThreadSummary } from "@/lib/direct-messages";
 
 type Props = {
   locale: "en" | "zh";
@@ -254,6 +254,13 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   const [searchQuery, setSearchQuery] = useState("");
   const threadsRef = useRef(initialData.threads);
   const selectedThreadRef = useRef<string | null>(initialData.selectedThreadKey);
+  const threadDataCacheRef = useRef(
+    new Map<string, ChatThreadData>(
+      initialData.selectedThreadKey && initialData.selectedThread
+        ? [[initialData.selectedThreadKey, { thread: initialData.selectedThread, messages: initialData.messages }]]
+        : [],
+    ),
+  );
   const requestRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -290,7 +297,22 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     setSelectedThread(data.selectedThread);
     setMessages(data.messages);
     setGroupOptions(data.groupOptions);
+    if (data.selectedThreadKey && data.selectedThread) {
+      threadDataCacheRef.current.set(data.selectedThreadKey, {
+        thread: data.selectedThread,
+        messages: data.messages,
+      });
+    }
     notifyUnreadChanged();
+  });
+
+  const applyThreadData = useEffectEvent((threadKey: string, data: ChatThreadData) => {
+    threadDataCacheRef.current.set(threadKey, data);
+    startTransition(() => {
+      setSelectedThreadKey(threadKey);
+      setSelectedThread(data.thread);
+      setMessages(data.messages);
+    });
   });
 
   const refreshPage = useEffectEvent(async (threadKey?: string | null, opts?: { silent?: boolean }) => {
@@ -307,6 +329,32 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         return;
       }
       applyPageData(data);
+      setError(null);
+    } catch {
+      if (requestId !== requestRef.current) return;
+      setError(copy.loadError);
+    } finally {
+      if (requestId === requestRef.current && !opts?.silent) {
+        setLoadingConversation(false);
+      }
+    }
+  });
+
+  const refreshThread = useEffectEvent(async (threadKey: string, opts?: { silent?: boolean }) => {
+    const cleanThreadKey = String(threadKey ?? "").trim();
+    if (!cleanThreadKey) return;
+    if (!opts?.silent) setLoadingConversation(true);
+    const requestId = ++requestRef.current;
+
+    try {
+      const response = await fetch(`/api/messages/thread?threadKey=${encodeURIComponent(cleanThreadKey)}`, { cache: "no-store" });
+      const data = await readJson<ChatThreadData & ApiErrorShape>(response);
+      if (requestId !== requestRef.current) return;
+      if (!response.ok || !data) {
+        setError(data?.error ?? copy.loadError);
+        return;
+      }
+      applyThreadData(cleanThreadKey, data);
       setError(null);
     } catch {
       if (requestId !== requestRef.current) return;
@@ -341,6 +389,14 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   }, [markRead, selectedThreadKey, threads]);
 
   const applyIncomingMessage = useEffectEvent((incoming: ChatMessage) => {
+    const cachedThread = threadDataCacheRef.current.get(incoming.threadKey);
+    if (cachedThread) {
+      threadDataCacheRef.current.set(incoming.threadKey, {
+        thread: cachedThread.thread,
+        messages: appendMessage(cachedThread.messages, incoming),
+      });
+    }
+
     let found = false;
     setThreads((current) => {
       const next = current.map((thread) => {
@@ -392,9 +448,23 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   async function openThread(threadKey: string) {
     const cleanThreadKey = String(threadKey ?? "").trim();
     if (!cleanThreadKey) return;
-    setSelectedThreadKey(cleanThreadKey);
     setError(null);
-    await refreshPage(cleanThreadKey);
+
+    const cached = threadDataCacheRef.current.get(cleanThreadKey);
+    if (cached) {
+      requestRef.current += 1;
+      applyThreadData(cleanThreadKey, cached);
+      setLoadingConversation(false);
+      return;
+    }
+
+    const summary = threadsRef.current.find((thread) => thread.key === cleanThreadKey);
+    startTransition(() => {
+      setSelectedThreadKey(cleanThreadKey);
+      setSelectedThread(summary ? summaryToDetail(summary) : null);
+      setMessages([]);
+    });
+    await refreshThread(cleanThreadKey);
   }
 
   async function handleSend(event: React.FormEvent<HTMLFormElement>) {
@@ -419,7 +489,12 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         return;
       }
 
+      const cachedThread = threadDataCacheRef.current.get(selectedThreadKey)?.thread;
       setMessages((current) => appendMessage(current, data.message!));
+      threadDataCacheRef.current.set(selectedThreadKey, {
+        thread: selectedThread ?? cachedThread ?? null,
+        messages: appendMessage(threadDataCacheRef.current.get(selectedThreadKey)?.messages ?? [], data.message!),
+      });
       setThreads((current) =>
         sortThreads(
           current.map((thread) =>
@@ -461,6 +536,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
 
   function openManageGroupDialog() {
     if (!selectedThread || selectedThread.type !== "group" || !selectedThread.canManage) return;
+    if (loadingConversation && selectedThread.members.length === 0) return;
     setManageGroupName(selectedThread.name);
     setManageMemberIds(
       selectedThread.members
@@ -477,6 +553,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
 
   function openMemberListDialog() {
     if (!selectedThread || selectedThread.type !== "group") return;
+    if (loadingConversation && selectedThread.members.length === 0) return;
     setMemberListQuery("");
     setHoveredMemberId(null);
     if (!memberListDialogRef.current?.open) {
@@ -511,6 +588,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
       setSelectedThreadKey(nextThread.key);
       setSelectedThread(nextThread);
       setMessages([]);
+      threadDataCacheRef.current.set(nextThread.key, { thread: nextThread, messages: [] });
       setError(null);
       notifyUnreadChanged();
     } catch {
@@ -549,6 +627,11 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
       setThreads((current) => upsertThread(current, threadDetailToSummary(nextThread)));
       setSelectedThread(nextThread);
       setSelectedThreadKey(nextThread.key);
+      const cachedMessages = threadDataCacheRef.current.get(nextThread.key)?.messages ?? messages;
+      threadDataCacheRef.current.set(nextThread.key, {
+        thread: nextThread,
+        messages: cachedMessages,
+      });
       setError(null);
       notifyUnreadChanged();
     } catch {
@@ -579,10 +662,16 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
       setSelectedThreadKey(fallbackThread?.key ?? null);
       setSelectedThread(fallbackThread ? summaryToDetail(fallbackThread) : null);
       setMessages([]);
+      threadDataCacheRef.current.delete(deletedThreadKey);
       setError(null);
       notifyUnreadChanged();
       if (fallbackThread) {
-        void refreshPage(fallbackThread.key, { silent: true });
+        const cached = threadDataCacheRef.current.get(fallbackThread.key);
+        if (cached) {
+          applyThreadData(fallbackThread.key, cached);
+        } else {
+          void refreshThread(fallbackThread.key, { silent: true });
+        }
       }
     } catch {
       setGroupError(copy.loadError);
@@ -614,6 +703,13 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         current.map((thread) => (thread.key === selectedThread.key ? { ...thread, isMuted: muted } : thread)),
       );
       setSelectedThread((current) => (current && current.key === selectedThread.key ? { ...current, isMuted: muted } : current));
+      const cached = threadDataCacheRef.current.get(selectedThread.key);
+      if (cached?.thread) {
+        threadDataCacheRef.current.set(selectedThread.key, {
+          ...cached,
+          thread: { ...cached.thread, isMuted: muted },
+        });
+      }
       notifyUnreadChanged();
     } catch {
       setError(copy.loadError);

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
 import type { AccessUser } from "@/lib/access";
-import { getHomeDashboardVisibleWorkflowNodes } from "@/lib/home-dashboard-data";
+import { getHomeDashboardVisibleWorkflowNodeSignals } from "@/lib/home-dashboard-data";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import {
@@ -24,11 +24,11 @@ function normalizeSnapshot(snapshot: string): SnapshotCategory | null {
   return null;
 }
 
-function isExecutionNode(node: Awaited<ReturnType<typeof getHomeDashboardVisibleWorkflowNodes>>[number]) {
+function isExecutionNode(node: Awaited<ReturnType<typeof getHomeDashboardVisibleWorkflowNodeSignals>>[number]) {
   return !isBlockedNode(node) && !isPendingApprovalNode(node) && !isWaitingNode(node) && (isAtRiskNode(node) || isOverdueNode(node) || node.isProjectBottleneck);
 }
 
-function isResponseNode(node: Awaited<ReturnType<typeof getHomeDashboardVisibleWorkflowNodes>>[number]) {
+function isResponseNode(node: Awaited<ReturnType<typeof getHomeDashboardVisibleWorkflowNodeSignals>>[number]) {
   return !isBlockedNode(node) && !isPendingApprovalNode(node) && isWaitingNode(node);
 }
 
@@ -40,8 +40,32 @@ export async function HomeExecutionSnapshotSection({
   snapshot: string;
 }) {
   const locale = await getLocale();
-  const nodes = await getHomeDashboardVisibleWorkflowNodes(user);
+  const nodes = await getHomeDashboardVisibleWorkflowNodeSignals(user);
   const activeSnapshot = normalizeSnapshot(snapshot);
+  const counts = {
+    response: 0,
+    approval: 0,
+    execution: 0,
+    blocked: 0,
+  };
+
+  for (const node of nodes) {
+    if (isBlockedNode(node)) {
+      counts.blocked += 1;
+      continue;
+    }
+    if (isPendingApprovalNode(node)) {
+      counts.approval += 1;
+      continue;
+    }
+    if (isResponseNode(node)) {
+      counts.response += 1;
+      continue;
+    }
+    if (isExecutionNode(node)) {
+      counts.execution += 1;
+    }
+  }
 
   const categories: {
     key: SnapshotCategory;
@@ -52,25 +76,25 @@ export async function HomeExecutionSnapshotSection({
     {
       key: "response",
       label: t(locale, "homeResponseQueue"),
-      count: nodes.filter((node) => isResponseNode(node)).length,
+      count: counts.response,
       tone: "text-amber-700 dark:text-amber-300",
     },
     {
       key: "approval",
       label: t(locale, "homeApprovalQueue"),
-      count: nodes.filter((node) => isPendingApprovalNode(node)).length,
+      count: counts.approval,
       tone: "text-sky-600 dark:text-sky-400",
     },
     {
       key: "execution",
       label: t(locale, "homeExecutionQueue"),
-      count: nodes.filter((node) => isExecutionNode(node)).length,
+      count: counts.execution,
       tone: "text-orange-700 dark:text-orange-300",
     },
     {
       key: "blocked",
       label: t(locale, "homeBlockedNodes"),
-      count: nodes.filter((node) => isBlockedNode(node)).length,
+      count: counts.blocked,
       tone: "text-rose-600 dark:text-rose-400",
     },
   ];

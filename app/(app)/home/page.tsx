@@ -18,6 +18,7 @@ export default async function HomePage({
 }) {
   const user = (await requireUser()) as AccessUser;
   if (!user.companionIntroCompletedAt) redirect("/onboarding/companion");
+  const pendingOnboardingRoutePromise = getPendingMemberOnboardingRoute(user.id);
 
   const [sp, canReadProjects, locale] = await Promise.all([
     searchParams,
@@ -32,7 +33,7 @@ export default async function HomePage({
     skipOnboardingQuery === "1" && (await userHasPermission(user, "lifecycle.onboarding.skip"));
 
   if (!skipOnboarding) {
-    const pendingOnboardingRoute = await getPendingMemberOnboardingRoute(user.id);
+    const pendingOnboardingRoute = await pendingOnboardingRoutePromise;
     if (pendingOnboardingRoute) redirect(pendingOnboardingRoute);
   }
 

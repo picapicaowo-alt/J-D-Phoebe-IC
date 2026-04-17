@@ -31,7 +31,7 @@ import {
   type AccessUser,
 } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
-import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tProjectStatus, tWorkflowNodeStatus } from "@/lib/messages";
+import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tWorkflowNodeStatus } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { canManageProjectMemberships } from "@/lib/scoped-role-access";
@@ -63,6 +63,8 @@ import {
 import {
   ProjectProgressBar,
   ProjectProgressDisplay,
+  ProjectLiveStatusDot,
+  ProjectLiveStatusText,
   ProjectProgressProvider,
   ProjectTasksPanelWithProgress,
 } from "@/components/project-progress-bridge";
@@ -1966,7 +1968,7 @@ export default async function ProjectDetailPage({
             <p className="text-sm text-[hsl(var(--muted))]">{project.description}</p>
           ) : null}
           <p className="text-sm text-[hsl(var(--muted))]">
-            {project.company.name} · {tProjectStatus(locale, project.status)} · {tPriority(locale, project.priority)}
+            {project.company.name} · <ProjectLiveStatusText baseStatus={project.status} locale={locale} /> · {tPriority(locale, project.priority)}
           </p>
           {project.deadline ? (
             <p className="text-xs text-[hsl(var(--muted))]">
@@ -1988,17 +1990,10 @@ export default async function ProjectDetailPage({
             <div className="space-y-1">
               <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonStatus")}</p>
               <div className="flex items-center gap-2">
-                <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${
-                    project.status === "ACTIVE"
-                      ? "bg-emerald-500"
-                      : project.status === "COMPLETED"
-                        ? "bg-sky-500"
-                        : "bg-zinc-400 dark:bg-zinc-500"
-                  }`}
-                  aria-hidden
-                />
-                <span className="font-medium text-[hsl(var(--foreground))]">{tProjectStatus(locale, project.status)}</span>
+                <ProjectLiveStatusDot baseStatus={project.status} />
+                <span className="font-medium text-[hsl(var(--foreground))]">
+                  <ProjectLiveStatusText baseStatus={project.status} locale={locale} />
+                </span>
               </div>
             </div>
             <div className="space-y-1">
