@@ -15,6 +15,7 @@ import {
   normalizeCalendarLabelColor,
 } from "@/lib/calendar-labels";
 import { getCurrentCompanyOnboardingMaterial } from "@/lib/company-onboarding-materials";
+import { canManageCompanyMemberships } from "@/lib/scoped-role-access";
 
 function must(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -209,6 +210,70 @@ export async function toggleMemberOnboardingChecklistAction(formData: FormData) 
     where: { id: item.onboardingId },
     data: { completedAt: allDone ? new Date() : null },
   });
+  revalidatePath("/onboarding/member");
+  revalidatePath("/home");
+}
+
+export async function skipMemberOnboardingAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  if (!isSuperAdmin(actor)) throw new Error("Forbidden");
+
+  const onboardingId = must(formData, "onboardingId");
+  const ob = await prisma.memberOnboarding.findFirst({
+    where: { id: onboardingId },
+    include: {
+      assignedMaterial: true,
+      company: {
+        include: {
+          onboardingMaterials: {
+            orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+          },
+        },
+      },
+    },
+  });
+  if (!ob) throw new Error("Not found");
+  if (ob.userId === actor.id) throw new Error("Forbidden");
+
+  const fallbackMaterial = !ob.packageUrl.trim() ? getCurrentCompanyOnboardingMaterial(ob.company) : null;
+  const videoUrl =
+    ob.videoUrl?.trim() ||
+    ob.assignedMaterial?.videoUrl?.trim() ||
+    fallbackMaterial?.videoUrl?.trim() ||
+    ob.company.onboardingVideoUrl?.trim();
+  const now = new Date();
+
+  await prisma.$transaction([
+    prisma.memberOnboardingChecklistItem.updateMany({
+      where: { onboardingId, completedAt: null },
+      data: { completedAt: now },
+    }),
+    prisma.memberOnboarding.update({
+      where: { id: onboardingId },
+      data: {
+        materialsOpenedAt: ob.materialsOpenedAt ?? now,
+        completedAt: ob.completedAt ?? now,
+        ...(videoUrl
+          ? {
+              videoCompletedAt: ob.videoCompletedAt ?? now,
+              videoProgressSeconds: Math.max(ob.videoProgressSeconds, EMBED_COMPLETION_SECONDS),
+            }
+          : {}),
+      },
+    }),
+  ]);
+
+  await writeAudit({
+    actorId: actor.id,
+    entityType: "MEMBER_ONBOARDING",
+    entityId: ob.id,
+    action: "SKIP",
+    meta: JSON.stringify({ userId: ob.userId, companyId: ob.companyId, by: "superadmin" }),
+  });
+
+  revalidatePath(`/staff/${ob.userId}`);
+  revalidatePath("/staff");
+  revalidatePath("/onboarding");
   revalidatePath("/onboarding/member");
   revalidatePath("/home");
 }
@@ -493,15 +558,12 @@ const OFFBOARDING_KEYS = [
 
 export async function startOffboardingRunAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.assign_company");
   const userId = must(formData, "userId");
   const companyId = must(formData, "companyId");
 
   const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
   if (!company) throw new Error("Company not found");
-  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, company.orgGroupId) && !actor.companyMemberships.some((m) => m.companyId === companyId && m.roleDefinition.key === "COMPANY_ADMIN")) {
-    throw new Error("Forbidden");
-  }
+  if (!(await canManageCompanyMemberships(actor, company))) throw new Error("Forbidden");
   const targetMember = await prisma.companyMembership.findUnique({
     where: { userId_companyId: { userId, companyId } },
   });
@@ -533,7 +595,6 @@ export async function startOffboardingRunAction(formData: FormData) {
 
 export async function toggleOffboardingChecklistAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.assign_company");
   const itemId = must(formData, "itemId");
   const item = await prisma.offboardingChecklistItem.findFirst({
     where: { id: itemId },
@@ -541,9 +602,7 @@ export async function toggleOffboardingChecklistAction(formData: FormData) {
   });
   if (!item) throw new Error("Not found");
   const c = item.run.company;
-  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, c.orgGroupId) && !actor.companyMemberships.some((m) => m.companyId === c.id && m.roleDefinition.key === "COMPANY_ADMIN")) {
-    throw new Error("Forbidden");
-  }
+  if (!(await canManageCompanyMemberships(actor, c))) throw new Error("Forbidden");
   await prisma.offboardingChecklistItem.update({
     where: { id: itemId },
     data: { completedAt: item.completedAt ? null : new Date() },
@@ -553,16 +612,13 @@ export async function toggleOffboardingChecklistAction(formData: FormData) {
 
 export async function completeOffboardingRunAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.assign_company");
   const runId = must(formData, "runId");
   const run = await prisma.offboardingRun.findFirst({
     where: { id: runId },
     include: { checklist: true, company: true },
   });
   if (!run) throw new Error("Not found");
-  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, run.company.orgGroupId) && !actor.companyMemberships.some((m) => m.companyId === run.companyId && m.roleDefinition.key === "COMPANY_ADMIN")) {
-    throw new Error("Forbidden");
-  }
+  if (!(await canManageCompanyMemberships(actor, run.company))) throw new Error("Forbidden");
   const pending = run.checklist.some((c) => !c.completedAt);
   if (pending) throw new Error("Checklist incomplete");
 

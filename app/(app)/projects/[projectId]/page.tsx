@@ -24,6 +24,7 @@ import { getLocale } from "@/lib/locale";
 import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tProjectStatus, tWorkflowNodeStatus } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { canManageProjectMemberships } from "@/lib/scoped-role-access";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -427,7 +428,6 @@ export default async function ProjectDetailPage({
   const sessionPromise = getAppSession();
   const permissionPromise = Promise.all([
     userHasPermission(user, "project.soft_delete"),
-    userHasPermission(user, "project.member.manage"),
     userHasPermission(user, "project.workflow.update"),
     userHasPermission(user, "knowledge.create"),
     userHasPermission(user, "knowledge.read"),
@@ -456,6 +456,7 @@ export default async function ProjectDetailPage({
   if (!canViewProject(user, project)) notFound();
 
   const canManage = canManageProject(user, project);
+  const canManageMembers = await canManageProjectMemberships(user, project);
   const mustIncludeUserIds = [...new Set([project.ownerId, ...project.memberships.map((m) => m.userId)])];
   const projectRelationsPromise = prisma.project.findFirstOrThrow({
     where: { id: project.id, deletedAt: null },
@@ -563,7 +564,7 @@ export default async function ProjectDetailPage({
         select: { id: true, name: true },
       })
     : Promise.resolve([]);
-  const staffPromise: Promise<{ id: string; name: string }[]> = canManage
+  const staffPromise: Promise<{ id: string; name: string }[]> = canManageMembers
     ? prisma.user.findMany({
         where: {
           deletedAt: null,
@@ -583,7 +584,7 @@ export default async function ProjectDetailPage({
         select: { id: true, name: true },
       })
     : Promise.resolve([]);
-  const projectRolesPromise: Promise<{ id: string; displayName: string }[]> = canManage
+  const projectRolesPromise: Promise<{ id: string; displayName: string }[]> = canManageMembers
     ? prisma.roleDefinition.findMany({
         where: { appliesScope: "PROJECT" },
         orderBy: { displayName: "asc" },
@@ -599,7 +600,7 @@ export default async function ProjectDetailPage({
       })
     : Promise.resolve([]);
   const [
-    [canSoftDeletePermission, canMemberManagePermission, canEditTasksPermission, canEditKnowledge, canReadKnowledge, canReadCalendar],
+    [canSoftDeletePermission, canEditTasksPermission, canEditKnowledge, canReadKnowledge, canReadCalendar],
     locale,
     session,
     projectCalendarEvents,
@@ -636,7 +637,7 @@ export default async function ProjectDetailPage({
       user.groupMemberships.some((m) => m.orgGroupId === project.company.orgGroupId && m.roleDefinition.key === "GROUP_ADMIN") ||
       user.companyMemberships.some((m) => m.companyId === project.companyId && m.roleDefinition.key === "COMPANY_ADMIN"));
   const undoAvailable = session.taskUndo?.projectId === project.id;
-  const canMemberManage = canMemberManagePermission && canManage;
+  const canMemberManage = canManageMembers;
   const canEditTasks =
     canEditTasksPermission &&
     canViewProject(user, project) &&

@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { invalidateAccessUserCache, requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
-import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
-import { assertPermission, invalidatePermissionCache, userHasPermission } from "@/lib/permissions";
+import { isSuperAdmin, type AccessUser } from "@/lib/access";
+import { assertPermission, invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { canManageCompanyMemberships, canManageProjectMemberships } from "@/lib/scoped-role-access";
 
 function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -86,16 +87,17 @@ export async function updateStaffAction(formData: FormData) {
 
 export async function assignCompanyAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.assign_company");
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
   const roleDefinitionId = requireString(formData, "roleDefinitionId");
   const departmentIdRaw = String(formData.get("departmentId") ?? "").trim();
-  const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
+  const [company, role] = await Promise.all([
+    prisma.company.findFirst({ where: { id: companyId, deletedAt: null } }),
+    prisma.roleDefinition.findFirst({ where: { id: roleDefinitionId, appliesScope: "COMPANY" } }),
+  ]);
   if (!company) throw new Error("Company not found");
-  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, company.orgGroupId) && !isCompanyAdmin(actor, companyId)) {
-    throw new Error("Forbidden");
-  }
+  if (!role) throw new Error("Invalid company role");
+  if (!(await canManageCompanyMemberships(actor, company))) throw new Error("Forbidden");
 
   const departmentId: string | null = departmentIdRaw
     ? await (async () => {
@@ -116,8 +118,8 @@ export async function assignCompanyAction(formData: FormData) {
 
   await prisma.companyMembership.upsert({
     where: { userId_companyId: { userId, companyId } },
-    create: { userId, companyId, roleDefinitionId, departmentId, supervisorUserId },
-    update: { roleDefinitionId, departmentId, supervisorUserId },
+    create: { userId, companyId, roleDefinitionId: role.id, departmentId, supervisorUserId },
+    update: { roleDefinitionId: role.id, departmentId, supervisorUserId },
   });
   const { ensureMemberOnboardingForCompany } = await import("@/lib/member-onboarding");
   await ensureMemberOnboardingForCompany(userId, companyId);
@@ -128,7 +130,6 @@ export async function assignCompanyAction(formData: FormData) {
 
 export async function updateCompanyMembershipSupervisorAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.assign_company");
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
   const supervisorUserIdRaw = String(formData.get("supervisorUserId") ?? "").trim();
@@ -142,9 +143,7 @@ export async function updateCompanyMembershipSupervisorAction(formData: FormData
 
   const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
   if (!company) throw new Error("Company not found");
-  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, company.orgGroupId) && !isCompanyAdmin(actor, companyId)) {
-    throw new Error("Forbidden");
-  }
+  if (!(await canManageCompanyMemberships(actor, company))) throw new Error("Forbidden");
 
   const membership = await prisma.companyMembership.findUnique({
     where: { userId_companyId: { userId, companyId } },
@@ -178,16 +177,13 @@ export async function updateCompanyMembershipSupervisorAction(formData: FormData
 
 export async function updateCompanyMembershipDepartmentAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.assign_company");
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
   const departmentIdRaw = String(formData.get("departmentId") ?? "").trim();
 
   const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
   if (!company) throw new Error("Company not found");
-  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, company.orgGroupId) && !isCompanyAdmin(actor, companyId)) {
-    throw new Error("Forbidden");
-  }
+  if (!(await canManageCompanyMemberships(actor, company))) throw new Error("Forbidden");
 
   const departmentId: string | null = departmentIdRaw
     ? await (async () => {
@@ -214,16 +210,13 @@ export async function updateCompanyMembershipDepartmentAction(formData: FormData
 
 export async function updateCompanyMembershipRoleAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.assign_company");
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
   const roleDefinitionId = requireString(formData, "roleDefinitionId");
 
   const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
   if (!company) throw new Error("Company not found");
-  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, company.orgGroupId) && !isCompanyAdmin(actor, companyId)) {
-    throw new Error("Forbidden");
-  }
+  if (!(await canManageCompanyMemberships(actor, company))) throw new Error("Forbidden");
 
   const [membership, role] = await Promise.all([
     prisma.companyMembership.findUnique({
@@ -263,32 +256,25 @@ export async function updateCompanyMembershipRoleAction(formData: FormData) {
 
 export async function assignProjectAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.assign_project");
   const userId = requireString(formData, "userId");
   const projectId = requireString(formData, "projectId");
   const roleDefinitionId = requireString(formData, "roleDefinitionId");
 
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, deletedAt: null },
-    include: { company: true },
-  });
+  const [project, role] = await Promise.all([
+    prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
+      include: { company: true },
+    }),
+    prisma.roleDefinition.findFirst({ where: { id: roleDefinitionId, appliesScope: "PROJECT" } }),
+  ]);
   if (!project) throw new Error("Project not found");
-  const isPmOnProject = actor.projectMemberships.some(
-    (m) => m.projectId === project.id && m.roleDefinition.key === "PROJECT_MANAGER",
-  );
-  if (
-    !isSuperAdmin(actor) &&
-    !isGroupAdmin(actor, project.company.orgGroupId) &&
-    !isCompanyAdmin(actor, project.companyId) &&
-    !isPmOnProject
-  ) {
-    throw new Error("Forbidden");
-  }
+  if (!role) throw new Error("Invalid project role");
+  if (!(await canManageProjectMemberships(actor, project))) throw new Error("Forbidden");
 
   await prisma.projectMembership.upsert({
     where: { userId_projectId: { userId, projectId } },
-    create: { userId, projectId, roleDefinitionId },
-    update: { roleDefinitionId },
+    create: { userId, projectId, roleDefinitionId: role.id },
+    update: { roleDefinitionId: role.id },
   });
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
@@ -297,7 +283,6 @@ export async function assignProjectAction(formData: FormData) {
 
 export async function updateProjectMembershipRoleAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.assign_project");
   const userId = requireString(formData, "userId");
   const projectId = requireString(formData, "projectId");
   const roleDefinitionId = requireString(formData, "roleDefinitionId");
@@ -307,18 +292,7 @@ export async function updateProjectMembershipRoleAction(formData: FormData) {
     include: { company: true },
   });
   if (!project) throw new Error("Project not found");
-
-  const isPmOnProject = actor.projectMemberships.some(
-    (m) => m.projectId === project.id && m.roleDefinition.key === "PROJECT_MANAGER",
-  );
-  if (
-    !isSuperAdmin(actor) &&
-    !isGroupAdmin(actor, project.company.orgGroupId) &&
-    !isCompanyAdmin(actor, project.companyId) &&
-    !isPmOnProject
-  ) {
-    throw new Error("Forbidden");
-  }
+  if (!(await canManageProjectMemberships(actor, project))) throw new Error("Forbidden");
 
   const [membership, role] = await Promise.all([
     prisma.projectMembership.findUnique({
@@ -357,14 +331,11 @@ export async function updateProjectMembershipRoleAction(formData: FormData) {
 
 export async function removeCompanyMembershipAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.assign_company");
   const userId = requireString(formData, "userId");
   const companyId = requireString(formData, "companyId");
   const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
   if (!company) throw new Error("Company not found");
-  if (!isSuperAdmin(actor) && !isGroupAdmin(actor, company.orgGroupId) && !isCompanyAdmin(actor, companyId)) {
-    throw new Error("Forbidden");
-  }
+  if (!(await canManageCompanyMemberships(actor, company))) throw new Error("Forbidden");
   await prisma.companyMembership.deleteMany({ where: { userId, companyId } });
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
@@ -373,9 +344,6 @@ export async function removeCompanyMembershipAction(formData: FormData) {
 
 export async function removeProjectMembershipAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  const canManageMembers = await userHasPermission(actor, "project.member.manage");
-  const canStaffAssign = await userHasPermission(actor, "staff.assign_project");
-  if (!canManageMembers && !canStaffAssign) throw new Error("Forbidden");
   const userId = requireString(formData, "userId");
   const projectId = requireString(formData, "projectId");
   const project = await prisma.project.findFirst({
@@ -383,17 +351,7 @@ export async function removeProjectMembershipAction(formData: FormData) {
     include: { company: true },
   });
   if (!project) throw new Error("Project not found");
-  const isPmOnProject = actor.projectMemberships.some(
-    (m) => m.projectId === project.id && m.roleDefinition.key === "PROJECT_MANAGER",
-  );
-  if (
-    !isSuperAdmin(actor) &&
-    !isGroupAdmin(actor, project.company.orgGroupId) &&
-    !isCompanyAdmin(actor, project.companyId) &&
-    !isPmOnProject
-  ) {
-    throw new Error("Forbidden");
-  }
+  if (!(await canManageProjectMemberships(actor, project))) throw new Error("Forbidden");
   await prisma.projectMembership.deleteMany({ where: { userId, projectId } });
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
@@ -402,28 +360,21 @@ export async function removeProjectMembershipAction(formData: FormData) {
 
 export async function assignMultipleToProjectAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "project.member.manage");
   const projectId = requireString(formData, "projectId");
   const roleDefinitionId = requireString(formData, "roleDefinitionId");
   const memberIds = formData.getAll("memberIds").map((v) => String(v).trim()).filter(Boolean);
   if (!memberIds.length) throw new Error("Select at least one member");
 
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, deletedAt: null },
-    include: { company: true },
-  });
+  const [project, role] = await Promise.all([
+    prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
+      include: { company: true },
+    }),
+    prisma.roleDefinition.findFirst({ where: { id: roleDefinitionId, appliesScope: "PROJECT" } }),
+  ]);
   if (!project) throw new Error("Project not found");
-  const isPmOnProject = actor.projectMemberships.some(
-    (m) => m.projectId === project.id && m.roleDefinition.key === "PROJECT_MANAGER",
-  );
-  if (
-    !isSuperAdmin(actor) &&
-    !isGroupAdmin(actor, project.company.orgGroupId) &&
-    !isCompanyAdmin(actor, project.companyId) &&
-    !isPmOnProject
-  ) {
-    throw new Error("Forbidden");
-  }
+  if (!role) throw new Error("Invalid project role");
+  if (!(await canManageProjectMemberships(actor, project))) throw new Error("Forbidden");
 
   const valid = await prisma.user.findMany({
     where: { id: { in: memberIds }, deletedAt: null, active: true },
@@ -432,8 +383,8 @@ export async function assignMultipleToProjectAction(formData: FormData) {
   for (const { id } of valid) {
     await prisma.projectMembership.upsert({
       where: { userId_projectId: { userId: id, projectId } },
-      create: { userId: id, projectId, roleDefinitionId },
-      update: { roleDefinitionId },
+      create: { userId: id, projectId, roleDefinitionId: role.id },
+      update: { roleDefinitionId: role.id },
     });
     invalidatePermissionCache(id);
   }
