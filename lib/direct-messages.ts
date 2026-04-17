@@ -640,9 +640,13 @@ async function getGroupUnreadCounts(userId: string, groupIds: string[]) {
     INNER JOIN "MessageGroupMember" mgmb
       ON mgmb."groupId" = mgm."groupId"
       AND mgmb."userId" = ${userId}
+    INNER JOIN "User" sender
+      ON sender.id = mgm."senderId"
     WHERE
       mgm."groupId" IN (${Prisma.join(groupIds)})
       AND mgm."senderId" <> ${userId}
+      AND sender.active = true
+      AND sender."deletedAt" IS NULL
       AND (mgmb."lastReadAt" IS NULL OR mgm."createdAt" > mgmb."lastReadAt")
     GROUP BY mgm."groupId"
   `);
@@ -1395,8 +1399,12 @@ export async function getMessagingUnreadCount(userId: string) {
         ON mgmb."groupId" = mgm."groupId"
         AND mgmb."userId" = ${userId}
         AND mgmb."mutedAt" IS NULL
+      INNER JOIN "User" sender
+        ON sender.id = mgm."senderId"
       WHERE
         mgm."senderId" <> ${userId}
+        AND sender.active = true
+        AND sender."deletedAt" IS NULL
         AND (mgmb."lastReadAt" IS NULL OR mgm."createdAt" > mgmb."lastReadAt")
     `),
   ]);

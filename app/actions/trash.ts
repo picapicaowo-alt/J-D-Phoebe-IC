@@ -28,6 +28,7 @@ export async function softDeleteUserAction(formData: FormData) {
   const actor = (await requireUser()) as AccessUser;
   await assertPermission(actor, "staff.soft_delete");
   const userId = requireString(formData, "userId");
+  const now = new Date();
   if (actor.id === userId) throw new Error("You cannot trash your own account here.");
   const target = await prisma.user.findFirst({
     where: { id: userId, deletedAt: null },
@@ -47,10 +48,19 @@ export async function softDeleteUserAction(formData: FormData) {
   if (!target) throw new Error("Not found");
   if (!(await canManageStaffTarget(actor, target, "staff.soft_delete"))) throw new Error("Forbidden");
 
-  await prisma.user.update({
-    where: { id: userId },
-    data: { deletedAt: new Date(), active: false },
-  });
+  await prisma.$transaction([
+    prisma.directMessage.updateMany({
+      where: {
+        senderId: userId,
+        readAt: null,
+      },
+      data: { readAt: now },
+    }),
+    prisma.user.update({
+      where: { id: userId },
+      data: { deletedAt: now, active: false },
+    }),
+  ]);
   await writeAudit({ actorId: actor.id, entityType: "USER", entityId: userId, action: "SOFT_DELETE" });
   revalidatePath("/staff");
   revalidatePath("/trash");
