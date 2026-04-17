@@ -66,7 +66,7 @@ export default async function StaffDetailPage({
       groupMemberships: { include: { roleDefinition: true, orgGroup: true } },
       companyMemberships: { include: { company: true, roleDefinition: true, department: true, supervisor: true } },
       memberOnboardings: {
-        select: { id: true, companyId: true, completedAt: true, deadlineAt: true },
+        include: { company: { select: { name: true } } },
         orderBy: [{ deadlineAt: "asc" }, { createdAt: "asc" }],
       },
       projectMemberships: { include: { project: { include: { company: true } }, roleDefinition: true } },
@@ -98,6 +98,7 @@ export default async function StaffDetailPage({
     isSuperAdmin(actor) || (actor.id === target.id && !target.companionIntroCompletedAt);
   const canSkipStaffOnboarding = isSuperAdmin(actor) && actor.id !== target.id;
   const onboardingByCompanyId = new Map(target.memberOnboardings.map((ob) => [ob.companyId, ob]));
+  const pendingOnboardings = target.memberOnboardings.filter((ob) => !ob.completedAt);
 
   const isAnyCompanyAdmin = actor.companyMemberships.some((m) => m.roleDefinition.key === "COMPANY_ADMIN");
   const isAnyGroupAdmin = actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN");
@@ -315,6 +316,53 @@ export default async function StaffDetailPage({
       ) : (
         <Card className="p-4 text-sm text-[hsl(var(--muted))]">{t(locale, "staffNoEdit")}</Card>
       )}
+
+      {canSkipStaffOnboarding ? (
+        <Card className="space-y-4 p-4">
+          <CardTitle>{t(locale, "staffOnboardingAdminTitle")}</CardTitle>
+          <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffOnboardingAdminHint")}</p>
+          {!target.memberOnboardings.length ? (
+            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffOnboardingNone")}</p>
+          ) : (
+            <ul className="space-y-3">
+              {target.memberOnboardings.map((ob) => (
+                <li key={ob.id} className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-[hsl(var(--foreground))]">{ob.company.name}</p>
+                      <p className="mt-1 text-xs text-[hsl(var(--muted))]">
+                        {ob.completedAt
+                          ? `${t(locale, "onboardingCompletedAtLabel")}: ${formatOnboardingTimestamp(ob.completedAt)}`
+                          : `${t(locale, "onboardingDeadline")}: ${ob.deadlineAt.toISOString().slice(0, 10)}`}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs ${
+                        ob.completedAt
+                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                          : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
+                      }`}
+                    >
+                      {ob.completedAt ? t(locale, "staffOnboardingComplete") : t(locale, "staffOnboardingPending")}
+                    </span>
+                  </div>
+                  {!ob.completedAt ? (
+                    <form action={skipMemberOnboardingAction} className="mt-3">
+                      <input type="hidden" name="onboardingId" value={ob.id} />
+                      <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                        {t(locale, "staffOnboardingSkipBtn")}
+                      </FormSubmitButton>
+                    </form>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          {pendingOnboardings.length ? null : target.memberOnboardings.length ? (
+            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "onboardingCompleted")}</p>
+          ) : null}
+        </Card>
+      ) : null}
 
       <section className="grid gap-4 lg:grid-cols-2">
         <Card className="space-y-3 p-4">
