@@ -309,7 +309,7 @@ async function loadStaffDetailTarget(actor: AccessUser, userId: string) {
 function StaffDetailDeferredFallback({ locale }: { locale: "en" | "zh" }) {
   return (
     <div className="space-y-4">
-      <section className="grid gap-4 lg:grid-cols-2">
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
         <Card className="space-y-3 p-4">
           <CardTitle>{t(locale, "staffAbilityRadar")}</CardTitle>
           <div className="animate-pulse space-y-3">
@@ -320,13 +320,29 @@ function StaffDetailDeferredFallback({ locale }: { locale: "en" | "zh" }) {
             </div>
           </div>
         </Card>
-        <Card className="space-y-3 p-4">
-          <CardTitle>{t(locale, "staffRecognitionOnlyTitle")}</CardTitle>
-          <div className="animate-pulse space-y-3">
-            <div className="h-24 rounded-xl bg-[hsl(var(--border))]/60" />
-            <div className="h-24 rounded-xl bg-[hsl(var(--border))]/50" />
+
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <CardTitle>{t(locale, "staffObservationsTitle")}</CardTitle>
+            <div className="h-4 w-2/3 animate-pulse rounded bg-[hsl(var(--border))]/50" />
           </div>
-        </Card>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card className="space-y-3 p-4">
+              <CardTitle>{t(locale, "staffRecognitionOnlyTitle")}</CardTitle>
+              <div className="animate-pulse space-y-3">
+                <div className="h-12 rounded-xl bg-[hsl(var(--border))]/60" />
+                <div className="h-24 rounded-xl bg-[hsl(var(--border))]/50" />
+              </div>
+            </Card>
+            <Card className="space-y-3 p-4">
+              <CardTitle>{t(locale, "staffGrowthAboutMember")}</CardTitle>
+              <div className="animate-pulse space-y-3">
+                <div className="h-12 rounded-xl bg-[hsl(var(--border))]/60" />
+                <div className="h-24 rounded-xl bg-[hsl(var(--border))]/50" />
+              </div>
+            </Card>
+          </div>
+        </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
@@ -555,7 +571,7 @@ async function StaffDetailDeferredPanels({
 
   return (
     <>
-      <section className="grid gap-4 lg:grid-cols-2">
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)] lg:items-start">
         <Card className="space-y-3 p-4">
           <CardTitle>{t(locale, "staffAbilityRadar")}</CardTitle>
           <AbilityRadar points={radarPoints} />
@@ -595,21 +611,21 @@ async function StaffDetailDeferredPanels({
             </ul>
           </div>
         </Card>
-      </section>
 
-      <StaffObservationsPanel
-        actor={actor}
-        locale={locale}
-        targetUserId={target.id}
-        projectChoices={observationProjectChoices}
-        recognitions={recognitionsReceived}
-        feedback={feedbackReceived}
-        canViewRecognition={canViewRecognition}
-        canCreateRecognition={canRecognizeHere}
-        canCreateFeedback={canFeedbackHere}
-        canViewFeedback={canViewFeedback}
-        canManageFeedbackWithoutProject={canManageFeedbackWithoutProject}
-      />
+        <StaffObservationsPanel
+          actor={actor}
+          locale={locale}
+          targetUserId={target.id}
+          projectChoices={observationProjectChoices}
+          recognitions={recognitionsReceived}
+          feedback={feedbackReceived}
+          canViewRecognition={canViewRecognition}
+          canCreateRecognition={canRecognizeHere}
+          canCreateFeedback={canFeedbackHere}
+          canViewFeedback={canViewFeedback}
+          canManageFeedbackWithoutProject={canManageFeedbackWithoutProject}
+        />
+      </section>
 
       {canAssignCompanyUI ? (
         <Card className="space-y-3 p-4">

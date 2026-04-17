@@ -110,130 +110,160 @@ export function StaffObservationsPanel({
     item,
   }));
 
-  const timeline = [...recognitionItems, ...feedbackItems].sort(
-    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-  );
-  const canCreateAny = actor.id !== targetUserId && projectChoices.length > 0 && (canCreateRecognition || canCreateFeedback);
+  const canCreateRecognitionHere = actor.id !== targetUserId && canCreateRecognition;
+  const canCreateFeedbackHere = actor.id !== targetUserId && canCreateFeedback;
+  const hasProjectContext = projectChoices.length > 0;
+  const showRecognitionCard = canViewRecognition || canCreateRecognitionHere;
+  const showGrowthCard = canViewFeedback || canCreateFeedbackHere;
+  const visibleCardCount = [showRecognitionCard, showGrowthCard].filter(Boolean).length;
+
+  if (!visibleCardCount) return null;
 
   return (
-    <Card className="space-y-4 p-4">
-      <div className="space-y-1">
-        <CardTitle>{t(locale, showGrowthContext ? "staffObservationsTitle" : "staffRecognitionOnlyTitle")}</CardTitle>
-        {showGrowthContext ? (
+    <div className="space-y-3">
+      {showGrowthContext && visibleCardCount > 1 ? (
+        <div className="space-y-1">
+          <CardTitle>{t(locale, "staffObservationsTitle")}</CardTitle>
           <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffObservationsHint")}</p>
-        ) : null}
-      </div>
-
-      {canCreateAny ? (
-        <div className="grid gap-4 rounded-xl border border-[hsl(var(--border))] bg-black/[0.02] p-4 dark:bg-white/[0.02] lg:grid-cols-2">
-          {canCreateRecognition ? (
-            <details className="space-y-3">
-              <summary className={createTriggerClassName}>{t(locale, "staffObservationAddRecognition")}</summary>
-              <div className="mt-3 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
-                <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "staffObservationAddRecognitionHint")}</p>
-                <form action={createStaffRecognitionAction} className="grid gap-2">
-                  <input type="hidden" name="toUserId" value={targetUserId} />
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">{t(locale, "projProjectContext")}</label>
-                    <Select name="projectId" required>
-                      {projectChoices.map((project) => (
-                        <option key={project.id} value={project.id}>
-                          {project.company.name} · {project.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                  <RecognitionSecondarySelect defaultCategory="COLLABORATION" locale={locale} />
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">{t(locale, "projRecIdentity")}</label>
-                    <Select name="mode" defaultValue={RecognitionMode.PUBLIC}>
-                      <option value={RecognitionMode.PUBLIC}>{tRecognitionMode(locale, RecognitionMode.PUBLIC)}</option>
-                      <option value={RecognitionMode.SEMI_ANONYMOUS}>
-                        {tRecognitionMode(locale, RecognitionMode.SEMI_ANONYMOUS)}
-                      </option>
-                      <option value={RecognitionMode.ANONYMOUS}>{tRecognitionMode(locale, RecognitionMode.ANONYMOUS)}</option>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">{t(locale, "projRecComment")}</label>
-                    <textarea name="message" className={noteClassName} placeholder={t(locale, "projRecCommentPh")} />
-                  </div>
-                  <FormSubmitButton type="submit" variant="secondary">
-                    {t(locale, "staffObservationAddRecognition")}
-                  </FormSubmitButton>
-                </form>
-              </div>
-            </details>
-          ) : null}
-
-          {canCreateFeedback ? (
-            <details className="space-y-3">
-              <summary className={createTriggerClassName}>{t(locale, "staffObservationAddGrowth")}</summary>
-              <div className="mt-3 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
-                <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "staffObservationAddGrowthHint")}</p>
-                <form action={createFeedbackEventAction} className="grid gap-2">
-                  <input type="hidden" name="toUserId" value={targetUserId} />
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">{t(locale, "projProjectContext")}</label>
-                    <Select name="projectId" required>
-                      {projectChoices.map((project) => (
-                        <option key={project.id} value={project.id}>
-                          {project.company.name} · {project.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                  <FeedbackSecondarySelect defaultCategory="COMMUNICATION" locale={locale} />
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">{t(locale, "projGrowthNote")}</label>
-                    <textarea
-                      name="message"
-                      className={noteClassName}
-                      placeholder={t(locale, "staffObservationGrowthPlaceholder")}
-                    />
-                  </div>
-                  <FormSubmitButton type="submit" variant="secondary">
-                    {t(locale, "staffObservationAddGrowth")}
-                  </FormSubmitButton>
-                </form>
-              </div>
-            </details>
-          ) : null}
         </div>
-      ) : actor.id !== targetUserId && (canCreateRecognition || canCreateFeedback) ? (
-        <p className="rounded-lg border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm text-[hsl(var(--muted))]">
-          {t(locale, "staffObservationNoProjectContext")}
-        </p>
       ) : null}
 
-      {timeline.length ? (
-        <ul className="space-y-3 text-sm">
-          {timeline.map((entry) =>
-            entry.kind === "recognition" ? (
-              <RecognitionTimelineItem
-                key={`recognition-${entry.item.id}`}
-                item={entry.item}
-                locale={locale}
-                projectChoices={projectChoices}
-                canManage={entry.canManage}
-              />
-            ) : (
-              <FeedbackTimelineItem
-                key={`feedback-${entry.item.id}`}
-                item={entry.item}
-                locale={locale}
-                projectChoices={projectChoices}
-                canManage={entry.canManage}
-              />
-            ),
-          )}
-        </ul>
-      ) : (
-        <p className="text-sm text-[hsl(var(--muted))]">
-          {t(locale, showGrowthContext ? "staffObservationsEmpty" : "staffRecEmpty")}
-        </p>
-      )}
-    </Card>
+      <div className={`grid gap-4 ${visibleCardCount > 1 ? "xl:grid-cols-2" : ""}`}>
+        {showRecognitionCard ? (
+          <Card className="space-y-4 p-4">
+            <CardTitle>{t(locale, "staffRecognitionOnlyTitle")}</CardTitle>
+
+            {canCreateRecognitionHere ? (
+              hasProjectContext ? (
+                <details className="space-y-3">
+                  <summary className={createTriggerClassName}>{t(locale, "staffObservationAddRecognition")}</summary>
+                  <div className="mt-3 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+                    <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "staffObservationAddRecognitionHint")}</p>
+                    <form action={createStaffRecognitionAction} className="grid gap-2">
+                      <input type="hidden" name="toUserId" value={targetUserId} />
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t(locale, "projProjectContext")}</label>
+                        <Select name="projectId" required>
+                          {projectChoices.map((project) => (
+                            <option key={project.id} value={project.id}>
+                              {project.company.name} · {project.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                      <RecognitionSecondarySelect defaultCategory="COLLABORATION" locale={locale} />
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t(locale, "projRecIdentity")}</label>
+                        <Select name="mode" defaultValue={RecognitionMode.PUBLIC}>
+                          <option value={RecognitionMode.PUBLIC}>{tRecognitionMode(locale, RecognitionMode.PUBLIC)}</option>
+                          <option value={RecognitionMode.SEMI_ANONYMOUS}>
+                            {tRecognitionMode(locale, RecognitionMode.SEMI_ANONYMOUS)}
+                          </option>
+                          <option value={RecognitionMode.ANONYMOUS}>{tRecognitionMode(locale, RecognitionMode.ANONYMOUS)}</option>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t(locale, "projRecComment")}</label>
+                        <textarea name="message" className={noteClassName} placeholder={t(locale, "projRecCommentPh")} />
+                      </div>
+                      <FormSubmitButton type="submit" variant="secondary">
+                        {t(locale, "staffObservationAddRecognition")}
+                      </FormSubmitButton>
+                    </form>
+                  </div>
+                </details>
+              ) : (
+                <p className="rounded-lg border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm text-[hsl(var(--muted))]">
+                  {t(locale, "staffObservationNoProjectContext")}
+                </p>
+              )
+            ) : null}
+
+            {canViewRecognition ? (
+              recognitionItems.length ? (
+                <ul className="space-y-3 text-sm">
+                  {recognitionItems.map((entry) => (
+                    <RecognitionTimelineItem
+                      key={`recognition-${entry.item.id}`}
+                      item={entry.item}
+                      locale={locale}
+                      projectChoices={projectChoices}
+                      canManage={entry.canManage}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffRecEmpty")}</p>
+              )
+            ) : null}
+          </Card>
+        ) : null}
+
+        {showGrowthCard ? (
+          <Card className="space-y-4 p-4">
+            <CardTitle>{t(locale, "staffGrowthAboutMember")}</CardTitle>
+
+            {canCreateFeedbackHere ? (
+              hasProjectContext ? (
+                <details className="space-y-3">
+                  <summary className={createTriggerClassName}>{t(locale, "staffObservationAddGrowth")}</summary>
+                  <div className="mt-3 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+                    <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "staffObservationAddGrowthHint")}</p>
+                    <form action={createFeedbackEventAction} className="grid gap-2">
+                      <input type="hidden" name="toUserId" value={targetUserId} />
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t(locale, "projProjectContext")}</label>
+                        <Select name="projectId" required>
+                          {projectChoices.map((project) => (
+                            <option key={project.id} value={project.id}>
+                              {project.company.name} · {project.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                      <FeedbackSecondarySelect defaultCategory="COMMUNICATION" locale={locale} />
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t(locale, "projGrowthNote")}</label>
+                        <textarea
+                          name="message"
+                          className={noteClassName}
+                          placeholder={t(locale, "staffObservationGrowthPlaceholder")}
+                        />
+                      </div>
+                      <FormSubmitButton type="submit" variant="secondary">
+                        {t(locale, "staffObservationAddGrowth")}
+                      </FormSubmitButton>
+                    </form>
+                  </div>
+                </details>
+              ) : (
+                <p className="rounded-lg border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm text-[hsl(var(--muted))]">
+                  {t(locale, "staffObservationNoProjectContext")}
+                </p>
+              )
+            ) : null}
+
+            {canViewFeedback ? (
+              feedbackItems.length ? (
+                <ul className="space-y-3 text-sm">
+                  {feedbackItems.map((entry) => (
+                    <FeedbackTimelineItem
+                      key={`feedback-${entry.item.id}`}
+                      item={entry.item}
+                      locale={locale}
+                      projectChoices={projectChoices}
+                      canManage={entry.canManage}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffGrowthEmpty")}</p>
+              )
+            ) : null}
+          </Card>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

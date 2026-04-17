@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createFeedbackEventAction } from "@/app/actions/feedback";
 import { requireUser } from "@/lib/auth";
 import { canManageProject, canViewProject, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { getProjectFallbackHref } from "@/lib/project-route";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,8 @@ export default async function ProjectGrowthPage({ params }: { params: Promise<{ 
       memberships: { include: { user: true } },
     },
   });
-  if (!project || !canViewProject(user, project)) notFound();
+  if (!project) redirect(await getProjectFallbackHref(projectId));
+  if (!canViewProject(user, project)) notFound();
 
   const locale = await getLocale();
   const canManage = canManageProject(user, project);

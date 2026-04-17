@@ -93,6 +93,7 @@ export async function ProjectsPageBody({
   const statusRaw = typeof sp.status === "string" ? sp.status.trim() : "";
   const priorityRaw = typeof sp.priority === "string" ? sp.priority.trim() : "";
   const due = typeof sp.due === "string" ? sp.due.trim() : "";
+  const notice = typeof sp.notice === "string" && (sp.notice === "deleted" || sp.notice === "missing") ? sp.notice : "";
 
   const [companyOptions, allCompanies, projectCreateRoleIds] = await Promise.all([
     prisma.company.findMany({
@@ -281,6 +282,19 @@ export async function ProjectsPageBody({
           </Link>
         ) : null}
       </div>
+
+      {notice ? (
+        <div className="rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p>{t(locale, notice === "deleted" ? "projectsNoticeDeleted" : "projectsNoticeMissing")}</p>
+            {notice === "deleted" ? (
+              <Link className="font-medium underline underline-offset-4" href="/trash">
+                {t(locale, "projectsNoticeOpenTrash")}
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <form
         method="get"

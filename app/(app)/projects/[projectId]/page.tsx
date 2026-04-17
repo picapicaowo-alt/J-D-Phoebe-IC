@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { KnowledgeLayer, Priority, ProjectRelationType, WorkflowNodeLabel, WorkflowNodeStatus, type Prisma } from "@prisma/client";
 import { assignMultipleToProjectAction, removeProjectMembershipAction } from "@/app/actions/staff";
 import { softDeleteProjectAction } from "@/app/actions/trash";
@@ -34,6 +35,7 @@ import { getLocale } from "@/lib/locale";
 import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tWorkflowNodeStatus } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { getProjectFallbackHref } from "@/lib/project-route";
 import { canManageProjectMemberships } from "@/lib/scoped-role-access";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -504,7 +506,7 @@ export default async function ProjectDetailPage({
   });
 
   const project = await projectPromise;
-  if (!project) notFound();
+  if (!project) redirect(await getProjectFallbackHref(projectId));
   if (!canViewProject(user, project)) notFound();
   const resolvedProject = project;
 
@@ -1951,40 +1953,40 @@ export default async function ProjectDetailPage({
         currentSection={currentSection}
       />
 
-      <div className="flex flex-wrap items-start gap-4">
-        {project.company.logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={project.company.logoUrl}
-            alt=""
-            width={56}
-            height={56}
-            className="h-14 w-14 shrink-0 rounded-md border border-[hsl(var(--border))] bg-white object-contain p-1 dark:bg-zinc-900"
-          />
-        ) : null}
-        <div className="min-w-0 flex-1 space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-[hsl(var(--foreground))]">{project.name}</h1>
-          {project.description ? (
-            <p className="text-sm text-[hsl(var(--muted))]">{project.description}</p>
-          ) : null}
-          <p className="text-sm text-[hsl(var(--muted))]">
-            {project.company.name} · <ProjectLiveStatusText baseStatus={project.status} locale={locale} /> · {tPriority(locale, project.priority)}
-          </p>
-          {project.deadline ? (
-            <p className="text-xs text-[hsl(var(--muted))]">
-              {projectDeadlineText} · {timeLeft.text}
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      {focusedTask ? <TaskSpotlightCard task={focusedTask} projectId={project.id} projectName={project.name} locale={locale} /> : null}
-
       <ProjectProgressProvider
         initialTasks={taskRows}
         fallbackProgressPercent={project.progressPercent}
         projectCompleted={project.status === "COMPLETED"}
       >
+        <div className="flex flex-wrap items-start gap-4">
+          {project.company.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={project.company.logoUrl}
+              alt=""
+              width={56}
+              height={56}
+              className="h-14 w-14 shrink-0 rounded-md border border-[hsl(var(--border))] bg-white object-contain p-1 dark:bg-zinc-900"
+            />
+          ) : null}
+          <div className="min-w-0 flex-1 space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight text-[hsl(var(--foreground))]">{project.name}</h1>
+            {project.description ? (
+              <p className="text-sm text-[hsl(var(--muted))]">{project.description}</p>
+            ) : null}
+            <p className="text-sm text-[hsl(var(--muted))]">
+              {project.company.name} · <ProjectLiveStatusText baseStatus={project.status} locale={locale} /> · {tPriority(locale, project.priority)}
+            </p>
+            {project.deadline ? (
+              <p className="text-xs text-[hsl(var(--muted))]">
+                {projectDeadlineText} · {timeLeft.text}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        {focusedTask ? <TaskSpotlightCard task={focusedTask} projectId={project.id} projectName={project.name} locale={locale} /> : null}
+
         <div className="overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm">
           <div className="relative grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <div className="space-y-1">

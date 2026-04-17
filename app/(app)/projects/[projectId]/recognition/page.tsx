@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { RecognitionMode } from "@prisma/client";
 import { createRecognitionAction } from "@/app/actions/recognition";
 import { requireUser } from "@/lib/auth";
 import { canViewProject, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { getProjectFallbackHref } from "@/lib/project-route";
 import { getLocale } from "@/lib/locale";
 import { t, tRecognitionMode, tRecognitionTagCategory } from "@/lib/messages";
 import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
@@ -33,7 +34,8 @@ export default async function ProjectRecognitionPage({ params }: { params: Promi
       },
     },
   });
-  if (!project || !canViewProject(user, project)) notFound();
+  if (!project) redirect(await getProjectFallbackHref(projectId));
+  if (!canViewProject(user, project)) notFound();
 
   const locale = await getLocale();
   const canRecognize = await userHasPermission(user, "recognition.create");
