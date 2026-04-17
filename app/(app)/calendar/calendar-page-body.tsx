@@ -8,13 +8,19 @@ import { userHasPermission } from "@/lib/permissions";
 import { projectVisibilityWhere, type AccessUser } from "@/lib/access";
 import { CalendarSourceKind } from "@prisma/client";
 import { CalendarDashboardClient } from "@/components/calendar-dashboard-client";
-import { calendarHref, parseSlotDay, slotDefaultsForDay } from "@/lib/calendar-nav";
+import { calendarHref, parseSlotDay } from "@/lib/calendar-nav";
 import { ensureDefaultCalendarLabels } from "@/lib/calendar-labels";
+import {
+  buildDatetimeLocalValue,
+  getMonthRangeInTimeZone,
+  getYearRangeInTimeZone,
+  getZonedDateParts,
+  toDatetimeLocalValueInTimeZone,
+} from "@/lib/timezone";
 
-function clampMonth(y: number, m: number) {
-  const now = new Date();
-  const year = Number.isFinite(y) && y >= 1970 && y <= 2100 ? y : now.getFullYear();
-  const month = Number.isFinite(m) && m >= 1 && m <= 12 ? m : now.getMonth() + 1;
+function clampMonth(y: number, m: number, fallbackYear: number, fallbackMonth: number) {
+  const year = Number.isFinite(y) && y >= 1970 && y <= 2100 ? y : fallbackYear;
+  const month = Number.isFinite(m) && m >= 1 && m <= 12 ? m : fallbackMonth;
   return { year, month };
 }
 
@@ -55,15 +61,21 @@ export async function CalendarPageBody({
   const view = String(sp.view ?? "").trim() === "year" ? ("year" as const) : ("month" as const);
 
   const now = new Date();
+  const nowParts = getZonedDateParts(now, user.timezone) ?? {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+    hour: now.getHours(),
+    minute: now.getMinutes(),
+    second: now.getSeconds(),
+  };
   const yRaw = Number.parseInt(String(sp.y ?? ""), 10);
   const mRaw = Number.parseInt(String(sp.m ?? ""), 10);
-  const { year, month } = clampMonth(yRaw, mRaw);
-  const yearForYearView = Number.isFinite(yRaw) && yRaw >= 1970 && yRaw <= 2100 ? yRaw : now.getFullYear();
+  const { year, month } = clampMonth(yRaw, mRaw, nowParts.year, nowParts.month);
+  const yearForYearView = Number.isFinite(yRaw) && yRaw >= 1970 && yRaw <= 2100 ? yRaw : nowParts.year;
 
-  const monthStart = new Date(year, month - 1, 1, 0, 0, 0, 0);
-  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
-  const yearStart = new Date(yearForYearView, 0, 1, 0, 0, 0, 0);
-  const yearEnd = new Date(yearForYearView, 11, 31, 23, 59, 59, 999);
+  const { start: monthStart, end: monthEnd } = getMonthRangeInTimeZone(year, month, user.timezone);
+  const { start: yearStart, end: yearEnd } = getYearRangeInTimeZone(yearForYearView, user.timezone);
 
   const horizon = new Date(now.getTime() + 90 * 86400000);
   const attendeeScope = { OR: [{ organizerUserId: user.id }, { attendees: { some: { userId: user.id } } }] };
@@ -226,12 +238,18 @@ export async function CalendarPageBody({
 
   const defaultProjectId = projects.some((p) => p.id === defaultProjectIdRaw) ? defaultProjectIdRaw : "";
 
-  const slotDefaults = slotDay != null ? slotDefaultsForDay(year, month, slotDay) : null;
-  const startDefault = slotDefaults?.start ?? new Date(now.getTime() + 60 * 60000);
-  const endDefault = slotDefaults?.end ?? new Date(now.getTime() + 2 * 60 * 60000);
+  const slotDefaults =
+    slotDay != null
+      ? {
+          startLocal: buildDatetimeLocalValue({ year, month, day: slotDay, hour: 9, minute: 0 }),
+          endLocal: buildDatetimeLocalValue({ year, month, day: slotDay, hour: 10, minute: 0 }),
+        }
+      : null;
+  const startDefaultLocal = slotDefaults?.startLocal ?? toDatetimeLocalValueInTimeZone(new Date(now.getTime() + 60 * 60000), user.timezone);
+  const endDefaultLocal = slotDefaults?.endLocal ?? toDatetimeLocalValueInTimeZone(new Date(now.getTime() + 2 * 60 * 60000), user.timezone);
 
   const bootstrapCreate =
-    urlCreate && !eventIdRaw ? { startIso: startDefault.toISOString(), endIso: endDefault.toISOString() } : null;
+    urlCreate && !eventIdRaw ? { startLocal: startDefaultLocal, endLocal: endDefaultLocal } : null;
 
   const bootstrapEdit =
     bootstrapEventRow && bootstrapEventRow.organizerUserId === user.id
@@ -263,8 +281,8 @@ export async function CalendarPageBody({
   const prevHref = calendarHref({ y: prev.y, m: prev.m, view: "month", ...src, ...projQ });
   const nextHref = calendarHref({ y: next.y, m: next.m, view: "month", ...src, ...projQ });
   const todayHref = calendarHref({
-    y: now.getFullYear(),
-    m: now.getMonth() + 1,
+    y: nowParts.year,
+    m: nowParts.month,
     view: "month",
     ...src,
     ...projQ,
@@ -476,6 +494,7 @@ export async function CalendarPageBody({
 
       <CalendarDashboardClient
         locale={locale}
+        userTimeZone={user.timezone}
         view={view}
         userId={user.id}
         navContext={navContext}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback } from "react";
 import { CalendarMonthYearPicker } from "@/components/calendar-month-year-picker";
+import { getZonedDateParts } from "@/lib/timezone";
 
 export type CalendarMonthEvent = {
   id: string;
@@ -24,8 +25,9 @@ export type CalendarMonthPickerPreserve = {
 const WEEK_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const WEEK_ZH = ["日", "一", "二", "三", "四", "五", "六"] as const;
 
-function isSameLocalDay(a: Date, y: number, month: number, day: number) {
-  return a.getFullYear() === y && a.getMonth() + 1 === month && a.getDate() === day;
+function isSameLocalDay(a: Date, y: number, month: number, day: number, timeZone: string) {
+  const parts = getZonedDateParts(a, timeZone);
+  return !!parts && parts.year === y && parts.month === month && parts.day === day;
 }
 
 const navBtnClass =
@@ -37,6 +39,7 @@ export function CalendarMonthView({
   monthTitle,
   events,
   locale,
+  timeZone,
   prevHref,
   nextHref,
   todayHref,
@@ -55,6 +58,7 @@ export function CalendarMonthView({
   monthTitle: string;
   events: CalendarMonthEvent[];
   locale: "en" | "zh";
+  timeZone: string;
   prevHref: string;
   nextHref: string;
   todayHref: string;
@@ -84,9 +88,9 @@ export function CalendarMonthView({
 
   const byDay = new Map<number, CalendarMonthEvent[]>();
   for (const ev of events) {
-    const d = new Date(ev.startsAt);
-    if (d.getFullYear() !== year || d.getMonth() + 1 !== month) continue;
-    const dom = d.getDate();
+    const parts = getZonedDateParts(ev.startsAt, timeZone);
+    if (!parts || parts.year !== year || parts.month !== month) continue;
+    const dom = parts.day;
     if (!byDay.has(dom)) byDay.set(dom, []);
     byDay.get(dom)!.push(ev);
   }
@@ -146,7 +150,7 @@ export function CalendarMonthView({
         }}
       >
         {cells.map((day, idx) => {
-          const isToday = !!(day && isSameLocalDay(today, year, month, day));
+          const isToday = !!(day && isSameLocalDay(today, year, month, day, timeZone));
           return (
             <div
               key={idx}

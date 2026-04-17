@@ -1,9 +1,12 @@
-export function countdownPhrase(deadline: Date | null | undefined, now = new Date()) {
+import { getZonedDaySerial, toDatetimeLocalValueInTimeZone } from "@/lib/timezone";
+
+export function countdownPhrase(deadline: Date | null | undefined, now = new Date(), timeZone = "UTC") {
   if (!deadline) return "No deadline";
 
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfDue = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
-  const diffDays = Math.round((startOfDue.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24));
+  const todaySerial = getZonedDaySerial(now, timeZone);
+  const dueSerial = getZonedDaySerial(deadline, timeZone);
+  if (todaySerial == null || dueSerial == null) return "No deadline";
+  const diffDays = dueSerial - todaySerial;
 
   if (diffDays > 1) return `${diffDays} days left`;
   if (diffDays === 1) return "1 day left";
@@ -12,18 +15,15 @@ export function countdownPhrase(deadline: Date | null | undefined, now = new Dat
   return `Overdue by ${Math.abs(diffDays)} days`;
 }
 
-export function isOverdue(deadline: Date | null | undefined, now = new Date()) {
+export function isOverdue(deadline: Date | null | undefined, now = new Date(), timeZone = "UTC") {
   if (!deadline) return false;
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfDue = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
-  return startOfDue.getTime() < startOfToday.getTime();
+  const todaySerial = getZonedDaySerial(now, timeZone);
+  const dueSerial = getZonedDaySerial(deadline, timeZone);
+  if (todaySerial == null || dueSerial == null) return false;
+  return dueSerial < todaySerial;
 }
 
-/** Value for `<input type="datetime-local" />` in the browser's local timezone. */
-export function toDatetimeLocalValue(d: Date | null | undefined): string {
-  if (!d) return "";
-  const x = new Date(d);
-  if (Number.isNaN(x.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}T${pad(x.getHours())}:${pad(x.getMinutes())}`;
+/** Value for `<input type="datetime-local" />` in the selected timezone. */
+export function toDatetimeLocalValue(d: Date | null | undefined, timeZone = "UTC"): string {
+  return toDatetimeLocalValueInTimeZone(d, timeZone);
 }

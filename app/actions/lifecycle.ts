@@ -16,6 +16,7 @@ import {
 } from "@/lib/calendar-labels";
 import { getCurrentCompanyOnboardingMaterial } from "@/lib/company-onboarding-materials";
 import { canManageCompanyMemberships } from "@/lib/scoped-role-access";
+import { formatInTimeZone, normalizeTimeZone, parseDatetimeLocalInTimeZone } from "@/lib/timezone";
 
 function must(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -67,16 +68,26 @@ async function resolveCalendarLabelId(formData: FormData, fallbackKey: "meeting"
   return getDefaultCalendarLabelId(fallbackKey);
 }
 
-async function notifyCalendarInvitees(eventId: string, title: string, startsAt: Date, actorId: string, userIds: string[]) {
-  const notifyIds = [...new Set(userIds)].filter((id) => id !== actorId);
-  if (!notifyIds.length) return;
-  const when = `${startsAt.toISOString().slice(0, 16).replace("T", " ")} (UTC)`;
+async function notifyCalendarInvitees(
+  eventId: string,
+  title: string,
+  startsAt: Date,
+  actorId: string,
+  users: { id: string; timezone: string }[],
+) {
+  const notifyUsers = users.filter((user) => user.id !== actorId);
+  if (!notifyUsers.length) return;
   await prisma.inAppNotification.createMany({
-    data: notifyIds.map((userId) => ({
-      userId,
+    data: notifyUsers.map((user) => ({
+      userId: user.id,
       kind: "CALENDAR_EVENT_INVITE",
       title: "New calendar event",
-      body: `${title} · ${when}`,
+      body: `${title} · ${formatInTimeZone(startsAt, {
+        locale: "en",
+        timeZone: user.timezone,
+        dateStyle: "medium",
+        timeStyle: "short",
+      })}`,
       href: `/calendar?eventId=${eventId}`,
     })),
   });
@@ -350,8 +361,10 @@ export async function createCalendarEventAction(formData: FormData) {
   await assertPermission(actor, "project.read");
 
   const title = must(formData, "title");
-  const startsAt = new Date(must(formData, "startsAt"));
-  const endsAt = new Date(must(formData, "endsAt"));
+  const actorTimeZone = normalizeTimeZone(actor.timezone);
+  const startsAt = parseDatetimeLocalInTimeZone(must(formData, "startsAt"), actorTimeZone);
+  const endsAt = parseDatetimeLocalInTimeZone(must(formData, "endsAt"), actorTimeZone);
+  if (!startsAt || !endsAt) throw new Error("Invalid time");
   if (!(startsAt.getTime() < endsAt.getTime())) throw new Error("Invalid time range");
 
   const meetUrl = String(formData.get("meetUrl") ?? "").trim() || null;
@@ -384,6 +397,7 @@ export async function createCalendarEventAction(formData: FormData) {
       description,
       startsAt,
       endsAt,
+      timezone: actorTimeZone,
       organizerUserId: actor.id,
       projectId: projectId || null,
       labelId,
@@ -398,7 +412,7 @@ export async function createCalendarEventAction(formData: FormData) {
     attendeeIds.length > 0
       ? await prisma.user.findMany({
           where: { id: { in: attendeeIds }, deletedAt: null, active: true },
-          select: { id: true, email: true },
+          select: { id: true, timezone: true },
         })
       : [];
   if (attendeeUsers.length) {
@@ -406,7 +420,7 @@ export async function createCalendarEventAction(formData: FormData) {
       data: attendeeUsers.map((u) => ({ eventId: ev.id, userId: u.id })),
       skipDuplicates: true,
     });
-    await notifyCalendarInvitees(ev.id, title, startsAt, actor.id, attendeeUsers.map((u) => u.id));
+    await notifyCalendarInvitees(ev.id, title, startsAt, actor.id, attendeeUsers);
   }
 
   await writeAudit({
@@ -434,8 +448,10 @@ export async function updateCalendarEventAction(formData: FormData) {
   if (!existing || existing.organizerUserId !== actor.id) throw new Error("Forbidden");
 
   const title = must(formData, "title");
-  const startsAt = new Date(must(formData, "startsAt"));
-  const endsAt = new Date(must(formData, "endsAt"));
+  const actorTimeZone = normalizeTimeZone(actor.timezone);
+  const startsAt = parseDatetimeLocalInTimeZone(must(formData, "startsAt"), actorTimeZone);
+  const endsAt = parseDatetimeLocalInTimeZone(must(formData, "endsAt"), actorTimeZone);
+  if (!startsAt || !endsAt) throw new Error("Invalid time");
   if (!(startsAt.getTime() < endsAt.getTime())) throw new Error("Invalid time range");
   const description = String(formData.get("description") ?? "").trim() || null;
   const meetUrl = String(formData.get("meetUrl") ?? "").trim() || null;
@@ -459,6 +475,7 @@ export async function updateCalendarEventAction(formData: FormData) {
       description,
       startsAt,
       endsAt,
+      timezone: actorTimeZone,
       meetUrl,
       projectId: projectIdRaw,
       labelId,
@@ -470,7 +487,7 @@ export async function updateCalendarEventAction(formData: FormData) {
     attendeeIds.length > 0
       ? await prisma.user.findMany({
           where: { id: { in: attendeeIds }, deletedAt: null, active: true },
-          select: { id: true },
+          select: { id: true, timezone: true },
         })
       : [];
   const validAttendeeIds = attendeeUsers.map((u) => u.id);
@@ -486,7 +503,7 @@ export async function updateCalendarEventAction(formData: FormData) {
       title,
       startsAt,
       actor.id,
-      validAttendeeIds.filter((userId) => !oldAttendeeIds.has(userId)),
+      attendeeUsers.filter((user) => !oldAttendeeIds.has(user.id)),
     );
   }
 

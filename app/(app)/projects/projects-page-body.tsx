@@ -31,6 +31,7 @@ import {
 import { ProjectsGroupedBoard, type GroupedProjectCard, type ProjectGroupRow } from "@/components/projects-grouped-board";
 import { RoutePrefetcher } from "@/components/route-prefetcher";
 import { softDeleteProjectsBulkAction } from "@/app/actions/trash";
+import { buildDatetimeLocalValue, getZonedDateParts, parseDatetimeLocalInTimeZone } from "@/lib/timezone";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const STATUSES: ProjectStatus[] = [
@@ -43,9 +44,21 @@ const STATUSES: ProjectStatus[] = [
   "CANCELLED",
 ];
 
-function dueWhere(due: string): Prisma.ProjectWhereInput | null {
+function dueWhere(due: string, timeZone: string): Prisma.ProjectWhereInput | null {
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const nowParts = getZonedDateParts(now, timeZone) ?? {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+    hour: now.getHours(),
+    minute: now.getMinutes(),
+    second: now.getSeconds(),
+  };
+  const startOfToday =
+    parseDatetimeLocalInTimeZone(
+      buildDatetimeLocalValue({ year: nowParts.year, month: nowParts.month, day: nowParts.day, hour: 0, minute: 0 }),
+      timeZone,
+    ) ?? new Date(now.getFullYear(), now.getMonth(), now.getDate());
   if (due === "overdue") {
     return {
       deadline: { lt: startOfToday, not: null },
@@ -130,7 +143,7 @@ export async function ProjectsPageBody({
   if (priorityRaw && PRIORITIES.includes(priorityRaw as Priority)) {
     parts.push({ priority: priorityRaw as Priority });
   }
-  const duePart = dueWhere(due);
+  const duePart = dueWhere(due, user.timezone);
   if (duePart) parts.push(duePart);
 
   const where: Prisma.ProjectWhereInput = { AND: parts };
@@ -188,8 +201,8 @@ export async function ProjectsPageBody({
     priorityLabel: tPriority(locale, p.priority),
     relationsCount: p._count.outgoingRelations + p._count.incomingRelations,
     knowledgeCount: p._count.knowledgeAssets,
-    deadlineLabel: p.deadline ? countdownPhrase(p.deadline) : null,
-    overdue: p.deadline ? isOverdue(p.deadline) : false,
+    deadlineLabel: p.deadline ? countdownPhrase(p.deadline, new Date(), user.timezone) : null,
+    overdue: p.deadline ? isOverdue(p.deadline, new Date(), user.timezone) : false,
     statusCompleted: p.status === "COMPLETED",
     projectGroupId: p.projectGroupId,
     groupSortOrder: p.groupSortOrder,
@@ -420,8 +433,10 @@ export async function ProjectsPageBody({
                         {p.deadline ? (
                           <>
                             <span>·</span>
-                            <span className={isOverdue(p.deadline) && p.status !== "COMPLETED" ? "text-rose-600" : ""}>
-                              {countdownPhrase(p.deadline)}
+                            <span
+                              className={isOverdue(p.deadline, new Date(), user.timezone) && p.status !== "COMPLETED" ? "text-rose-600" : ""}
+                            >
+                              {countdownPhrase(p.deadline, new Date(), user.timezone)}
                             </span>
                           </>
                         ) : null}

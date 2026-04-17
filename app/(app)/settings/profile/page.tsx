@@ -15,6 +15,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { getSupportedTimeZones } from "@/lib/timezone";
 
 export default async function ProfileSettingsPage({
   searchParams,
@@ -31,6 +32,7 @@ export default async function ProfileSettingsPage({
     include: { companionProfile: true },
   });
   if (!user) redirect("/login");
+  const timeZones = getSupportedTimeZones();
 
   const companion = user.companionProfile;
   const asset = companion ? getCompanionManifest().find((e) => e.species === companion.species) : null;
@@ -97,6 +99,26 @@ export default async function ProfileSettingsPage({
           <div className="space-y-1">
             <label className="text-sm font-medium">{t(locale, "profilePhoneLabel")}</label>
             <Input name="phone" defaultValue={user.phone ?? ""} className="text-sm" placeholder="+1 …" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium" htmlFor="profile-timezone">
+              {t(locale, "profileTimezoneLabel")}
+            </label>
+            <Input
+              id="profile-timezone"
+              name="timezone"
+              list="profile-timezone-options"
+              defaultValue={user.timezone}
+              className="text-sm"
+              placeholder="Asia/Shanghai"
+              required
+            />
+            <datalist id="profile-timezone-options">
+              {timeZones.map((timeZone) => (
+                <option key={timeZone} value={timeZone} />
+              ))}
+            </datalist>
+            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "profileTimezoneHelp").replace("{tz}", user.timezone)}</p>
           </div>
           {actor.isSuperAdmin ? (
             <label className="flex items-center gap-2 text-sm">

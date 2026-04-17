@@ -5,9 +5,12 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { getUpcomingInboxReminders } from "@/lib/inbox-reminders";
+import { formatInTimeZone } from "@/lib/timezone";
 
-function formatReminderDate(when: Date, locale: "en" | "zh") {
-  return when.toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+function formatReminderDate(when: Date, locale: "en" | "zh", timeZone: string) {
+  return formatInTimeZone(when, {
+    locale,
+    timeZone,
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -64,7 +67,7 @@ export async function AlertsSection({ user }: { user: AccessUser }) {
                 {item.kind === "TODO_DUE" ? `[${t(locale, "notificationsReminderTodo")}]` : `[${t(locale, "notificationsReminderMeeting")}]`} {item.title}
               </Link>
               <p className="mt-0.5 text-base leading-snug text-zinc-600 dark:text-zinc-400">
-                {t(locale, "notificationsReminderAt")}: {formatReminderDate(item.at, locale)}
+                {t(locale, "notificationsReminderAt")}: {formatReminderDate(item.at, locale, user.timezone)}
                 {item.projectName ? ` · ${t(locale, "notificationsReminderProject")}: ${item.projectName}` : ""}
               </p>
             </li>

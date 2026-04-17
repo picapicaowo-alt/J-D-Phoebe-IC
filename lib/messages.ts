@@ -936,6 +936,8 @@ const M = {
     profileContactEmailsLabel: "Contact emails",
     profileContactEmailsHelp: "Comma or semicolon separated.",
     profilePhoneLabel: "Mobile (optional)",
+    profileTimezoneLabel: "Timezone",
+    profileTimezoneHelp: "Project deadlines and meeting times will display in {tz}. Use an IANA timezone like Asia/Shanghai.",
     profileCompanionCardTitle: "Companion",
     profileCompanionCardLead:
       "Mood and level follow your activity in the app. Your species choice is permanent after onboarding unless a superadmin updates it.",
@@ -1940,6 +1942,8 @@ const M = {
     profileContactEmailsLabel: "联系邮箱",
     profileContactEmailsHelp: "多个请用逗号或分号分隔。",
     profilePhoneLabel: "手机号（可选）",
+    profileTimezoneLabel: "时区",
+    profileTimezoneHelp: "项目截止时间和会议时间会按 {tz} 显示。请使用 IANA 时区名称，例如 Asia/Shanghai。",
     profileCompanionCardTitle: "伙伴",
     profileCompanionCardLead:
       "心情与等级会随你在应用中的活动变化；完成入职形象选择后，物种不可自行更换，除非超级管理员协助调整。",

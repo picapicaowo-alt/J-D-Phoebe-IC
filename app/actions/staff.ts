@@ -7,6 +7,7 @@ import { isSuperAdmin, type AccessUser } from "@/lib/access";
 import { assertPermission, invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { canManageCompanyMemberships, canManageProjectMemberships } from "@/lib/scoped-role-access";
+import { normalizeTimeZone } from "@/lib/timezone";
 
 function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -61,6 +62,7 @@ export async function updateStaffAction(formData: FormData) {
     isSuperAdmin?: boolean;
     contactEmails?: string | null;
     phone?: string | null;
+    timezone?: string;
   } = {
     name,
     title,
@@ -71,6 +73,9 @@ export async function updateStaffAction(formData: FormData) {
   }
   if (formData.has("phone")) {
     data.phone = String(formData.get("phone") ?? "").trim() || null;
+  }
+  if (formData.has("timezone")) {
+    data.timezone = normalizeTimeZone(String(formData.get("timezone") ?? ""));
   }
 
   await prisma.user.update({

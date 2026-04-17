@@ -16,6 +16,7 @@ const userSelect = {
   clerkId: true,
   name: true,
   title: true,
+  timezone: true,
   active: true,
   mustChangePassword: true,
   isSuperAdmin: true,

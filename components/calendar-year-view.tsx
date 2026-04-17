@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getZonedDateParts } from "@/lib/timezone";
 
 export type CalendarYearEvent = { id: string; title: string; startsAt: Date; label?: { name: string; color: string } | null };
 
@@ -6,20 +7,21 @@ export function CalendarYearView({
   year,
   events,
   locale,
+  timeZone,
   monthHref,
 }: {
   year: number;
   events: CalendarYearEvent[];
   locale: "en" | "zh";
+  timeZone: string;
   monthHref: (month: number) => string;
 }) {
   const byMonth = new Map<number, CalendarYearEvent[]>();
   for (let m = 1; m <= 12; m++) byMonth.set(m, []);
   for (const ev of events) {
-    const d = new Date(ev.startsAt);
-    if (d.getFullYear() !== year) continue;
-    const m = d.getMonth() + 1;
-    byMonth.get(m)!.push(ev);
+    const parts = getZonedDateParts(ev.startsAt, timeZone);
+    if (!parts || parts.year !== year) continue;
+    byMonth.get(parts.month)!.push(ev);
   }
 
   return (

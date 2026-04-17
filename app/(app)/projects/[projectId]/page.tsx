@@ -56,6 +56,7 @@ import {
   ProjectTasksPanelWithProgress,
 } from "@/components/project-progress-bridge";
 import type { Locale } from "@/lib/locale";
+import { formatDateTimeRangeInTimeZone, formatInTimeZone, getZonedDaySerial, getZonedYearMonth } from "@/lib/timezone";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const STATUSES: ProjectStatus[] = [
@@ -174,9 +175,12 @@ function buildProjectTaskRows(nodes: TaskNodeRow[]): ProjectTaskRow[] {
   return walk(null);
 }
 
-function daysLeftLine(deadline: Date | null, locale: Locale) {
+function daysLeftLine(deadline: Date | null, locale: Locale, timeZone: string) {
   if (!deadline) return { text: t(locale, "projDaysLeftNone"), urgent: false };
-  const days = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
+  const todaySerial = getZonedDaySerial(new Date(), timeZone);
+  const dueSerial = getZonedDaySerial(deadline, timeZone);
+  if (todaySerial == null || dueSerial == null) return { text: t(locale, "projDaysLeftNone"), urgent: false };
+  const days = dueSerial - todaySerial;
   if (days < 0) return { text: t(locale, "projOverdue"), urgent: true };
   return {
     text: t(locale, "projDaysLeftCount").replace("{n}", String(Math.max(0, days))),
@@ -443,6 +447,7 @@ export default async function ProjectDetailPage({
         id: true,
         title: true,
         startsAt: true,
+        endsAt: true,
         label: { select: { name: true, color: true } },
         organizer: { select: { id: true, name: true } },
       },
@@ -653,8 +658,20 @@ export default async function ProjectDetailPage({
   const labelMemberOptions = staff.length ? staff : projectMemberOptions;
   const focusedTask = findTaskById(taskRows, String(sp.task ?? "").trim() || null);
   const currentSection = String(sp.section ?? "").trim() || null;
-  const daysLeft = daysLeftLine(project.deadline, locale);
+  const daysLeft = daysLeftLine(project.deadline, locale, user.timezone);
   const priorityClass = priorityTone(project.priority);
+  const projectDeadlineText = project.deadline
+    ? formatInTimeZone(project.deadline, {
+        locale,
+        timeZone: user.timezone,
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : "";
+  const todayYearMonth = getZonedYearMonth(new Date(), user.timezone) ?? {
+    year: new Date().getFullYear(),
+    month: new Date().getMonth() + 1,
+  };
 
   const primaryBtn =
     "inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium bg-[hsl(var(--accent))] text-white hover:opacity-90";
@@ -705,8 +722,10 @@ export default async function ProjectDetailPage({
           </p>
           {project.deadline ? (
             <p className="text-xs text-[hsl(var(--muted))]">
-              {countdownPhrase(project.deadline)}
-              {isOverdue(project.deadline) && project.status !== "COMPLETED" ? ` · ${t(locale, "projOverdue")}` : ""}
+              {projectDeadlineText} · {countdownPhrase(project.deadline, new Date(), user.timezone)}
+              {isOverdue(project.deadline, new Date(), user.timezone) && project.status !== "COMPLETED"
+                ? ` · ${t(locale, "projOverdue")}`
+                : ""}
             </p>
           ) : null}
         </div>
@@ -774,8 +793,8 @@ export default async function ProjectDetailPage({
               <CardTitle>{t(locale, "projRelatedEventsTitle")}</CardTitle>
               <Link
                 href={calendarHref({
-                  y: new Date().getFullYear(),
-                  m: new Date().getMonth() + 1,
+                  y: todayYearMonth.year,
+                  m: todayYearMonth.month,
                   view: "month",
                   create: true,
                   defaultProjectId: project.id,
@@ -792,6 +811,13 @@ export default async function ProjectDetailPage({
                 {projectCalendarEvents.map((ev) => (
                   <li key={ev.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0">
                     <div>
+                      {(() => {
+                        const eventYearMonth = getZonedYearMonth(ev.startsAt, user.timezone) ?? {
+                          year: ev.startsAt.getFullYear(),
+                          month: ev.startsAt.getMonth() + 1,
+                        };
+                        return (
+                          <>
                       <div className="flex flex-wrap items-center gap-2">
                         {ev.label ? (
                           <span
@@ -802,8 +828,8 @@ export default async function ProjectDetailPage({
                         ) : null}
                         <Link
                           href={calendarHref({
-                            y: ev.startsAt.getFullYear(),
-                            m: ev.startsAt.getMonth() + 1,
+                            y: eventYearMonth.year,
+                            m: eventYearMonth.month,
                             view: "month",
                             eventId: ev.id,
                           })}
@@ -813,8 +839,15 @@ export default async function ProjectDetailPage({
                         </Link>
                       </div>
                       <p className="mt-1 text-base leading-relaxed text-[hsl(var(--muted))]">
-                        {ev.startsAt.toISOString().slice(0, 16).replace("T", " ")} — {ev.organizer.name}
+                        {formatDateTimeRangeInTimeZone(ev.startsAt, ev.endsAt, {
+                          locale,
+                          timeZone: user.timezone,
+                        })}{" "}
+                        — {ev.organizer.name}
                       </p>
+                          </>
+                        );
+                      })()}
                     </div>
                   </li>
                 ))}
@@ -1751,7 +1784,7 @@ export default async function ProjectDetailPage({
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">{t(locale, "projProjectDeadlineLabel")}</label>
-                <Input name="deadline" type="datetime-local" defaultValue={toDatetimeLocalValue(project.deadline)} />
+                <Input name="deadline" type="datetime-local" defaultValue={toDatetimeLocalValue(project.deadline, user.timezone)} />
               </div>
               <FormSubmitButton type="submit">{t(locale, "btnSave")}</FormSubmitButton>
             </form>

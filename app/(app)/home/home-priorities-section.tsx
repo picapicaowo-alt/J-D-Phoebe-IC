@@ -41,11 +41,12 @@ function PriorityLevelIcon({ priority, locale }: { priority: Priority; locale: "
 function priorityHealth(
   p: { deadline: Date | null; status: ProjectStatus },
   locale: "en" | "zh",
+  timeZone: string,
 ): { badge: string; badgeClass: string; dotClass: string } {
   if (TERMINAL_PROJECT.includes(p.status)) {
     return { badge: tProjectStatus(locale, p.status), badgeClass: "bg-zinc-200/90 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300", dotClass: "bg-zinc-400" };
   }
-  const overdue = p.deadline && isOverdue(p.deadline);
+  const overdue = p.deadline && isOverdue(p.deadline, new Date(), timeZone);
   if (overdue) {
     return {
       badge: t(locale, "homeOverdueBadge"),
@@ -92,7 +93,7 @@ export async function HomePrioritiesSection({ user }: { user: AccessUser }) {
         <ul className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
           {priorities.map((p) => {
             const pct = Math.max(0, Math.min(100, p.progressPercent));
-            const health = priorityHealth(p, locale);
+            const health = priorityHealth(p, locale, user.timezone);
             const activeLabel = p.status === "ACTIVE" ? tWorkflowNodeStatus(locale, "IN_PROGRESS") : tProjectStatus(locale, p.status);
             return (
               <li key={p.id} className="rounded-xl border border-zinc-200/80 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/40">
@@ -117,7 +118,7 @@ export async function HomePrioritiesSection({ user }: { user: AccessUser }) {
                   <div>
                     {t(locale, "homeOwner")} {p.owner.name}
                   </div>
-                  <div className="sm:text-right">{countdownPhrase(p.deadline)}</div>
+                  <div className="sm:text-right">{countdownPhrase(p.deadline, new Date(), user.timezone)}</div>
                   <div>
                     {t(locale, "homeStageLabel")}: {tProjectStatus(locale, p.status)}
                   </div>

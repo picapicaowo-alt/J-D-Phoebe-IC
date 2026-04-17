@@ -8,6 +8,7 @@ import { writeAudit } from "@/lib/audit";
 import { canManageCompanyProjects, canManageProject, type AccessUser } from "@/lib/access";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { parseDatetimeLocalInTimeZone } from "@/lib/timezone";
 
 function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -38,9 +39,7 @@ export async function createProjectAction(formData: FormData) {
   const priority = requireString(formData, "priority") as Priority;
   const status = (String(formData.get("status") ?? "PLANNING") || "PLANNING") as ProjectStatus;
   const deadlineRaw = String(formData.get("deadline") ?? "").trim();
-  const deadlineParsed = deadlineRaw ? new Date(deadlineRaw) : null;
-  const deadline =
-    deadlineParsed && !Number.isNaN(deadlineParsed.getTime()) ? deadlineParsed : null;
+  const deadline = deadlineRaw ? parseDatetimeLocalInTimeZone(deadlineRaw, user.timezone) : null;
   const requestedMemberIds = getStringArray(formData, "memberIds");
   const memberIds = [...new Set([ownerId, ...requestedMemberIds])];
 
@@ -128,9 +127,7 @@ export async function updateProjectAction(formData: FormData) {
   const priority = requireString(formData, "priority") as Priority;
   const status = requireString(formData, "status") as ProjectStatus;
   const deadlineRaw = String(formData.get("deadline") ?? "").trim();
-  const deadline = deadlineRaw ? new Date(deadlineRaw) : null;
-  const deadlineNorm =
-    deadline && !Number.isNaN(deadline.getTime()) ? deadline : null;
+  const deadlineNorm = deadlineRaw ? parseDatetimeLocalInTimeZone(deadlineRaw, user.timezone) : null;
 
   const departmentIdRaw = String(formData.get("departmentId") ?? "").trim();
   const departmentId: string | null = departmentIdRaw

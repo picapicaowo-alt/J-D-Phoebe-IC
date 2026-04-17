@@ -18,16 +18,12 @@ import { CloseDialogButton } from "@/components/dialog-launcher";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { calendarHref, slotDefaultsForDay } from "@/lib/calendar-nav";
+import { calendarHref } from "@/lib/calendar-nav";
 import { t } from "@/lib/messages";
+import { buildDatetimeLocalValue, formatDateTimeRangeInTimeZone, formatInTimeZone, getZonedDateParts, toDatetimeLocalValueInTimeZone } from "@/lib/timezone";
 
 const CREATE_DIALOG_ID = "calendar-modal-create";
 const EDIT_DIALOG_ID = "calendar-modal-edit";
-
-function toDatetimeLocal(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 export type CalendarEditEventPayload = {
   id: string;
@@ -42,7 +38,7 @@ export type CalendarEditEventPayload = {
   externalAttendeeEmails: string[];
 };
 
-export type CalendarBootstrapCreate = { startIso: string; endIso: string };
+export type CalendarBootstrapCreate = { startLocal: string; endLocal: string };
 
 export type CalendarNavContext = {
   sourceKind?: string;
@@ -93,6 +89,7 @@ export type CalendarMonthEventRowPayload = {
 
 export function CalendarDashboardClient({
   locale,
+  userTimeZone,
   view,
   userId,
   navContext,
@@ -119,6 +116,7 @@ export function CalendarDashboardClient({
   listEvents,
 }: {
   locale: "en" | "zh";
+  userTimeZone: string;
   view: "month" | "year";
   userId: string;
   navContext: CalendarNavContext;
@@ -196,8 +194,8 @@ export function CalendarDashboardClient({
     }
     if (bootstrapCreate) {
       openedBootstrap.current = true;
-      setCreateStart(toDatetimeLocal(new Date(bootstrapCreate.startIso)));
-      setCreateEnd(toDatetimeLocal(new Date(bootstrapCreate.endIso)));
+      setCreateStart(bootstrapCreate.startLocal);
+      setCreateEnd(bootstrapCreate.endLocal);
       setCreateFormKey((key) => key + 1);
       queueMicrotask(() => {
         (document.getElementById(CREATE_DIALOG_ID) as HTMLDialogElement | null)?.showModal();
@@ -206,9 +204,8 @@ export function CalendarDashboardClient({
   }, [bootstrapCreate, bootstrapEdit]);
 
   const openCreateForDay = (day: number) => {
-    const { start, end } = slotDefaultsForDay(year, month, day);
-    setCreateStart(toDatetimeLocal(start));
-    setCreateEnd(toDatetimeLocal(end));
+    setCreateStart(buildDatetimeLocalValue({ year, month, day, hour: 9, minute: 0 }));
+    setCreateEnd(buildDatetimeLocalValue({ year, month, day, hour: 10, minute: 0 }));
     setCreateFormKey((key) => key + 1);
     queueMicrotask(() => {
       (document.getElementById(CREATE_DIALOG_ID) as HTMLDialogElement | null)?.showModal();
@@ -351,8 +348,16 @@ export function CalendarDashboardClient({
     defaultProjectId: navContext.defaultProjectId || undefined,
   });
   const now = new Date();
+  const nowParts = getZonedDateParts(now, userTimeZone) ?? {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+    hour: now.getHours(),
+    minute: now.getMinutes(),
+    second: now.getSeconds(),
+  };
   const yearTodayHref = calendarHref({
-    y: now.getFullYear(),
+    y: nowParts.year,
     view: "year",
     sourceKind: navContext.sourceKind,
     sourceId: navContext.sourceId,
@@ -374,6 +379,7 @@ export function CalendarDashboardClient({
           monthTitle={monthTitle}
           events={monthEvents}
           locale={locale}
+          timeZone={userTimeZone}
           prevHref={prevHref}
           nextHref={nextHref}
           todayHref={todayHref}
@@ -420,7 +426,7 @@ export function CalendarDashboardClient({
               </Link>
             </div>
           </div>
-          <CalendarYearView year={yearForYearView} events={yearEvents} locale={locale} monthHref={monthHrefFromYear} />
+          <CalendarYearView year={yearForYearView} events={yearEvents} locale={locale} timeZone={userTimeZone} monthHref={monthHrefFromYear} />
         </div>
       )}
 
@@ -570,7 +576,7 @@ export function CalendarDashboardClient({
                   type="datetime-local"
                   required
                   className="h-9 text-sm"
-                  defaultValue={toDatetimeLocal(new Date(editSnapshot.startsAt))}
+                  defaultValue={toDatetimeLocalValueInTimeZone(editSnapshot.startsAt, userTimeZone)}
                 />
               </div>
               <div className="space-y-1">
@@ -580,7 +586,7 @@ export function CalendarDashboardClient({
                   type="datetime-local"
                   required
                   className="h-9 text-sm"
-                  defaultValue={toDatetimeLocal(new Date(editSnapshot.endsAt))}
+                  defaultValue={toDatetimeLocalValueInTimeZone(editSnapshot.endsAt, userTimeZone)}
                 />
               </div>
             </div>
@@ -726,7 +732,17 @@ export function CalendarDashboardClient({
                     <p className="font-medium text-[hsl(var(--foreground))]">{ev.title}</p>
                   )}
                   <p className="text-base text-[hsl(var(--muted))]">
-                    {ev.startsAtIso.slice(0, 16).replace("T", " ")} → {ev.endsAtIso.slice(0, 16).replace("T", " ")}
+                    {ev.sourceKind.endsWith("DEADLINE")
+                      ? formatInTimeZone(ev.startsAtIso, {
+                          locale,
+                          timeZone: userTimeZone,
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })
+                      : formatDateTimeRangeInTimeZone(ev.startsAtIso, ev.endsAtIso, {
+                          locale,
+                          timeZone: userTimeZone,
+                        })}
                     {ev.organizerName ? ` · ${ev.organizerName}` : ""}
                   </p>
                   {ev.project ? (

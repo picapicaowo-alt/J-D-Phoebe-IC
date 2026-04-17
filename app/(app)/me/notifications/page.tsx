@@ -7,9 +7,12 @@ import { markNotificationReadAction } from "@/app/actions/lifecycle";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getUpcomingInboxReminders } from "@/lib/inbox-reminders";
+import { formatInTimeZone } from "@/lib/timezone";
 
-function formatReminderDate(when: Date, locale: "en" | "zh") {
-  return when.toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+function formatReminderDate(when: Date, locale: "en" | "zh", timeZone: string) {
+  return formatInTimeZone(when, {
+    locale,
+    timeZone,
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -78,7 +81,7 @@ export default async function NotificationsPage() {
                   {item.title}
                 </Link>
                 <p className="mt-1 text-xs text-[hsl(var(--muted))]">
-                  {t(locale, "notificationsReminderAt")}: {formatReminderDate(item.at, locale)}
+                  {t(locale, "notificationsReminderAt")}: {formatReminderDate(item.at, locale, user.timezone)}
                   {item.projectName ? ` · ${t(locale, "notificationsReminderProject")}: ${item.projectName}` : ""}
                 </p>
               </li>
