@@ -65,7 +65,6 @@ export async function StaffDirectoryBody({
   const activeFilter = activeRaw === "active" || activeRaw === "inactive" ? activeRaw : "all";
 
   const canCreate = await userHasPermission(user, "staff.create");
-  const showOnboardingTimeline = user.isSuperAdmin;
   const visibleCompanyWhere: Prisma.CompanyWhereInput = { deletedAt: null, ...companyVisibilityWhere(user) };
 
   const companies = await prisma.company.findMany({
@@ -269,16 +268,6 @@ export async function StaffDirectoryBody({
             isSuperAdmin: s.isSuperAdmin,
             activeProjectCount: s.projectMemberships.length,
             onboarding: onboardingBadgeText(s.memberOnboardings, locale),
-            onboardingTimeline: showOnboardingTimeline
-              ? [...s.memberOnboardings]
-                  .sort((a, b) => a.company.name.localeCompare(b.company.name))
-                  .map((ob) => ({
-                    key: `${ob.companyId}:${ob.completedAt?.toISOString() ?? "pending"}`,
-                    label: ob.completedAt
-                      ? ob.company.name
-                      : `${ob.company.name} · ${t(locale, "staffOnboardingPending")}`,
-                  }))
-              : [],
             companies: s.companyMemberships.map((m) => ({
               key: m.id,
               label: `${m.company.name}${m.department ? ` · ${m.department.name}` : ""}`,
