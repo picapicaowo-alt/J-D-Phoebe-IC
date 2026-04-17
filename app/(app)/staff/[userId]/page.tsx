@@ -138,6 +138,9 @@ export default async function StaffDetailPage({
     canManageCompanyScopeWithRoleIds(actor, company, companyAssignmentRoleIds),
   );
   const manageableCompanyIds = new Set(manageableCompanies.map((company) => company.id));
+  const manageableOffboardingCompanies = manageableCompanies.filter((company) =>
+    target.companyMemberships.some((membership) => membership.companyId === company.id),
+  );
   const manageableProjects = projects.filter((project) =>
     canManageProjectScopeWithRoleIds(actor, project, projectAssignmentRoleIds),
   );
@@ -484,7 +487,7 @@ export default async function StaffDetailPage({
                 <input type="hidden" name="userId" value={target.id} />
                 <Select name="companyId" required className="min-w-[220px]">
                   <option value="">{t(locale, "staffSelectCompany")}</option>
-                  {manageableCompanies.map((c) => (
+                  {manageableOffboardingCompanies.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>

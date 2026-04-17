@@ -23,28 +23,41 @@ export async function getActorRoleIdsByPermission(
   if (!uniquePermissionKeys.length || user.isSuperAdmin) return byPermission;
 
   const roleIds = [
-    ...user.groupMemberships.map((membership) => membership.roleDefinitionId).filter(Boolean),
-    ...user.companyMemberships.map((membership) => membership.roleDefinitionId).filter(Boolean),
-    ...user.projectMemberships.map((membership) => membership.roleDefinitionId).filter(Boolean),
+    ...user.groupMemberships
+      .map((membership) => membership.roleDefinitionId)
+      .filter((roleId): roleId is string => Boolean(roleId)),
+    ...user.companyMemberships
+      .map((membership) => membership.roleDefinitionId)
+      .filter((roleId): roleId is string => Boolean(roleId)),
+    ...user.projectMemberships
+      .map((membership) => membership.roleDefinitionId)
+      .filter((roleId): roleId is string => Boolean(roleId)),
   ];
   const uniqueRoleIds = [...new Set(roleIds)];
   if (!uniqueRoleIds.length) return byPermission;
+
+  const permissionRows = await prisma.permissionDefinition.findMany({
+    where: { key: { in: uniquePermissionKeys } },
+    select: { id: true, key: true },
+  });
+  const permissionKeyById = new Map(permissionRows.map((row) => [row.id, row.key as PermissionKey]));
+  if (!permissionRows.length) return byPermission;
 
   const rows = await prisma.rolePermission.findMany({
     where: {
       roleDefinitionId: { in: uniqueRoleIds },
       allowed: true,
-      permissionDefinition: { key: { in: uniquePermissionKeys } },
+      permissionDefinitionId: { in: permissionRows.map((row) => row.id) },
     },
     select: {
       roleDefinitionId: true,
-      permissionDefinition: { select: { key: true } },
+      permissionDefinitionId: true,
     },
   });
 
   for (const row of rows) {
-    const key = row.permissionDefinition.key as PermissionKey;
-    byPermission.get(key)?.add(row.roleDefinitionId);
+    const key = permissionKeyById.get(row.permissionDefinitionId);
+    if (key) byPermission.get(key)?.add(row.roleDefinitionId);
   }
 
   return byPermission;

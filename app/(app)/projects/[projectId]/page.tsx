@@ -435,7 +435,7 @@ export default async function ProjectDetailPage({
   ]);
   const projectPromise = loadProjectCore(projectId);
   const projectCalendarEventsPromise = Promise.all([projectPromise, permissionPromise]).then(([project, permissions]) => {
-    const canReadCalendar = permissions[5];
+    const canReadCalendar = permissions[4];
     if (!project || !canReadCalendar) return [];
     return prisma.calendarEvent.findMany({
       where: { projectId: project.id },
