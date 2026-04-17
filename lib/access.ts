@@ -84,6 +84,10 @@ export function canEditProjectMap(
   return canEditWorkflow(user, project);
 }
 
+export function canManageKnowledgeAsset(user: User, knowledge: { authorId: string }) {
+  return user.isSuperAdmin || user.id === knowledge.authorId;
+}
+
 export function projectVisibilityWhere(user: AccessUser): Prisma.ProjectWhereInput {
   if (user.isSuperAdmin) return {};
 

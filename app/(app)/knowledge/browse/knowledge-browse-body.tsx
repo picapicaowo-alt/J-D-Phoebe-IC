@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   createKnowledgeAssetAction,
+  deleteKnowledgeAssetAction,
   incrementKnowledgeReuseAction,
   restoreKnowledgeAssetAction,
   softDeleteKnowledgeAssetAction,
@@ -10,7 +11,7 @@ import {
 } from "@/app/actions/knowledge";
 import { addExternalResourceLinkAction } from "@/app/actions/attachments";
 import { requireUser } from "@/lib/auth";
-import type { AccessUser } from "@/lib/access";
+import { canManageKnowledgeAsset, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -650,6 +651,8 @@ export async function KnowledgeBrowseBody({
             {rows.length ? (
               <ul className={hubEntryLayout ? "space-y-4 text-sm" : "space-y-2 text-sm"}>
                 {rows.map((a) => {
+                  const canMutateKb = canCreate && canManageKnowledgeAsset(user, a);
+                  const canDeleteKb = user.isSuperAdmin;
                   const descRaw = (a.summary ?? a.content ?? "").replace(/\s+/g, " ").trim();
                   const descShort = descRaw.slice(0, 180);
                   const attachUrl = a.attachments.map((x) => x.externalUrl).find((u) => u && String(u).trim());
@@ -735,7 +738,7 @@ export async function KnowledgeBrowseBody({
                           {t(locale, "kbMarkReused")}
                         </FormSubmitButton>
                       </form>
-                      {canCreate ? (
+                      {canMutateKb ? (
                         <form action={softDeleteKnowledgeAssetAction}>
                           <input type="hidden" name="id" value={a.id} />
                           <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
@@ -743,7 +746,19 @@ export async function KnowledgeBrowseBody({
                           </FormSubmitButton>
                         </form>
                       ) : null}
-                      {hubEntryLayout && canCreate ? (
+                      {canDeleteKb ? (
+                        <form action={deleteKnowledgeAssetAction}>
+                          <input type="hidden" name="id" value={a.id} />
+                          <FormSubmitButton
+                            type="submit"
+                            variant="secondary"
+                            className="h-7 border-red-200 px-2 text-xs text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30"
+                          >
+                            {t(locale, "btnDelete")}
+                          </FormSubmitButton>
+                        </form>
+                      ) : null}
+                      {hubEntryLayout && canMutateKb ? (
                         <OpenDialogButton
                           dialogId={`kb-edit-${a.id}`}
                           className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-transparent px-3 text-xs font-medium text-[hsl(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10"
@@ -767,7 +782,7 @@ export async function KnowledgeBrowseBody({
                         </span>
                       ) : null}
                     </div>
-                    {canCreate && hubEntryLayout ? (
+                    {canMutateKb && hubEntryLayout ? (
                       <dialog
                         id={`kb-edit-${a.id}`}
                         className="app-modal-dialog z-50 max-h-[min(90vh,640px)] w-[min(100vw-2rem,480px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
@@ -865,7 +880,7 @@ export async function KnowledgeBrowseBody({
                         </form>
                       </dialog>
                     ) : null}
-                    {canCreate && !hubEntryLayout ? (
+                    {canMutateKb && !hubEntryLayout ? (
                       <form action={updateKnowledgeAssetAction} className="mt-2 grid gap-2 rounded-md border border-[hsl(var(--border))] p-2 md:grid-cols-2">
                         <input type="hidden" name="id" value={a.id} />
                         <div className="space-y-1 md:col-span-2">
@@ -956,7 +971,7 @@ export async function KnowledgeBrowseBody({
                         </div>
                       </form>
                     ) : null}
-                    {canCreate && (user.id === a.authorId || user.isSuperAdmin) ? (
+                    {canMutateKb ? (
                       hubEntryLayout ? (
                         <details className="mt-2 rounded-md border border-dashed border-[hsl(var(--border))] text-xs">
                           <summary className="cursor-pointer select-none px-3 py-2 font-medium text-[hsl(var(--foreground))]">
@@ -984,7 +999,7 @@ export async function KnowledgeBrowseBody({
                                       .join(" ") || null,
                                 }))}
                                 locale={locale}
-                                showTrash={canCreate && (user.id === a.authorId || user.isSuperAdmin)}
+                                showTrash={canMutateKb}
                               />
                             ) : (
                               <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
@@ -1053,7 +1068,7 @@ export async function KnowledgeBrowseBody({
                                     .join(" ") || null,
                               }))}
                               locale={locale}
-                              showTrash={canCreate && (user.id === a.authorId || user.isSuperAdmin)}
+                              showTrash={canMutateKb}
                             />
                           ) : (
                             <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
@@ -1115,20 +1130,42 @@ export async function KnowledgeBrowseBody({
           <CardTitle>{t(locale, "kbArchivedTitle")}</CardTitle>
           {deletedAssets.length ? (
             <ul className="space-y-2 text-sm">
-              {deletedAssets.map((a) => (
-                <li key={a.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
-                  <div className="font-medium">{a.title}</div>
-                  <div className="text-xs text-[hsl(var(--muted))]">
-                    {t(locale, "kbByAuthor")} {a.author.name} · {a.project?.name ?? t(locale, "kbUncategorizedShort")}
-                  </div>
-                  <form action={restoreKnowledgeAssetAction} className="mt-2">
-                    <input type="hidden" name="id" value={a.id} />
-                    <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
-                      {t(locale, "btnRestore")}
-                    </FormSubmitButton>
-                  </form>
-                </li>
-              ))}
+              {deletedAssets.map((a) => {
+                const canRestoreKb = canManageKnowledgeAsset(user, a);
+                const canDeleteKb = user.isSuperAdmin;
+                return (
+                  <li key={a.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
+                    <div className="font-medium">{a.title}</div>
+                    <div className="text-xs text-[hsl(var(--muted))]">
+                      {t(locale, "kbByAuthor")} {a.author.name} · {a.project?.name ?? t(locale, "kbUncategorizedShort")}
+                    </div>
+                    {canRestoreKb || canDeleteKb ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {canRestoreKb ? (
+                          <form action={restoreKnowledgeAssetAction}>
+                            <input type="hidden" name="id" value={a.id} />
+                            <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                              {t(locale, "btnRestore")}
+                            </FormSubmitButton>
+                          </form>
+                        ) : null}
+                        {canDeleteKb ? (
+                          <form action={deleteKnowledgeAssetAction}>
+                            <input type="hidden" name="id" value={a.id} />
+                            <FormSubmitButton
+                              type="submit"
+                              variant="secondary"
+                              className="h-7 border-red-200 px-2 text-xs text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30"
+                            >
+                              {t(locale, "btnDelete")}
+                            </FormSubmitButton>
+                          </form>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "kbNoArchived")}</p>

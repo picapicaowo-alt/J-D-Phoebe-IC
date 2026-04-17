@@ -15,11 +15,11 @@ import {
   toggleProjectRelationShareAttachmentAction,
   toggleProjectRelationShareKnowledgeAction,
 } from "@/app/actions/project-relation-share";
-import { createKnowledgeAssetAction, softDeleteKnowledgeAssetAction, updateKnowledgeAssetAction } from "@/app/actions/knowledge";
+import { createKnowledgeAssetAction, deleteKnowledgeAssetAction, softDeleteKnowledgeAssetAction, updateKnowledgeAssetAction } from "@/app/actions/knowledge";
 import { addExternalResourceLinkAction, updateProjectExternalLinkAction } from "@/app/actions/attachments";
 import { softDeleteAttachmentAction } from "@/app/actions/attachment-trash";
 import { getAppSession, requireUser } from "@/lib/auth";
-import { canEditWorkflow, canManageProject, canViewProject, projectVisibilityWhere, type AccessUser } from "@/lib/access";
+import { canEditWorkflow, canManageKnowledgeAsset, canManageProject, canViewProject, projectVisibilityWhere, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
 import { t, tKnowledgeLayer, tPriority, tProjectRelationType, tProjectStatus, tWorkflowNodeStatus } from "@/lib/messages";
 import { userHasPermission } from "@/lib/permissions";
@@ -1232,7 +1232,8 @@ export default async function ProjectDetailPage({
                   );
                 })}
                 {ownKnowledge.map((asset) => {
-                  const canMutateKb = user.isSuperAdmin || user.id === asset.authorId;
+                  const canMutateKb = canManageKnowledgeAsset(user, asset);
+                  const canDeleteKb = user.isSuperAdmin;
                   const openHref = (asset.sourceUrl ?? "").trim() || null;
                   return (
                     <li key={asset.id} className="rounded-md border border-[hsl(var(--border))] px-3 py-2">
@@ -1281,6 +1282,18 @@ export default async function ProjectDetailPage({
                               </FormSubmitButton>
                             </form>
                           </>
+                        ) : null}
+                        {canDeleteKb ? (
+                          <form action={deleteKnowledgeAssetAction}>
+                            <input type="hidden" name="id" value={asset.id} />
+                            <FormSubmitButton
+                              type="submit"
+                              variant="secondary"
+                              className="h-7 border-red-200 px-2 text-xs text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30"
+                            >
+                              {t(locale, "btnDelete")}
+                            </FormSubmitButton>
+                          </form>
                         ) : null}
                       </div>
                       <dialog

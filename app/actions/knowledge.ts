@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { KnowledgeLayer } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { type AccessUser } from "@/lib/access";
+import { canManageKnowledgeAsset, type AccessUser } from "@/lib/access";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
@@ -101,7 +101,7 @@ export async function updateKnowledgeAssetAction(formData: FormData) {
 
   const existing = await prisma.knowledgeAsset.findFirst({ where: { id, deletedAt: null } });
   if (!existing) throw new Error("Knowledge asset not found");
-  if (!actor.isSuperAdmin && existing.authorId !== actor.id) {
+  if (!canManageKnowledgeAsset(actor, existing)) {
     throw new Error("Only the author or super admin can edit this asset.");
   }
 
@@ -198,7 +198,7 @@ export async function softDeleteKnowledgeAssetAction(formData: FormData) {
   const id = req(formData, "id");
   const existing = await prisma.knowledgeAsset.findFirst({ where: { id, deletedAt: null } });
   if (!existing) throw new Error("Knowledge asset not found");
-  if (!actor.isSuperAdmin && existing.authorId !== actor.id) {
+  if (!canManageKnowledgeAsset(actor, existing)) {
     throw new Error("Only the author or super admin can delete this asset.");
   }
 
@@ -223,7 +223,7 @@ export async function restoreKnowledgeAssetAction(formData: FormData) {
   const id = req(formData, "id");
   const existing = await prisma.knowledgeAsset.findFirst({ where: { id, deletedAt: { not: null } } });
   if (!existing) throw new Error("Knowledge asset not found in trash");
-  if (!actor.isSuperAdmin && existing.authorId !== actor.id) {
+  if (!canManageKnowledgeAsset(actor, existing)) {
     throw new Error("Only the author or super admin can restore this asset.");
   }
 
@@ -239,4 +239,29 @@ export async function restoreKnowledgeAssetAction(formData: FormData) {
   });
   revalidatePath("/knowledge");
   revalidatePath("/knowledge/browse");
+}
+
+export async function deleteKnowledgeAssetAction(formData: FormData) {
+  const actor = (await requireUser()) as AccessUser;
+  if (!actor.isSuperAdmin) {
+    throw new Error("Only super admin can permanently delete knowledge.");
+  }
+
+  const id = req(formData, "id");
+  const existing = await prisma.knowledgeAsset.findFirst({
+    where: { id },
+    select: { id: true, projectId: true },
+  });
+  if (!existing) throw new Error("Knowledge asset not found");
+
+  await prisma.knowledgeAsset.delete({ where: { id } });
+  await writeAudit({
+    actorId: actor.id,
+    entityType: "KNOWLEDGE",
+    entityId: id,
+    action: "KNOWLEDGE_HARD_DELETE",
+  });
+  revalidatePath("/knowledge");
+  revalidatePath("/knowledge/browse");
+  if (existing.projectId) revalidatePath(`/projects/${existing.projectId}`);
 }
