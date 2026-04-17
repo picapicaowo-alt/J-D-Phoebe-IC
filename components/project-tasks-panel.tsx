@@ -123,6 +123,7 @@ type TaskOptimisticAction =
   | { type: "toggle"; nodeId: string }
   | { type: "delete"; nodeId: string }
   | { type: "clear-all" };
+type OptimisticMutation = TaskOptimisticAction | (() => void | (() => void));
 
 const CLIENT_TASK_STATUSES: WorkflowNodeStatus[] = ["NOT_STARTED", "IN_PROGRESS", "WAITING", "BLOCKED", "APPROVED", "DONE", "SKIPPED"];
 
@@ -1038,6 +1039,8 @@ export function ProjectTasksPanel({
   const [, startRefreshTransition] = useTransition();
   const [visibleTasks, setVisibleTasks] = useState(tasks);
   const visibleTasksRef = useRef(tasks);
+  const [projectCompletedState, setProjectCompletedState] = useState(projectCompleted);
+  const projectCompletedRef = useRef(projectCompleted);
   const [submittingKeys, setSubmittingKeys] = useState<Record<string, boolean>>({});
   const [mutationError, setMutationError] = useState<string | null>(null);
   const isBusy = Object.values(submittingKeys).some(Boolean);
@@ -1055,6 +1058,11 @@ export function ProjectTasksPanel({
     setVisibleTasks(tasks);
     onOptimisticTasksChange?.(tasks);
   }, [onOptimisticTasksChange, tasks]);
+
+  useEffect(() => {
+    projectCompletedRef.current = projectCompleted;
+    setProjectCompletedState(projectCompleted);
+  }, [projectCompleted]);
 
   useEffect(() => {
     setOpen((current) => {
@@ -1103,10 +1111,14 @@ export function ProjectTasksPanel({
   );
 
   const runTrackedMutation = useCallback(
-    async (key: string, action: () => Promise<void>, optimisticAction?: TaskOptimisticAction) => {
+    async (key: string, action: () => Promise<void>, optimisticAction?: OptimisticMutation) => {
       setSubmitting(key, true);
       setMutationError(null);
-      const rollback = optimisticAction ? applyOptimisticMutation(optimisticAction) : null;
+      const rollback = optimisticAction
+        ? typeof optimisticAction === "function"
+          ? optimisticAction()
+          : applyOptimisticMutation(optimisticAction)
+        : null;
       try {
         await action();
         refreshRoute();
@@ -1129,7 +1141,7 @@ export function ProjectTasksPanel({
   const showProjectCompletionToggle = visibleTasks.length === 0;
   const projectCompletionBusy = isSubmitting("toggle-project-completion");
   const projectCompletionClasses = `flex h-4 w-4 shrink-0 items-center justify-center rounded border shadow-sm ${
-    projectCompleted
+    projectCompletedState
       ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
       : "border-[hsl(var(--border))] bg-[hsl(var(--card))]"
   }`;
@@ -1147,7 +1159,20 @@ export function ProjectTasksPanel({
               onSubmit={(e) => {
                 e.preventDefault();
                 const fd = new FormData(e.currentTarget);
-                void runTrackedMutation("toggle-project-completion", () => toggleProjectCompletionAction(fd));
+                void runTrackedMutation(
+                  "toggle-project-completion",
+                  () => toggleProjectCompletionAction(fd),
+                  () => {
+                    const previous = projectCompletedRef.current;
+                    const next = !previous;
+                    projectCompletedRef.current = next;
+                    setProjectCompletedState(next);
+                    return () => {
+                      projectCompletedRef.current = previous;
+                      setProjectCompletedState(previous);
+                    };
+                  },
+                );
               }}
               className="shrink-0"
             >
@@ -1156,9 +1181,9 @@ export function ProjectTasksPanel({
                 type="submit"
                 disabled={projectCompletionBusy}
                 className={projectCompletionClasses}
-                aria-label={projectCompleted ? copy.projectIncompleteLabel : copy.projectCompleteLabel}
+                aria-label={projectCompletedState ? copy.projectIncompleteLabel : copy.projectCompleteLabel}
               >
-                {projectCompleted ? (
+                {projectCompletedState ? (
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                     <path d="M2 6l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>

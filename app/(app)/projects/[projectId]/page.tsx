@@ -1,6 +1,7 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { KnowledgeLayer, Priority, ProjectRelationType, WorkflowNodeLabel, WorkflowNodeStatus } from "@prisma/client";
+import { KnowledgeLayer, Priority, ProjectRelationType, WorkflowNodeLabel, WorkflowNodeStatus, type Prisma } from "@prisma/client";
 import { assignMultipleToProjectAction, removeProjectMembershipAction } from "@/app/actions/staff";
 import { softDeleteProjectAction } from "@/app/actions/trash";
 import {
@@ -378,6 +379,30 @@ const projectAttachmentSelect = {
   createdAt: true,
 } as const;
 
+function ProjectSupplementalPanelsFallback() {
+  return (
+    <div className="space-y-4">
+      <div className="h-40 animate-pulse rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm" />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div
+            key={index}
+            className="h-56 animate-pulse rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm"
+          />
+        ))}
+      </div>
+      <div className="space-y-3">
+        {Array.from({ length: 2 }).map((_, index) => (
+          <div
+            key={index}
+            className="h-44 animate-pulse rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 async function loadProjectCore(projectId: string) {
   return prisma.project.findFirst({
     where: { id: projectId, deletedAt: null },
@@ -475,6 +500,7 @@ export default async function ProjectDetailPage({
   const project = await projectPromise;
   if (!project) notFound();
   if (!canViewProject(user, project)) notFound();
+  const resolvedProject = project;
 
   const canManage = canManageProjectSettings(user, project);
   const canManageMembers = await canManageProjectMemberships(user, project);
@@ -531,30 +557,65 @@ export default async function ProjectDetailPage({
     orderBy: { createdAt: "desc" },
     select: projectAttachmentSelect,
   });
-  const ownKnowledgePromise = prisma.knowledgeAsset.findMany({
-    where: { projectId: project.id, deletedAt: null },
-    select: knowledgeAssetSelect,
-    orderBy: { updatedAt: "desc" },
-    take: 100,
-  });
-  const sharedKnowledgeInboundPromise = prisma.projectRelationSharedKnowledge.findMany({
-    where: { relation: { toProjectId: project.id } },
-    select: {
-      id: true,
-      relation: {
+  const ownKnowledgePromise: Promise<Prisma.KnowledgeAssetGetPayload<{ select: typeof knowledgeAssetSelect }>[]> =
+    canManage
+      ? prisma.knowledgeAsset.findMany({
+          where: { projectId: project.id, deletedAt: null },
+          select: knowledgeAssetSelect,
+          orderBy: { updatedAt: "desc" },
+          take: 100,
+        })
+      : permissionPromise.then(([, canEditKnowledge, canReadKnowledge]) =>
+          canEditKnowledge || canReadKnowledge
+            ? prisma.knowledgeAsset.findMany({
+                where: { projectId: project.id, deletedAt: null },
+                select: knowledgeAssetSelect,
+                orderBy: { updatedAt: "desc" },
+                take: 100,
+              })
+            : [],
+        );
+  const sharedKnowledgeInboundPromise = canManage
+    ? prisma.projectRelationSharedKnowledge.findMany({
+        where: { relation: { toProjectId: project.id } },
         select: {
-          fromProject: {
+          id: true,
+          relation: {
             select: {
-              id: true,
-              name: true,
-              company: { select: { id: true, name: true } },
+              fromProject: {
+                select: {
+                  id: true,
+                  name: true,
+                  company: { select: { id: true, name: true } },
+                },
+              },
             },
           },
+          knowledgeAsset: { select: knowledgeAssetSelect },
         },
-      },
-      knowledgeAsset: { select: knowledgeAssetSelect },
-    },
-  });
+      })
+    : permissionPromise.then(([, canEditKnowledge, canReadKnowledge]) =>
+        canEditKnowledge || canReadKnowledge
+          ? prisma.projectRelationSharedKnowledge.findMany({
+              where: { relation: { toProjectId: project.id } },
+              select: {
+                id: true,
+                relation: {
+                  select: {
+                    fromProject: {
+                      select: {
+                        id: true,
+                        name: true,
+                        company: { select: { id: true, name: true } },
+                      },
+                    },
+                  },
+                },
+                knowledgeAsset: { select: knowledgeAssetSelect },
+              },
+            })
+          : [],
+      );
   const sharedAttachmentInboundPromise = prisma.projectRelationSharedAttachment.findMany({
     where: { relation: { toProjectId: project.id } },
     select: {
@@ -663,40 +724,11 @@ export default async function ProjectDetailPage({
         take: 120,
       })
     : Promise.resolve([]);
-  const [
-    [canEditTasksPermission, canEditKnowledge, canReadKnowledge, canReadCalendar],
-    locale,
-    session,
-    projectCalendarEvents,
-    projectRelations,
-    projectFiles,
-    ownKnowledge,
-    sharedKnowledgeInbound,
-    sharedAttachmentInbound,
-    editableCompanies,
-    projectEditDepartments,
-    projectEditGroupList,
-    projectOwnerOptions,
-    staff,
-    projectRoles,
-    relationTargetProjects,
-  ] = await Promise.all([
+  const [[canEditTasksPermission, canEditKnowledge, canReadKnowledge, canReadCalendar], locale, session, staff] = await Promise.all([
     permissionPromise,
     localePromise,
     sessionPromise,
-    projectCalendarEventsPromise,
-    projectRelationsPromise,
-    projectFilesPromise,
-    ownKnowledgePromise,
-    sharedKnowledgeInboundPromise,
-    sharedAttachmentInboundPromise,
-    editableCompaniesPromise,
-    projectEditDepartmentsPromise,
-    projectEditGroupListPromise,
-    projectOwnerOptionsPromise,
     staffPromise,
-    projectRolesPromise,
-    relationTargetProjectsPromise,
   ]);
 
   const canSoftDeleteProject = canManageProjectSettings(user, project);
@@ -709,9 +741,6 @@ export default async function ProjectDetailPage({
       canEditWorkflow(user, project) ||
       user.projectMemberships.some((m) => m.projectId === project.id));
 
-  const relationCount = projectRelations.outgoingRelations.length + projectRelations.incomingRelations.length;
-  const knowledgeTotalCount = ownKnowledge.length + sharedKnowledgeInbound.length;
-  const filesTotalCount = projectFiles.length + sharedAttachmentInbound.length;
   const taskRows = buildProjectTaskRows(project.nodes);
   const projectMemberOptions = project.memberships.map((m) => ({ id: m.userId, name: m.user.name }));
   const labelMemberOptions = staff.length ? staff : projectMemberOptions;
@@ -737,116 +766,42 @@ export default async function ProjectDetailPage({
   const secondaryBtn =
     "inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium bg-[hsl(var(--card))] border border-[hsl(var(--border))] hover:bg-black/5 dark:hover:bg-white/5";
 
-  return (
-    <div className="space-y-6">
-      <DetailsHashOpener />
-      <ProjectDetailBreadcrumbs
-        homeLabel={t(locale, "navHome")}
-        projectsLabel={t(locale, "projBreadcrumbProjects")}
-        projectName={project.name}
-      />
+  async function ProjectSupplementalPanels() {
+    const project = resolvedProject;
+    const [
+      projectCalendarEvents,
+      projectRelations,
+      projectFiles,
+      ownKnowledge,
+      sharedKnowledgeInbound,
+      sharedAttachmentInbound,
+      editableCompanies,
+      projectEditDepartments,
+      projectEditGroupList,
+      projectOwnerOptions,
+      projectRoles,
+      relationTargetProjects,
+    ] = await Promise.all([
+      projectCalendarEventsPromise,
+      projectRelationsPromise,
+      projectFilesPromise,
+      ownKnowledgePromise,
+      sharedKnowledgeInboundPromise,
+      sharedAttachmentInboundPromise,
+      editableCompaniesPromise,
+      projectEditDepartmentsPromise,
+      projectEditGroupListPromise,
+      projectOwnerOptionsPromise,
+      projectRolesPromise,
+      relationTargetProjectsPromise,
+    ]);
 
-      <ProjectDetailActionTabs
-        secondaryBtnClassName={secondaryBtn}
-        primaryBtnClassName={primaryBtn}
-        homeLabel={t(locale, "navHome")}
-        projectId={project.id}
-        recognitionLabel={t(locale, "projRecognitionOpen")}
-        growthLabel={t(locale, "projGrowthOpen")}
-        editProjectLabel={t(locale, "projEditProject")}
-        showEditProject={canManage}
-        editMembersLabel={t(locale, "projEditMembers")}
-        showEditMembers={canMemberManage}
-        currentSection={currentSection}
-      />
+    const relationCount = projectRelations.outgoingRelations.length + projectRelations.incomingRelations.length;
+    const knowledgeTotalCount = ownKnowledge.length + sharedKnowledgeInbound.length;
+    const filesTotalCount = projectFiles.length + sharedAttachmentInbound.length;
 
-      <div className="flex flex-wrap items-start gap-4">
-        {project.company.logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={project.company.logoUrl}
-            alt=""
-            width={56}
-            height={56}
-            className="h-14 w-14 shrink-0 rounded-md border border-[hsl(var(--border))] bg-white object-contain p-1 dark:bg-zinc-900"
-          />
-        ) : null}
-        <div className="min-w-0 flex-1 space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-[hsl(var(--foreground))]">{project.name}</h1>
-          {project.description ? (
-            <p className="text-sm text-[hsl(var(--muted))]">{project.description}</p>
-          ) : null}
-          <p className="text-sm text-[hsl(var(--muted))]">
-            {project.company.name} · {tProjectStatus(locale, project.status)} · {tPriority(locale, project.priority)}
-          </p>
-          {project.deadline ? (
-            <p className="text-xs text-[hsl(var(--muted))]">
-              {projectDeadlineText} · {timeLeft.text}
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      {focusedTask ? <TaskSpotlightCard task={focusedTask} projectId={project.id} projectName={project.name} locale={locale} /> : null}
-
-      <ProjectProgressProvider
-        initialTasks={taskRows}
-        fallbackProgressPercent={project.progressPercent}
-        projectCompleted={project.status === "COMPLETED"}
-      >
-        <div className="overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm">
-          <div className="relative grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <div className="space-y-1">
-              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonStatus")}</p>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${
-                    project.status === "ACTIVE"
-                      ? "bg-emerald-500"
-                      : project.status === "COMPLETED"
-                        ? "bg-sky-500"
-                        : "bg-zinc-400 dark:bg-zinc-500"
-                  }`}
-                  aria-hidden
-                />
-                <span className="font-medium text-[hsl(var(--foreground))]">{tProjectStatus(locale, project.status)}</span>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonPriority")}</p>
-              <span className={`inline-flex rounded-lg px-2.5 py-0.5 text-xs font-medium ${priorityClass}`}>
-                {tPriority(locale, project.priority)}
-              </span>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projProgressOverall")}</p>
-              <ProjectProgressDisplay />
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonOwner")}</p>
-              <span className="flex items-center gap-2 font-medium text-[hsl(var(--foreground))]">
-                <UserFace name={project.owner.name} avatarUrl={project.owner.avatarUrl} size={24} />
-                {project.owner.name}
-              </span>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonCompany")}</p>
-              <p className="font-medium text-[hsl(var(--foreground))]">{project.company.name}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projMetricDaysLeft")}</p>
-              <p
-                className={`text-sm font-semibold tabular-nums ${
-                  timeLeft.urgent ? "text-orange-600 dark:text-orange-400" : "text-[hsl(var(--foreground))]"
-                }`}
-              >
-                {timeLeft.text}
-              </p>
-            </div>
-          </div>
-          <ProjectProgressBar />
-        </div>
-
+    return (
+      <>
         {canReadCalendar ? (
           <Card className="space-y-3 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -913,83 +868,7 @@ export default async function ProjectDetailPage({
               {t(locale, "projRelatedEventsOpenCalendar")}
             </Link>
           </Card>
-        ) : null}
-
-        <ProjectTasksPanelWithProgress
-          projectId={project.id}
-          tasks={taskRows}
-          projectCompleted={project.status === "COMPLETED"}
-          canToggleProjectCompletion={canEditTasks}
-          canEdit={canEditTasks}
-          undoAvailable={undoAvailable}
-          memberOptions={projectMemberOptions}
-          labelMemberOptions={labelMemberOptions}
-          locale={locale}
-          copy={{
-            title: t(locale, "wfMapTitle"),
-            projectCompleteLabel: t(locale, "projMarkComplete"),
-            projectIncompleteLabel: t(locale, "projMarkIncomplete"),
-            undo: t(locale, "projTasksUndo"),
-            undoHint: t(locale, "projTasksUndoHint"),
-            undoDisabledHint: t(locale, "projTasksUndoDisabledHint"),
-            deleteAll: t(locale, "projTasksDeleteAll"),
-            deleteTask: t(locale, "projTasksDeleteTask"),
-            addTask: t(locale, "projTasksAddTask"),
-            addSubtask: t(locale, "projTasksAddSubtask"),
-            assignedPrefix: t(locale, "projTasksAssignedPrefix"),
-            confirmDeleteAll: t(locale, "projTasksConfirmDeleteAll"),
-            empty: t(locale, "projTasksNoTasks"),
-            noSubtasksHint: t(locale, "projTasksNoSubtasksHint"),
-            newTaskPh: t(locale, "projTaskNewTitlePh"),
-            newSubPh: t(locale, "projTaskNewSubPh"),
-            deadlineOptional: t(locale, "projTaskDeadlineLabel"),
-            assignSubOptional: t(locale, "projTaskAssignSub"),
-            metaTitle: t(locale, "projTaskMetaTitle"),
-            metaLead: t(locale, "projTaskMetaLead"),
-            labelsTitle: t(locale, "projTaskLabelsTitle"),
-            labelsLead: t(locale, "projTaskLabelsLead"),
-            saveMeta: t(locale, "btnSave"),
-            dueShort: t(locale, "projTaskDueShort"),
-            descriptionLabel: t(locale, "commonDescription"),
-            editDetails: t(locale, "projTaskEditDetails"),
-            editLabels: t(locale, "projTaskEditLabels"),
-            dialogClose: t(locale, "kbDialogClose"),
-            statusLabel: t(locale, "commonStatus"),
-            labelsLabel: t(locale, "projTaskLabelsLabel"),
-            categoryLabel: t(locale, "projTaskCategoryLabel"),
-            waitingStartedLabel: t(locale, "projTaskWaitingStartedLabel"),
-            waitingOnInternalLabel: t(locale, "projTaskWaitingInternalLabel"),
-            waitingOnExternalLabel: t(locale, "projTaskWaitingExternalLabel"),
-            waitingDetailsLabel: t(locale, "projTaskWaitingDetailsLabel"),
-            approvalRequestedLabel: t(locale, "projTaskApprovalRequestedLabel"),
-            approvalCompletedLabel: t(locale, "projTaskApprovalCompletedLabel"),
-            approverLabel: t(locale, "projTaskApproverLabel"),
-            nextActionLabel: t(locale, "projTaskNextActionLabel"),
-            bottleneckLabel: t(locale, "projTaskBottleneckLabel"),
-            statusOptions: TASK_STATUS_OPTIONS.map((value) => ({
-              value,
-              label: tWorkflowNodeStatus(locale, value),
-            })),
-            labelOptions: TASK_LABEL_OPTIONS.map((value) => ({ value, label: formatWorkflowNodeLabel(value) })),
-            labelGroupWaiting: t(locale, "projTaskLabelGroupWaiting"),
-            labelGroupApproval: t(locale, "projTaskLabelGroupApproval"),
-            labelGroupRisk: t(locale, "projTaskLabelGroupRisk"),
-            mentionPlaceholder: t(locale, "projTaskMentionPlaceholder"),
-            peoplePickerPlaceholder: t(locale, "projTaskPeoplePickerPlaceholder"),
-            peoplePickerSearchPlaceholder: t(locale, "projTaskPeoplePickerSearchPlaceholder"),
-            peoplePickerEmpty: t(locale, "projTaskPeoplePickerEmpty"),
-            externalPlaceholder: t(locale, "projTaskExternalPlaceholder"),
-            waitingDetailsPlaceholder: t(locale, "projTaskWaitingDetailsPlaceholder"),
-            nextActionPlaceholder: t(locale, "projTaskNextActionPlaceholder"),
-            summaryWaiting: t(locale, "projTaskSummaryWaiting"),
-            summaryApproval: t(locale, "projTaskSummaryApproval"),
-            summaryRisk: t(locale, "projTaskSummaryRisk"),
-            summaryBottleneck: t(locale, "projTaskSummaryBottleneck"),
-          }}
-        />
-      </ProjectProgressProvider>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        ) : null}      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <details
           id="section-relations"
           className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm"
@@ -1915,6 +1794,201 @@ export default async function ProjectDetailPage({
           <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "projStaffMultiCompanyHint")}</p>
         </div>
       </details>
+
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <DetailsHashOpener />
+      <ProjectDetailBreadcrumbs
+        homeLabel={t(locale, "navHome")}
+        projectsLabel={t(locale, "projBreadcrumbProjects")}
+        projectName={project.name}
+      />
+
+      <ProjectDetailActionTabs
+        secondaryBtnClassName={secondaryBtn}
+        primaryBtnClassName={primaryBtn}
+        homeLabel={t(locale, "navHome")}
+        projectId={project.id}
+        recognitionLabel={t(locale, "projRecognitionOpen")}
+        growthLabel={t(locale, "projGrowthOpen")}
+        editProjectLabel={t(locale, "projEditProject")}
+        showEditProject={canManage}
+        editMembersLabel={t(locale, "projEditMembers")}
+        showEditMembers={canMemberManage}
+        currentSection={currentSection}
+      />
+
+      <div className="flex flex-wrap items-start gap-4">
+        {project.company.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={project.company.logoUrl}
+            alt=""
+            width={56}
+            height={56}
+            className="h-14 w-14 shrink-0 rounded-md border border-[hsl(var(--border))] bg-white object-contain p-1 dark:bg-zinc-900"
+          />
+        ) : null}
+        <div className="min-w-0 flex-1 space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-[hsl(var(--foreground))]">{project.name}</h1>
+          {project.description ? (
+            <p className="text-sm text-[hsl(var(--muted))]">{project.description}</p>
+          ) : null}
+          <p className="text-sm text-[hsl(var(--muted))]">
+            {project.company.name} · {tProjectStatus(locale, project.status)} · {tPriority(locale, project.priority)}
+          </p>
+          {project.deadline ? (
+            <p className="text-xs text-[hsl(var(--muted))]">
+              {projectDeadlineText} · {timeLeft.text}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {focusedTask ? <TaskSpotlightCard task={focusedTask} projectId={project.id} projectName={project.name} locale={locale} /> : null}
+
+      <ProjectProgressProvider
+        initialTasks={taskRows}
+        fallbackProgressPercent={project.progressPercent}
+        projectCompleted={project.status === "COMPLETED"}
+      >
+        <div className="overflow-hidden rounded-[14px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm">
+          <div className="relative grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonStatus")}</p>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    project.status === "ACTIVE"
+                      ? "bg-emerald-500"
+                      : project.status === "COMPLETED"
+                        ? "bg-sky-500"
+                        : "bg-zinc-400 dark:bg-zinc-500"
+                  }`}
+                  aria-hidden
+                />
+                <span className="font-medium text-[hsl(var(--foreground))]">{tProjectStatus(locale, project.status)}</span>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonPriority")}</p>
+              <span className={`inline-flex rounded-lg px-2.5 py-0.5 text-xs font-medium ${priorityClass}`}>
+                {tPriority(locale, project.priority)}
+              </span>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projProgressOverall")}</p>
+              <ProjectProgressDisplay />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonOwner")}</p>
+              <span className="flex items-center gap-2 font-medium text-[hsl(var(--foreground))]">
+                <UserFace name={project.owner.name} avatarUrl={project.owner.avatarUrl} size={24} />
+                {project.owner.name}
+              </span>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonCompany")}</p>
+              <p className="font-medium text-[hsl(var(--foreground))]">{project.company.name}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projMetricDaysLeft")}</p>
+              <p
+                className={`text-sm font-semibold tabular-nums ${
+                  timeLeft.urgent ? "text-orange-600 dark:text-orange-400" : "text-[hsl(var(--foreground))]"
+                }`}
+              >
+                {timeLeft.text}
+              </p>
+            </div>
+          </div>
+          <ProjectProgressBar />
+        </div>
+
+
+
+        <ProjectTasksPanelWithProgress
+          projectId={project.id}
+          tasks={taskRows}
+          projectCompleted={project.status === "COMPLETED"}
+          canToggleProjectCompletion={canEditTasks}
+          canEdit={canEditTasks}
+          undoAvailable={undoAvailable}
+          memberOptions={projectMemberOptions}
+          labelMemberOptions={labelMemberOptions}
+          locale={locale}
+          copy={{
+            title: t(locale, "wfMapTitle"),
+            projectCompleteLabel: t(locale, "projMarkComplete"),
+            projectIncompleteLabel: t(locale, "projMarkIncomplete"),
+            undo: t(locale, "projTasksUndo"),
+            undoHint: t(locale, "projTasksUndoHint"),
+            undoDisabledHint: t(locale, "projTasksUndoDisabledHint"),
+            deleteAll: t(locale, "projTasksDeleteAll"),
+            deleteTask: t(locale, "projTasksDeleteTask"),
+            addTask: t(locale, "projTasksAddTask"),
+            addSubtask: t(locale, "projTasksAddSubtask"),
+            assignedPrefix: t(locale, "projTasksAssignedPrefix"),
+            confirmDeleteAll: t(locale, "projTasksConfirmDeleteAll"),
+            empty: t(locale, "projTasksNoTasks"),
+            noSubtasksHint: t(locale, "projTasksNoSubtasksHint"),
+            newTaskPh: t(locale, "projTaskNewTitlePh"),
+            newSubPh: t(locale, "projTaskNewSubPh"),
+            deadlineOptional: t(locale, "projTaskDeadlineLabel"),
+            assignSubOptional: t(locale, "projTaskAssignSub"),
+            metaTitle: t(locale, "projTaskMetaTitle"),
+            metaLead: t(locale, "projTaskMetaLead"),
+            labelsTitle: t(locale, "projTaskLabelsTitle"),
+            labelsLead: t(locale, "projTaskLabelsLead"),
+            saveMeta: t(locale, "btnSave"),
+            dueShort: t(locale, "projTaskDueShort"),
+            descriptionLabel: t(locale, "commonDescription"),
+            editDetails: t(locale, "projTaskEditDetails"),
+            editLabels: t(locale, "projTaskEditLabels"),
+            dialogClose: t(locale, "kbDialogClose"),
+            statusLabel: t(locale, "commonStatus"),
+            labelsLabel: t(locale, "projTaskLabelsLabel"),
+            categoryLabel: t(locale, "projTaskCategoryLabel"),
+            waitingStartedLabel: t(locale, "projTaskWaitingStartedLabel"),
+            waitingOnInternalLabel: t(locale, "projTaskWaitingInternalLabel"),
+            waitingOnExternalLabel: t(locale, "projTaskWaitingExternalLabel"),
+            waitingDetailsLabel: t(locale, "projTaskWaitingDetailsLabel"),
+            approvalRequestedLabel: t(locale, "projTaskApprovalRequestedLabel"),
+            approvalCompletedLabel: t(locale, "projTaskApprovalCompletedLabel"),
+            approverLabel: t(locale, "projTaskApproverLabel"),
+            nextActionLabel: t(locale, "projTaskNextActionLabel"),
+            bottleneckLabel: t(locale, "projTaskBottleneckLabel"),
+            statusOptions: TASK_STATUS_OPTIONS.map((value) => ({
+              value,
+              label: tWorkflowNodeStatus(locale, value),
+            })),
+            labelOptions: TASK_LABEL_OPTIONS.map((value) => ({ value, label: formatWorkflowNodeLabel(value) })),
+            labelGroupWaiting: t(locale, "projTaskLabelGroupWaiting"),
+            labelGroupApproval: t(locale, "projTaskLabelGroupApproval"),
+            labelGroupRisk: t(locale, "projTaskLabelGroupRisk"),
+            mentionPlaceholder: t(locale, "projTaskMentionPlaceholder"),
+            peoplePickerPlaceholder: t(locale, "projTaskPeoplePickerPlaceholder"),
+            peoplePickerSearchPlaceholder: t(locale, "projTaskPeoplePickerSearchPlaceholder"),
+            peoplePickerEmpty: t(locale, "projTaskPeoplePickerEmpty"),
+            externalPlaceholder: t(locale, "projTaskExternalPlaceholder"),
+            waitingDetailsPlaceholder: t(locale, "projTaskWaitingDetailsPlaceholder"),
+            nextActionPlaceholder: t(locale, "projTaskNextActionPlaceholder"),
+            summaryWaiting: t(locale, "projTaskSummaryWaiting"),
+            summaryApproval: t(locale, "projTaskSummaryApproval"),
+            summaryRisk: t(locale, "projTaskSummaryRisk"),
+            summaryBottleneck: t(locale, "projTaskSummaryBottleneck"),
+          }}
+        />
+      </ProjectProgressProvider>
+
+      <Suspense fallback={<ProjectSupplementalPanelsFallback />}>
+        <ProjectSupplementalPanels />
+      </Suspense>
+
 
     </div>
   );

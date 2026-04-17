@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 export function ProjectDetailBreadcrumbs({
@@ -11,13 +12,13 @@ export function ProjectDetailBreadcrumbs({
 }) {
   return (
     <div className="text-xs text-[hsl(var(--muted))]">
-      <a href="/home" className="hover:text-[hsl(var(--foreground))]">
+      <Link href="/home" className="hover:text-[hsl(var(--foreground))]">
         {homeLabel}
-      </a>{" "}
+      </Link>{" "}
       /{" "}
-      <a href="/projects" className="hover:text-[hsl(var(--foreground))]">
+      <Link href="/projects" className="hover:text-[hsl(var(--foreground))]">
         {projectsLabel}
-      </a>{" "}
+      </Link>{" "}
       / {projectName}
     </div>
   );
@@ -35,13 +36,13 @@ function ActionLink({
   active?: boolean;
 }) {
   return (
-    <a
+    <Link
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(className, active ? "bg-[hsl(var(--primary))] text-white hover:opacity-95" : "")}
     >
       {label}
-    </a>
+    </Link>
   );
 }
 
