@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { updateOnboardingVideoProgressAction } from "@/app/actions/lifecycle";
+import { OnboardingResourceLink } from "@/components/onboarding-resource-link";
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 
@@ -103,9 +104,13 @@ export function OnboardingVideoPanel({ onboardingId, videoUrl, completed, progre
           <iframe className="aspect-video w-full" src={embed} title="Onboarding video" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
         ) : (
           <div className="p-4 text-center text-sm text-[hsl(var(--muted))]">
-            <a href={videoUrl} target="_blank" rel="noreferrer" className="font-medium text-[hsl(var(--primary))] underline">
+            <OnboardingResourceLink
+              onboardingId={onboardingId}
+              href={videoUrl}
+              className="font-medium text-[hsl(var(--primary))] underline"
+            >
               {t(locale, "onboardingVideoOpenLink")}
-            </a>
+            </OnboardingResourceLink>
           </div>
         )}
       </div>

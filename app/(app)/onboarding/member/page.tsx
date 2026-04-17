@@ -10,6 +10,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { MemberOnboardingChecklist } from "@/components/member-onboarding-checklist";
 import { acknowledgeMemberOnboardingMaterialsAction } from "@/app/actions/lifecycle";
+import { OnboardingResourceLink } from "@/components/onboarding-resource-link";
 import { OnboardingVideoPanel } from "@/components/onboarding-video-panel";
 import {
   DEFAULT_COMPANY_ONBOARDING_VERSION,
@@ -162,24 +163,22 @@ export default async function MemberOnboardingPage({
                   <p className="mt-2 text-sm leading-relaxed text-[hsl(var(--muted))]">{assignedMaterialDescription}</p>
                 ) : null}
                 {packageUrl ? (
-                  <a
+                  <OnboardingResourceLink
+                    onboardingId={ob.id}
                     href={packageUrl}
-                    target="_blank"
-                    rel="noreferrer"
                     className="mt-3 inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
                   >
                     {t(locale, "onboardingOpenPackage")}
-                  </a>
+                  </OnboardingResourceLink>
                 ) : null}
                 {videoUrl ? (
-                  <a
+                  <OnboardingResourceLink
+                    onboardingId={ob.id}
                     href={videoUrl}
-                    target="_blank"
-                    rel="noreferrer"
                     className="mt-3 inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
                   >
                     {t(locale, "onboardingVideoOpenLink")}
-                  </a>
+                  </OnboardingResourceLink>
                 ) : null}
                 {assignedMaterialMedia?.packageAttachmentName ? (
                   <p className="mt-3 text-sm text-[hsl(var(--muted))]">
@@ -287,24 +286,22 @@ export default async function MemberOnboardingPage({
               {t(locale, "onboardingMaterialsOpenedAt")}: {ob.materialsOpenedAt.toISOString().slice(0, 16).replace("T", " ")}
             </p>
             {hasPackageUrl ? (
-              <a
+              <OnboardingResourceLink
+                onboardingId={ob.id}
                 href={packageUrl}
-                target="_blank"
-                rel="noreferrer"
                 className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
               >
                 {t(locale, "onboardingReviewMaterials")}
-              </a>
+              </OnboardingResourceLink>
             ) : null}
             {videoUrl ? (
-              <a
+              <OnboardingResourceLink
+                onboardingId={ob.id}
                 href={videoUrl}
-                target="_blank"
-                rel="noreferrer"
                 className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
               >
                 {t(locale, "onboardingVideoOpenLink")}
-              </a>
+              </OnboardingResourceLink>
             ) : null}
           </div>
         ) : null}
