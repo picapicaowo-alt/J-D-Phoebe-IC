@@ -679,15 +679,26 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
       ),
     );
 
-    const formData = new FormData();
-    formData.set("threadKey", threadKey);
-    formData.set("body", body);
-    for (const file of pendingFiles) {
-      formData.append("files", file);
-    }
-
     try {
-      const response = await fetch("/api/messages", { method: "POST", body: formData });
+      const response =
+        pendingFiles.length > 0
+          ? await (async () => {
+              const formData = new FormData();
+              formData.set("threadKey", threadKey);
+              formData.set("body", body);
+              for (const file of pendingFiles) {
+                formData.append("files", file);
+              }
+              return fetch("/api/messages", { method: "POST", body: formData });
+            })()
+          : await fetch("/api/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                threadKey,
+                body,
+              }),
+            });
       const data = await readJson<PendingSendResponse>(response);
       if (!response.ok || !data?.message) {
         setError(data?.error ?? copy.sendError);
@@ -739,16 +750,22 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     }
   }
 
-  function openManageGroupDialog() {
+  async function openManageGroupDialog() {
     if (!selectedThread || selectedThread.type !== "group" || !selectedThread.canManage) return;
-    if (loadingConversation && selectedThread.members.length === 0) return;
-    setManageGroupName(selectedThread.name);
+    if (selectedThread.members.length === 0) {
+      await refreshThread(selectedThread.key);
+      const nextSelectedThread = selectedThreadRef.current === selectedThread.key ? threadDataCacheRef.current.get(selectedThread.key)?.thread : null;
+      if (!nextSelectedThread || nextSelectedThread.type !== "group" || nextSelectedThread.members.length === 0) return;
+    }
+    const groupThread =
+      selectedThreadRef.current === selectedThread.key ? (threadDataCacheRef.current.get(selectedThread.key)?.thread as ChatThreadDetail | null) ?? selectedThread : selectedThread;
+    setManageGroupName(groupThread.name);
     setManageMemberIds(
-      selectedThread.members
+      groupThread.members
         .filter((member) => member.id !== currentUserId && !member.isCreator)
         .map((member) => member.id),
     );
-    setManageAdminIds(selectedThread.members.filter((member) => member.isAdmin && !member.isCreator).map((member) => member.id));
+    setManageAdminIds(groupThread.members.filter((member) => member.isAdmin && !member.isCreator).map((member) => member.id));
     setManageGroupPhoto(null);
     setGroupError(null);
     if (!manageDialogRef.current?.open) {
@@ -759,9 +776,13 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     }
   }
 
-  function openMemberListDialog() {
+  async function openMemberListDialog() {
     if (!selectedThread || selectedThread.type !== "group") return;
-    if (loadingConversation && selectedThread.members.length === 0) return;
+    if (selectedThread.members.length === 0) {
+      await refreshThread(selectedThread.key);
+      const nextSelectedThread = selectedThreadRef.current === selectedThread.key ? threadDataCacheRef.current.get(selectedThread.key)?.thread : null;
+      if (!nextSelectedThread || nextSelectedThread.type !== "group" || nextSelectedThread.members.length === 0) return;
+    }
     setMemberListQuery("");
     setHoveredMemberId(null);
     if (!memberListDialogRef.current?.open) {
@@ -1582,67 +1603,73 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-            <div className="space-y-2">
-              {memberListMembers.map((member) => (
-                <div
-                  key={member.id}
-                  className="relative rounded-[18px] border border-[hsl(var(--border))] px-3 py-3"
-                  onMouseEnter={() => setHoveredMemberId(member.id)}
-                  onMouseLeave={() => setHoveredMemberId((current) => (current === member.id ? null : current))}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <Link href={`/staff/${member.id}`} prefetch={false} className="flex min-w-0 items-center gap-3">
-                      <UserFace name={member.name} avatarUrl={member.avatarUrl} size={36} />
-                      <span className="min-w-0">
-                        <span className="flex flex-wrap items-center gap-2">
-                          <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
-                          {member.isCreator ? <Badge tone="neutral">{copy.groupCreatorLabel}</Badge> : null}
-                          {!member.isCreator && member.isAdmin ? <Badge tone="info">{copy.groupAdminLabel}</Badge> : null}
+            {loadingConversation && memberListMembers.length === 0 ? (
+              <div className="rounded-[18px] border border-dashed border-[hsl(var(--border))] px-4 py-5 text-sm text-[hsl(var(--muted))]">
+                {copy.loading}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {memberListMembers.map((member) => (
+                  <div
+                    key={member.id}
+                    className="relative rounded-[18px] border border-[hsl(var(--border))] px-3 py-3"
+                    onMouseEnter={() => setHoveredMemberId(member.id)}
+                    onMouseLeave={() => setHoveredMemberId((current) => (current === member.id ? null : current))}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <Link href={`/staff/${member.id}`} prefetch={false} className="flex min-w-0 items-center gap-3">
+                        <UserFace name={member.name} avatarUrl={member.avatarUrl} size={36} />
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
+                            {member.isCreator ? <Badge tone="neutral">{copy.groupCreatorLabel}</Badge> : null}
+                            {!member.isCreator && member.isAdmin ? <Badge tone="info">{copy.groupAdminLabel}</Badge> : null}
+                          </span>
+                          <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
                         </span>
-                        <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
-                      </span>
-                    </Link>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => {
-                        memberListDialogRef.current?.close();
-                        void openThread(`direct:${member.id}`);
-                      }}
-                    >
-                      {copy.messageMember}
-                    </Button>
-                  </div>
+                      </Link>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => {
+                          memberListDialogRef.current?.close();
+                          void openThread(`direct:${member.id}`);
+                        }}
+                      >
+                        {copy.messageMember}
+                      </Button>
+                    </div>
 
-                  {hoveredMemberId === member.id ? (
-                    <div className="absolute right-3 top-[calc(100%+0.5rem)] z-10 w-64 rounded-[20px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
-                      <div className="flex items-center gap-3">
-                        <UserFace name={member.name} avatarUrl={member.avatarUrl} size={52} />
-                        <div className="min-w-0">
-                          <p className="truncate text-base font-semibold text-[hsl(var(--foreground))]">{member.name}</p>
-                          <p className="truncate text-sm text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</p>
+                    {hoveredMemberId === member.id ? (
+                      <div className="absolute right-3 top-[calc(100%+0.5rem)] z-10 w-64 rounded-[20px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+                        <div className="flex items-center gap-3">
+                          <UserFace name={member.name} avatarUrl={member.avatarUrl} size={52} />
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-semibold text-[hsl(var(--foreground))]">{member.name}</p>
+                            <p className="truncate text-sm text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</p>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => {
+                              memberListDialogRef.current?.close();
+                              void openThread(`direct:${member.id}`);
+                            }}
+                          >
+                            {copy.messageMember}
+                          </Button>
+                          <Link href={`/staff/${member.id}`} prefetch={false} className="text-sm font-medium text-[hsl(var(--primary))]">
+                            {copy.viewProfile}
+                          </Link>
                         </div>
                       </div>
-                      <div className="mt-4 flex items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => {
-                            memberListDialogRef.current?.close();
-                            void openThread(`direct:${member.id}`);
-                          }}
-                        >
-                          {copy.messageMember}
-                        </Button>
-                        <Link href={`/staff/${member.id}`} prefetch={false} className="text-sm font-medium text-[hsl(var(--primary))]">
-                          {copy.viewProfile}
-                        </Link>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </dialog>

@@ -1041,6 +1041,34 @@ async function createDirectThreadMessage(user: AccessUser, peerId: string, body:
     throw new Error("Type a message or attach at least one file.");
   }
 
+  if (!files.some((file) => file.size > 0)) {
+    const created = await prisma.directMessage.create({
+      data: {
+        senderId: user.id,
+        recipientId: peer.id,
+        body: text,
+      },
+      select: {
+        id: true,
+        body: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      id: created.id,
+      threadKey: makeThreadKey("direct", peer.id),
+      threadType: "direct",
+      body: normalizeText(created.body),
+      createdAt: created.createdAt.toISOString(),
+      senderId: user.id,
+      senderName: user.name,
+      senderAvatarUrl: user.avatarUrl,
+      isOwn: true,
+      attachments: [],
+    } satisfies ChatMessage;
+  }
+
   const messageId = randomUUID();
   const attachmentData = await prepareUploads(files, messageId);
   const created = await prisma.directMessage.create({
@@ -1084,32 +1112,54 @@ async function createGroupThreadMessage(user: AccessUser, groupId: string, body:
     throw new Error("Type a message or attach at least one file.");
   }
 
-  const messageId = randomUUID();
-  const attachmentData = await prepareUploads(files, messageId);
-  const [created] = await prisma.$transaction([
-    prisma.messageGroupMessage.create({
+  if (!files.some((file) => file.size > 0)) {
+    const created = await prisma.messageGroupMessage.create({
       data: {
-        id: messageId,
         groupId: sendContext.groupId,
         senderId: user.id,
         body: text,
-        attachments: {
-          create: attachmentData.map((attachment) => ({
-            fileName: attachment.fileName,
-            mimeType: attachment.mimeType,
-            sizeBytes: attachment.sizeBytes,
-            storageKey: attachment.storageKey,
-            blobUrl: attachment.blobUrl,
-          })),
-        },
       },
-      include: groupMessageInclude,
-    }),
-    prisma.messageGroupMember.update({
-      where: { groupId_userId: { groupId: sendContext.groupId, userId: user.id } },
-      data: { lastReadAt: new Date() },
-    }),
-  ]);
+      select: {
+        id: true,
+        body: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      id: created.id,
+      threadKey: makeThreadKey("group", sendContext.groupId),
+      threadType: "group",
+      body: normalizeText(created.body),
+      createdAt: created.createdAt.toISOString(),
+      senderId: user.id,
+      senderName: user.name,
+      senderAvatarUrl: user.avatarUrl,
+      isOwn: true,
+      attachments: [],
+    } satisfies ChatMessage;
+  }
+
+  const messageId = randomUUID();
+  const attachmentData = await prepareUploads(files, messageId);
+  const created = await prisma.messageGroupMessage.create({
+    data: {
+      id: messageId,
+      groupId: sendContext.groupId,
+      senderId: user.id,
+      body: text,
+      attachments: {
+        create: attachmentData.map((attachment) => ({
+          fileName: attachment.fileName,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          storageKey: attachment.storageKey,
+          blobUrl: attachment.blobUrl,
+        })),
+      },
+    },
+    include: groupMessageInclude,
+  });
 
   return serializeGroupMessage(created, user.id);
 }

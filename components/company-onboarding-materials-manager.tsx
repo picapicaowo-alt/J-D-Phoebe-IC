@@ -132,10 +132,10 @@ export function CompanyOnboardingMaterialsManager({
     const pendingIds = new Set(nextPendingMaterials.map((material) => material.id));
     setPendingMaterials((current) => [...nextPendingMaterials, ...current]);
     setIsCreating(true);
-    formRef.current?.reset();
 
     try {
       await createCompanyOnboardingMaterialAction(formData);
+      formRef.current?.reset();
       router.refresh();
     } catch (error) {
       setPendingMaterials((current) => current.filter((material) => !pendingIds.has(material.id)));

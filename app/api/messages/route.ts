@@ -32,10 +32,21 @@ export async function POST(request: Request) {
     return jsonError("Unauthorized", 401);
   }
 
-  const formData = await request.formData();
-  const threadKey = String(formData.get("threadKey") ?? "").trim();
-  const body = String(formData.get("body") ?? "");
-  const files = formData.getAll("files").filter(isUpload);
+  const contentType = request.headers.get("content-type") ?? "";
+  let threadKey = "";
+  let body = "";
+  let files: File[] = [];
+
+  if (contentType.includes("application/json")) {
+    const payload = (await request.json().catch(() => null)) as { threadKey?: string; body?: string } | null;
+    threadKey = String(payload?.threadKey ?? "").trim();
+    body = String(payload?.body ?? "");
+  } else {
+    const formData = await request.formData();
+    threadKey = String(formData.get("threadKey") ?? "").trim();
+    body = String(formData.get("body") ?? "");
+    files = formData.getAll("files").filter(isUpload);
+  }
 
   try {
     const message = await createThreadMessage(user as AccessUser, threadKey, body, files);
