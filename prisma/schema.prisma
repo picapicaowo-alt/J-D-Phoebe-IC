@@ -298,6 +298,8 @@ model Company {
 model CompanyOnboardingMaterial {
   id                  String      @id @default(cuid())
   companyId           String
+  title               String?
+  description         String?
   packageUrl          String
   videoUrl            String?
   packageVersion      String      @default("v1")

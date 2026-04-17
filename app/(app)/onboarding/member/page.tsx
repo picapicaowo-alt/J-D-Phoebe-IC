@@ -11,7 +11,13 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { MemberOnboardingChecklist } from "@/components/member-onboarding-checklist";
 import { acknowledgeMemberOnboardingMaterialsAction } from "@/app/actions/lifecycle";
 import { OnboardingVideoPanel } from "@/components/onboarding-video-panel";
-import { DEFAULT_COMPANY_ONBOARDING_VERSION, resolveCompanyOnboardingMaterials, resolveMaterialMedia } from "@/lib/company-onboarding-materials";
+import {
+  DEFAULT_COMPANY_ONBOARDING_VERSION,
+  resolveCompanyOnboardingMaterials,
+  resolveMaterialDescription,
+  resolveMaterialDisplayName,
+  resolveMaterialMedia,
+} from "@/lib/company-onboarding-materials";
 
 export default async function MemberOnboardingPage({
   searchParams,
@@ -62,7 +68,10 @@ export default async function MemberOnboardingPage({
   const assignedMaterialMedia = effectiveAssignedMaterial ? resolveMaterialMedia(effectiveAssignedMaterial) : null;
   const packageUrl = ob.packageUrl.trim() || assignedMaterialMedia?.packageHref || "";
   const hasPackageUrl = Boolean(packageUrl);
+  const hasAnyPrimaryResource = Boolean(packageUrl || (ob.videoUrl?.trim() || assignedMaterialMedia?.videoHref || ob.company.onboardingVideoUrl?.trim() || ""));
   const packageVersion = ob.packageVersion.trim() || effectiveAssignedMaterial?.packageVersion || DEFAULT_COMPANY_ONBOARDING_VERSION;
+  const assignedMaterialName = effectiveAssignedMaterial ? resolveMaterialDisplayName(effectiveAssignedMaterial) : t(locale, "companyOnboardingTitle");
+  const assignedMaterialDescription = effectiveAssignedMaterial ? resolveMaterialDescription(effectiveAssignedMaterial) : null;
   const additionalMaterials = companyMaterials.filter((material) => {
     if (effectiveAssignedMaterial?.id) return material.id !== effectiveAssignedMaterial.id;
     return !(material.packageUrl === packageUrl && material.packageVersion === packageVersion);
@@ -127,19 +136,22 @@ export default async function MemberOnboardingPage({
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "onboardingAssignedMaterial")}</p>
-            {hasPackageUrl ? (
+            {hasAnyPrimaryResource ? (
               <>
-                <a
-                  href={packageUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-3 inline-flex text-lg font-semibold text-[hsl(var(--primary))] underline-offset-4 hover:underline"
-                >
-                  {t(locale, "onboardingOpenPackage")}
-                </a>
-                <p className="mt-3 text-base leading-relaxed text-[hsl(var(--muted))]">
-                  {t(locale, "companyOnboardingVersion")}: {packageVersion}
-                </p>
+                <p className="mt-3 text-lg font-semibold text-[hsl(var(--foreground))]">{assignedMaterialName}</p>
+                {assignedMaterialDescription ? (
+                  <p className="mt-2 text-sm leading-relaxed text-[hsl(var(--muted))]">{assignedMaterialDescription}</p>
+                ) : null}
+                {packageUrl ? (
+                  <a
+                    href={packageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+                  >
+                    {t(locale, "onboardingOpenPackage")}
+                  </a>
+                ) : null}
                 {videoUrl ? (
                   <a
                     href={videoUrl}
@@ -189,6 +201,10 @@ export default async function MemberOnboardingPage({
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {additionalMaterials.map((material) => (
                 <div key={material.id} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
+                  <p className="text-sm font-semibold text-[hsl(var(--foreground))]">{material.displayName}</p>
+                  {material.displayDescription ? (
+                    <p className="mt-2 text-sm text-[hsl(var(--muted))]">{material.displayDescription}</p>
+                  ) : null}
                   {material.packageHref ? (
                     <a
                       href={material.packageHref}
@@ -201,12 +217,6 @@ export default async function MemberOnboardingPage({
                   ) : (
                     <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "onboardingNoPackage")}</p>
                   )}
-                  <p className="mt-2 text-sm text-[hsl(var(--muted))]">
-                    {t(locale, "companyOnboardingVersion")}: {material.packageVersion}
-                  </p>
-                  <p className="text-sm text-[hsl(var(--muted))]">
-                    {t(locale, "companyOnboardingDeadlineDays")}: {material.deadlineDays}
-                  </p>
                   {material.videoHref ? (
                     <a
                       href={material.videoHref}
@@ -246,7 +256,7 @@ export default async function MemberOnboardingPage({
             </form>
           </div>
         ) : null}
-        {!ob.completedAt && !ob.materialsOpenedAt && !hasPackageUrl ? (
+        {!ob.completedAt && !ob.materialsOpenedAt && !hasAnyPrimaryResource ? (
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
             <p className="font-medium text-[hsl(var(--foreground))]">{t(locale, "onboardingNoPackage")}</p>
             <p className="mt-2 text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "onboardingNoPackageHelp")}</p>

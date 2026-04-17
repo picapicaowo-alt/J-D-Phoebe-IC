@@ -1,100 +1,114 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useFormState } from "react-dom";
+import { useEffect, useRef, useState, useTransition } from "react";
+import type { FormEvent } from "react";
 import {
   createCompanyOnboardingMaterialAction,
-  type CompanyOnboardingMaterialActionResult,
   deleteCompanyOnboardingMaterialAction,
+  type CompanyOnboardingMaterialMutationResult,
   updateCompanyOnboardingMaterialAction,
-  uploadCompanyOnboardingPackageAction,
 } from "@/app/actions/company";
-import { FormSubmitButton } from "@/components/form-submit-button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { ResolvedCompanyOnboardingMaterial } from "@/lib/company-onboarding-materials";
+import {
+  deserializeResolvedCompanyOnboardingMaterial,
+  resolveMaterialDisplayName,
+  type ResolvedCompanyOnboardingMaterial,
+} from "@/lib/company-onboarding-materials";
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
-import { deriveUploadedDisplayFileName, getDisplayFileNameStem } from "@/lib/upload-file-name";
+import { getDisplayFileNameStem, sanitizeDisplayFileName } from "@/lib/upload-file-name";
 
-type PendingMaterial = ResolvedCompanyOnboardingMaterial & {
-  pending: true;
+type LocalMaterial = ResolvedCompanyOnboardingMaterial & {
+  pending?: boolean;
+  pendingAction?: "adding" | "saving" | "deleting";
 };
 
-function createPendingMaterial(params: {
+function withCurrentFlag(materials: LocalMaterial[]) {
+  return materials.map((material, index) => ({
+    ...material,
+    isCurrent: index === 0,
+  }));
+}
+
+function getFileFromFormData(formData: FormData, key: string) {
+  const value = formData.get(key);
+  if (!value || typeof value === "string" || value.size <= 0) return null;
+  return value;
+}
+
+function buildOptimisticMaterial(params: {
   companyId: string;
-  packageUrl: string;
-  videoUrl: string | null;
-  packageVersion: string;
-  deadlineDays: number;
-  fileName: string | null;
-  index: number;
-}): PendingMaterial {
+  formData: FormData;
+  fallback?: LocalMaterial;
+  id: string;
+  pendingAction: LocalMaterial["pendingAction"];
+}): LocalMaterial {
+  const title = sanitizeDisplayFileName(String(params.formData.get("onboardingMaterialTitle") ?? "")) || null;
+  const description = String(params.formData.get("onboardingMaterialDescription") ?? "").trim() || null;
+  const packageUrl = String(params.formData.get("onboardingPackageUrl") ?? "").trim();
+  const videoUrl = String(params.formData.get("onboardingVideoUrl") ?? "").trim() || null;
+  const deadlineDays = Math.max(1, Math.min(365, Number(params.formData.get("onboardingDeadlineDays") ?? 14) || 14));
+  const file = getFileFromFormData(params.formData, "onboardingPackageFile");
+  const uploadedFileName = file?.name ? sanitizeDisplayFileName(file.name) : null;
+  const derivedTitle =
+    title ||
+    (uploadedFileName ? getDisplayFileNameStem(uploadedFileName) || uploadedFileName : null) ||
+    params.fallback?.title ||
+    params.fallback?.displayName ||
+    null;
+  const displayName = resolveMaterialDisplayName({
+    title: derivedTitle,
+    packageUrl: file ? "" : packageUrl,
+    videoUrl,
+    packageAttachment: uploadedFileName ? { fileName: uploadedFileName } : null,
+    videoAttachment: null,
+  });
   const now = new Date();
+
   return {
-    id: `pending-${now.getTime()}-${params.index}`,
+    id: params.id,
     companyId: params.companyId,
-    packageUrl: params.packageUrl,
-    videoUrl: params.videoUrl,
-    packageVersion: params.packageVersion,
-    deadlineDays: params.deadlineDays,
-    packageAttachmentId: null,
-    videoAttachmentId: null,
-    createdAt: now,
+    title: derivedTitle,
+    description,
+    packageUrl: file ? "" : packageUrl,
+    videoUrl,
+    packageVersion: String(params.formData.get("onboardingPackageVersion") ?? params.fallback?.packageVersion ?? "v1").trim() || "v1",
+    deadlineDays,
+    packageAttachmentId: file ? null : params.fallback?.packageAttachmentId ?? null,
+    videoAttachmentId: params.fallback?.videoAttachmentId ?? null,
+    createdAt: params.fallback?.createdAt ?? now,
     updatedAt: now,
-    packageHref: params.packageUrl,
-    videoHref: params.videoUrl,
-    packageAttachmentName: params.fileName,
-    videoAttachmentName: null,
-    videoMimeType: null,
-    source: "db",
-    isCurrent: true,
+    packageHref: file ? "" : packageUrl,
+    videoHref: videoUrl,
+    packageAttachmentName: uploadedFileName || params.fallback?.packageAttachmentName || null,
+    videoAttachmentName: params.fallback?.videoAttachmentName || null,
+    videoMimeType: params.fallback?.videoMimeType || null,
+    displayName,
+    displayDescription: description,
+    source: params.fallback?.source ?? "db",
+    isCurrent: params.fallback?.isCurrent ?? false,
     pending: true,
+    pendingAction: params.pendingAction,
   };
 }
 
-function buildPendingMaterials(params: {
-  companyId: string;
-  packageUrl: string;
-  videoUrl: string | null;
-  packageVersion: string;
-  deadlineDays: number;
-  requestedFileName: string;
-  files: File[];
-}) {
-  const { companyId, packageUrl, videoUrl, packageVersion, deadlineDays, requestedFileName, files } = params;
+function materialFromResult(
+  result: CompanyOnboardingMaterialMutationResult,
+): ResolvedCompanyOnboardingMaterial | null {
+  if (!result.material) return null;
+  return deserializeResolvedCompanyOnboardingMaterial(result.material);
+}
 
-  if (files.length > 0) {
-    return files.map((file, index) =>
-      createPendingMaterial({
-        companyId,
-        packageUrl: "",
-        videoUrl,
-        packageVersion,
-        deadlineDays,
-        fileName: deriveUploadedDisplayFileName({
-          label: files.length === 1 ? requestedFileName : "",
-          originalFileName: file.name || "upload",
-          fallbackBaseName: "upload",
-        }),
-        index,
-      }),
-    );
+function pendingLabel(locale: Locale, action: LocalMaterial["pendingAction"]) {
+  if (locale === "zh") {
+    if (action === "adding") return "添加中…";
+    if (action === "deleting") return "删除中…";
+    return "保存中…";
   }
-
-  if (!packageUrl) return [];
-
-  return [
-    createPendingMaterial({
-      companyId,
-      packageUrl,
-      videoUrl,
-      packageVersion,
-      deadlineDays,
-      fileName: null,
-      index: 0,
-    }),
-  ];
+  if (action === "adding") return "Adding...";
+  if (action === "deleting") return "Deleting...";
+  return "Saving...";
 }
 
 export function CompanyOnboardingMaterialsManager({
@@ -106,119 +120,252 @@ export function CompanyOnboardingMaterialsManager({
   locale: Locale;
   materials: ResolvedCompanyOnboardingMaterial[];
 }) {
-  const router = useRouter();
-  const formRef = useRef<HTMLFormElement>(null);
-  const packageUrlInputRef = useRef<HTMLInputElement>(null);
-  const videoUrlInputRef = useRef<HTMLInputElement>(null);
-  const packageFileNameInputRef = useRef<HTMLInputElement>(null);
-  const packageFilesInputRef = useRef<HTMLInputElement>(null);
-  const packageVersionInputRef = useRef<HTMLInputElement>(null);
-  const deadlineDaysInputRef = useRef<HTMLInputElement>(null);
-  const initialCreateState: CompanyOnboardingMaterialActionResult = { ok: false, error: null };
-  const [createState, createFormAction] = useFormState(createCompanyOnboardingMaterialAction, initialCreateState);
-  const [pendingMaterials, setPendingMaterials] = useState<PendingMaterial[]>([]);
-  const pendingBadgeLabel = locale === "zh" ? "上传中…" : "Uploading...";
-  const pendingPackageLabel = locale === "zh" ? "文件上传中…" : "Upload in progress...";
-  const pendingProgressLabel =
-    locale === "zh" ? "上传进行中。完成后此卡片会自动更新。" : "Upload in progress. This card will update when it finishes.";
+  const addFormRef = useRef<HTMLFormElement>(null);
+  const [pending, startTransition] = useTransition();
+  const [localMaterials, setLocalMaterials] = useState<LocalMaterial[]>(() => withCurrentFlag(materials));
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [activeMutation, setActiveMutation] = useState<{ id: string; action: LocalMaterial["pendingAction"] } | null>(null);
 
   useEffect(() => {
-    if (createState.ok) {
-      setPendingMaterials([]);
-      formRef.current?.reset();
-      router.refresh();
-      return;
-    }
-    if (createState.error) {
-      setPendingMaterials([]);
-    }
-  }, [createState, router]);
+    setLocalMaterials(withCurrentFlag(materials));
+  }, [materials]);
 
-  const visibleMaterials = [...pendingMaterials, ...materials];
+  function clearRowError(materialId: string) {
+    setRowErrors((prev) => {
+      const next = { ...prev };
+      delete next[materialId];
+      return next;
+    });
+  }
+
+  function handleAddSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const file = getFileFromFormData(formData, "onboardingPackageFile");
+    const hasAnySource = Boolean(
+      String(formData.get("onboardingPackageUrl") ?? "").trim() ||
+        String(formData.get("onboardingVideoUrl") ?? "").trim() ||
+        file,
+    );
+
+    setCreateError(null);
+    const optimisticId = `pending-${Date.now()}`;
+    const optimisticMaterial = buildOptimisticMaterial({
+      companyId,
+      formData,
+      id: optimisticId,
+      pendingAction: "adding",
+    });
+
+    if (hasAnySource) {
+      setLocalMaterials((prev) => withCurrentFlag([optimisticMaterial, ...prev]));
+    }
+
+    setActiveMutation({ id: "create", action: "adding" });
+    startTransition(async () => {
+      try {
+        const result = await createCompanyOnboardingMaterialAction(formData);
+        if (!result.ok) {
+          if (hasAnySource) {
+            setLocalMaterials((prev) => withCurrentFlag(prev.filter((material) => material.id !== optimisticId)));
+          }
+          setCreateError(result.error);
+          return;
+        }
+
+        const savedMaterial = materialFromResult(result);
+        if (!savedMaterial) {
+          throw new Error("Saved onboarding material was missing from the response.");
+        }
+
+        setLocalMaterials((prev) =>
+          withCurrentFlag([savedMaterial, ...prev.filter((material) => material.id !== optimisticId)]),
+        );
+        addFormRef.current?.reset();
+        setCreateError(null);
+      } catch (error) {
+        console.error("[company onboarding create]", error);
+        if (hasAnySource) {
+          setLocalMaterials((prev) => withCurrentFlag(prev.filter((material) => material.id !== optimisticId)));
+        }
+        setCreateError(locale === "zh" ? "添加入职材料失败。" : "Unable to add the onboarding material.");
+      } finally {
+        setActiveMutation(null);
+      }
+    });
+  }
+
+  function handleSaveSubmit(material: LocalMaterial, event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const previousMaterials = localMaterials;
+    const optimisticMaterial = buildOptimisticMaterial({
+      companyId,
+      formData,
+      fallback: material,
+      id: material.id,
+      pendingAction: "saving",
+    });
+
+    clearRowError(material.id);
+    setLocalMaterials((prev) =>
+      withCurrentFlag(prev.map((entry) => (entry.id === material.id ? optimisticMaterial : entry))),
+    );
+    setActiveMutation({ id: material.id, action: "saving" });
+
+    startTransition(async () => {
+      try {
+        const result = await updateCompanyOnboardingMaterialAction(formData);
+        if (!result.ok) {
+          setLocalMaterials(previousMaterials);
+          setRowErrors((prev) => ({ ...prev, [material.id]: result.error ?? (locale === "zh" ? "保存失败。" : "Unable to save.") }));
+          return;
+        }
+
+        const savedMaterial = materialFromResult(result);
+        if (!savedMaterial) {
+          throw new Error("Updated onboarding material was missing from the response.");
+        }
+
+        setLocalMaterials((prev) =>
+          withCurrentFlag(prev.map((entry) => (entry.id === material.id ? savedMaterial : entry))),
+        );
+        setEditingId((current) => (current === material.id ? null : current));
+      } catch (error) {
+        console.error("[company onboarding update]", error);
+        setLocalMaterials(previousMaterials);
+        setRowErrors((prev) => ({ ...prev, [material.id]: locale === "zh" ? "保存失败。" : "Unable to save." }));
+      } finally {
+        setActiveMutation(null);
+      }
+    });
+  }
+
+  function handleDelete(material: LocalMaterial) {
+    const previousMaterials = localMaterials;
+    clearRowError(material.id);
+    setLocalMaterials((prev) => withCurrentFlag(prev.filter((entry) => entry.id !== material.id)));
+    setActiveMutation({ id: material.id, action: "deleting" });
+    setEditingId((current) => (current === material.id ? null : current));
+
+    startTransition(async () => {
+      try {
+        const formData = new FormData();
+        formData.set("companyId", companyId);
+        formData.set("materialId", material.id);
+        const result = await deleteCompanyOnboardingMaterialAction(formData);
+        if (!result.ok) {
+          setLocalMaterials(previousMaterials);
+          setRowErrors((prev) => ({ ...prev, [material.id]: result.error ?? (locale === "zh" ? "删除失败。" : "Unable to delete.") }));
+          return;
+        }
+      } catch (error) {
+        console.error("[company onboarding delete]", error);
+        setLocalMaterials(previousMaterials);
+        setRowErrors((prev) => ({ ...prev, [material.id]: locale === "zh" ? "删除失败。" : "Unable to delete." }));
+      } finally {
+        setActiveMutation(null);
+      }
+    });
+  }
 
   return (
-    <div className="space-y-3">
-      {!visibleMaterials.length ? (
+    <div className="space-y-4">
+      {!localMaterials.length ? (
         <p className="rounded-[10px] border border-dashed border-[hsl(var(--border))] px-4 py-3 text-sm text-[hsl(var(--muted))]">
           {t(locale, "onboardingHubManagePackageMissing")}
         </p>
       ) : (
-        visibleMaterials.map((material, index) => {
-          const isPending = "pending" in material;
-          const isCurrent = index === 0;
+        <div className="space-y-2">
+          {localMaterials.map((material) => {
+            const isEditing = editingId === material.id;
+            const isBusy = activeMutation?.id === material.id;
 
-          return (
-            <div key={material.id} className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_420px]">
-              <div className="rounded-[10px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
-                    {t(locale, "companyOnboardingTitle")}
-                  </p>
-                  {isCurrent ? (
-                    <span className="rounded-full bg-[hsl(var(--primary))]/10 px-2 py-0.5 text-[11px] font-semibold text-[hsl(var(--primary))]">
-                      {t(locale, "onboardingHubManageCurrentMaterial")}
-                    </span>
-                  ) : null}
-                  {isPending ? (
-                    <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
-                      {pendingBadgeLabel}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-3 space-y-2 text-sm">
-                  {material.packageHref ? (
-                    <a
-                      href={material.packageHref}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
-                    >
-                      {t(locale, "onboardingOpenPackage")}
-                    </a>
-                  ) : isPending ? (
-                    <p className="text-[hsl(var(--muted))]">{pendingPackageLabel}</p>
-                  ) : (
-                    <p className="text-[hsl(var(--muted))]">{t(locale, "onboardingHubManagePackageMissing")}</p>
-                  )}
-                  {material.packageAttachmentName ? (
-                    <p className="text-[hsl(var(--muted))]">
-                      {t(locale, "companyOnboardingUploadedFile")}: {material.packageAttachmentName}
-                    </p>
-                  ) : null}
-                  <p className="text-[hsl(var(--muted))]">
-                    {t(locale, "companyOnboardingVersion")}: {material.packageVersion}
-                  </p>
-                  <p className="text-[hsl(var(--muted))]">
-                    {t(locale, "companyOnboardingDeadlineDays")}: {material.deadlineDays}
-                  </p>
-                  {material.videoHref ? (
-                    <a
-                      href={material.videoHref}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
-                    >
-                      {t(locale, "onboardingVideoOpenLink")}
-                    </a>
-                  ) : null}
-                  {material.videoAttachmentName ? (
-                    <p className="text-[hsl(var(--muted))]">
-                      {t(locale, "companyOnboardingUploadedFile")}: {material.videoAttachmentName}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="rounded-[10px] border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
-                {isPending ? (
-                  <div className="grid gap-2 text-sm text-[hsl(var(--muted))]">
-                    <p>{pendingProgressLabel}</p>
+            return (
+              <div key={material.id} className="rounded-[10px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-[hsl(var(--foreground))]">{material.displayName}</p>
+                      {material.isCurrent ? (
+                        <span className="rounded-full bg-[hsl(var(--primary))]/10 px-2 py-0.5 text-[11px] font-semibold text-[hsl(var(--primary))]">
+                          {t(locale, "onboardingHubManageCurrentMaterial")}
+                        </span>
+                      ) : null}
+                      {material.pending && material.pendingAction ? (
+                        <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                          {pendingLabel(locale, material.pendingAction)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {material.displayDescription ? (
+                      <p className="mt-1 text-sm text-[hsl(var(--muted))]">{material.displayDescription}</p>
+                    ) : null}
+                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-[hsl(var(--muted))]">
+                      {material.packageHref ? (
+                        <a href={material.packageHref} target="_blank" rel="noreferrer" className="font-medium text-[hsl(var(--primary))] hover:underline">
+                          {t(locale, "onboardingOpenPackage")}
+                        </a>
+                      ) : null}
+                      {material.videoHref ? (
+                        <a href={material.videoHref} target="_blank" rel="noreferrer" className="font-medium text-[hsl(var(--primary))] hover:underline">
+                          {t(locale, "onboardingVideoOpenLink")}
+                        </a>
+                      ) : null}
+                      {material.packageAttachmentName ? (
+                        <span>
+                          {t(locale, "companyOnboardingUploadedFile")}: {material.packageAttachmentName}
+                        </span>
+                      ) : null}
+                    </div>
+                    {rowErrors[material.id] ? (
+                      <p className="mt-2 text-sm text-[hsl(var(--error))]">{rowErrors[material.id]}</p>
+                    ) : null}
                   </div>
-                ) : (
-                  <>
-                    <form action={updateCompanyOnboardingMaterialAction} className="grid gap-3">
-                      <input type="hidden" name="companyId" value={companyId} />
-                      <input type="hidden" name="materialId" value={material.id} />
+
+                  {!material.pending ? (
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Button type="button" variant="secondary" disabled={pending} onClick={() => setEditingId(isEditing ? null : material.id)}>
+                        {isEditing ? t(locale, "commonCancel") : t(locale, "commonEdit")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={pending}
+                        className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100"
+                        onClick={() => handleDelete(material)}
+                      >
+                        {isBusy && activeMutation?.action === "deleting"
+                          ? pendingLabel(locale, "deleting")
+                          : t(locale, "onboardingHubManageDeleteContent")}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {isEditing && !material.pending ? (
+                  <form className="mt-3 grid gap-3 border-t border-[hsl(var(--border))] pt-3" onSubmit={(event) => handleSaveSubmit(material, event)}>
+                    <input type="hidden" name="companyId" value={companyId} />
+                    <input type="hidden" name="materialId" value={material.id} />
+                    <input type="hidden" name="onboardingPackageVersion" value={material.packageVersion} />
+                    <input type="hidden" name="onboardingDeadlineDays" value={String(material.deadlineDays)} />
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t(locale, "commonName")}</label>
+                        <Input name="onboardingMaterialTitle" defaultValue={material.title ?? material.displayName} />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
+                        <Input name="onboardingMaterialDescription" defaultValue={material.description ?? ""} />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
                       <div className="space-y-1">
                         <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
                         <Input name="onboardingPackageUrl" defaultValue={material.packageUrl} placeholder="https://..." />
@@ -226,125 +373,81 @@ export function CompanyOnboardingMaterialsManager({
                       <div className="space-y-1">
                         <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
                         <Input name="onboardingVideoUrl" defaultValue={material.videoUrl ?? ""} placeholder="https://..." />
-                        <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium">{t(locale, "companyOnboardingFileName")}</label>
-                        <Input name="onboardingPackageFileName" defaultValue={material.packageAttachmentName ?? ""} placeholder="Onboarding video" />
-                        <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingFileNameHelp")}</p>
-                      </div>
-                      <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingUploadHelp")}</p>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>
-                          <Input name="onboardingPackageVersion" defaultValue={material.packageVersion} />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium">{t(locale, "companyOnboardingDeadlineDays")}</label>
-                          <Input name="onboardingDeadlineDays" type="number" min={1} max={365} defaultValue={String(material.deadlineDays)} />
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <FormSubmitButton type="submit" variant="secondary">
-                          {t(locale, "onboardingHubManageSaveContent")}
-                        </FormSubmitButton>
-                      </div>
-                    </form>
-                    <div className="mt-3 grid gap-3 border-t border-[hsl(var(--border))] pt-3">
-                      <form action={uploadCompanyOnboardingPackageAction} encType="multipart/form-data" className="grid gap-2">
-                        <input type="hidden" name="companyId" value={companyId} />
-                        <input type="hidden" name="materialId" value={material.id} />
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium">{t(locale, "companyOnboardingFileName")}</label>
-                          <Input
-                            name="onboardingPackageFileName"
-                            defaultValue={getDisplayFileNameStem(material.packageAttachmentName)}
-                            placeholder="Onboarding video"
-                          />
-                        </div>
-                        <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadPackage")}</label>
-                        <input type="file" name="file" required className="text-xs" />
-                        <FormSubmitButton type="submit" variant="secondary">
-                          {t(locale, "companyOnboardingUploadPackage")}
-                        </FormSubmitButton>
-                      </form>
                     </div>
-                    <form action={deleteCompanyOnboardingMaterialAction} className="mt-3">
-                      <input type="hidden" name="companyId" value={companyId} />
-                      <input type="hidden" name="materialId" value={material.id} />
-                      <FormSubmitButton
-                        type="submit"
-                        variant="secondary"
-                        className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100"
-                      >
-                        {t(locale, "onboardingHubManageDeleteContent")}
-                      </FormSubmitButton>
-                    </form>
-                  </>
-                )}
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">{t(locale, "companyOnboardingReplaceFile")}</label>
+                      <input type="file" name="onboardingPackageFile" className="text-xs" />
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="submit" disabled={pending}>
+                        {isBusy && activeMutation?.action === "saving"
+                          ? pendingLabel(locale, "saving")
+                          : t(locale, "onboardingHubManageSaveContent")}
+                      </Button>
+                      <Button type="button" variant="secondary" disabled={pending} onClick={() => setEditingId(null)}>
+                        {t(locale, "commonCancel")}
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
               </div>
-            </div>
-          );
-        })
+            );
+          })}
+        </div>
       )}
 
       <div className="rounded-[10px] border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
-          {t(locale, "onboardingHubManageAddContent")}
+          {t(locale, "companyOnboardingAddMore")}
         </p>
-        <form
-          ref={formRef}
-          action={createFormAction}
-          encType="multipart/form-data"
-          className="mt-3 grid gap-3"
-          onSubmit={() => {
-            const nextPendingMaterials = buildPendingMaterials({
-              companyId,
-              packageUrl: packageUrlInputRef.current?.value.trim() ?? "",
-              videoUrl: videoUrlInputRef.current?.value.trim() || null,
-              packageVersion: packageVersionInputRef.current?.value.trim() || "v1",
-              deadlineDays: Math.max(1, Math.min(365, Number(deadlineDaysInputRef.current?.value ?? 14) || 14)),
-              requestedFileName: packageFileNameInputRef.current?.value.trim() ?? "",
-              files: Array.from(packageFilesInputRef.current?.files ?? []).filter((file) => file.size > 0),
-            });
-            setPendingMaterials(nextPendingMaterials);
-          }}
-        >
+        <form ref={addFormRef} className="mt-3 grid gap-3" onSubmit={handleAddSubmit}>
           <input type="hidden" name="companyId" value={companyId} />
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
-            <Input ref={packageUrlInputRef} name="onboardingPackageUrl" placeholder="https://..." />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
-            <Input ref={videoUrlInputRef} name="onboardingVideoUrl" placeholder="https://..." />
-            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "companyOnboardingFileName")}</label>
-            <Input ref={packageFileNameInputRef} name="onboardingPackageFileName" placeholder="Onboarding video" />
-            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingFileNameHelp")}</p>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadPackage")}</label>
-            <input ref={packageFilesInputRef} type="file" name="onboardingPackageFiles" className="text-xs" />
-          </div>
-          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingUploadHelp")}</p>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <input type="hidden" name="onboardingPackageVersion" value="v1" />
+
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>
-              <Input ref={packageVersionInputRef} name="onboardingPackageVersion" defaultValue="v1" />
+              <label className="text-xs font-medium">{t(locale, "commonName")}</label>
+              <Input name="onboardingMaterialTitle" placeholder="Onboarding video" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
+              <Input name="onboardingMaterialDescription" placeholder={locale === "zh" ? "可选说明" : "Optional description"} />
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
+              <Input name="onboardingPackageUrl" placeholder="https://..." />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
+              <Input name="onboardingVideoUrl" placeholder="https://..." />
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadPackage")}</label>
+              <input type="file" name="onboardingPackageFile" className="text-xs" />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "companyOnboardingDeadlineDays")}</label>
-              <Input ref={deadlineDaysInputRef} name="onboardingDeadlineDays" type="number" min={1} max={365} defaultValue="14" />
+              <Input name="onboardingDeadlineDays" type="number" min={1} max={365} defaultValue="14" />
             </div>
           </div>
-          {createState.error ? <p className="text-sm text-[hsl(var(--error))]">{createState.error}</p> : null}
+
+          {createError ? <p className="text-sm text-[hsl(var(--error))]">{createError}</p> : null}
+
           <div className="flex flex-wrap gap-2">
-            <FormSubmitButton type="submit" pendingLabel={locale === "zh" ? "上传中…" : "Uploading..."}>
-              {t(locale, "onboardingHubManageAddContent")}
-            </FormSubmitButton>
+            <Button type="submit" disabled={pending}>
+              {activeMutation?.id === "create" && activeMutation.action === "adding"
+                ? pendingLabel(locale, "adding")
+                : t(locale, "onboardingHubManageAddContent")}
+            </Button>
           </div>
         </form>
       </div>
