@@ -1,5 +1,5 @@
 import type { AccessUser } from "@/lib/access";
-import { canEditWorkflow, canViewProject, isSuperAdmin } from "@/lib/access";
+import { canEditWorkflow, canViewProject, isGroupAdmin, isSuperAdmin } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 
 export type AttachmentRow = {
@@ -13,7 +13,16 @@ export type AttachmentRow = {
   node: { project: Parameters<typeof canViewProject>[1] } | null;
   project: Parameters<typeof canViewProject>[1] | null;
   knowledgeAsset: { authorId: string } | null;
+  onboardingPackageFor?: { companyId: string; company: { orgGroupId: string } }[];
+  onboardingVideoFor?: { companyId: string; company: { orgGroupId: string } }[];
 };
+
+function canViewOnboardingMaterialAttachment(actor: AccessUser, rows: { companyId: string; company: { orgGroupId: string } }[]) {
+  return rows.some(
+    (row) =>
+      actor.companyMemberships.some((membership) => membership.companyId === row.companyId) || isGroupAdmin(actor, row.company.orgGroupId),
+  );
+}
 
 export async function canViewAttachment(actor: AccessUser, att: AttachmentRow): Promise<boolean> {
   if (isSuperAdmin(actor)) return true;
@@ -24,6 +33,8 @@ export async function canViewAttachment(actor: AccessUser, att: AttachmentRow): 
       actor.id === att.knowledgeAsset.authorId || (await userHasPermission(actor, "knowledge.read"))
     );
   }
+  if (canViewOnboardingMaterialAttachment(actor, att.onboardingPackageFor ?? [])) return true;
+  if (canViewOnboardingMaterialAttachment(actor, att.onboardingVideoFor ?? [])) return true;
   if (att.contributorUserId) return actor.id === att.contributorUserId;
   return false;
 }
@@ -41,6 +52,8 @@ export async function canManageAttachment(actor: AccessUser, att: AttachmentRow)
   if (att.knowledgeAsset) {
     return actor.id === att.knowledgeAsset.authorId;
   }
+  if (canViewOnboardingMaterialAttachment(actor, att.onboardingPackageFor ?? [])) return true;
+  if (canViewOnboardingMaterialAttachment(actor, att.onboardingVideoFor ?? [])) return true;
   if (att.contributorUserId) return actor.id === att.contributorUserId;
   return false;
 }

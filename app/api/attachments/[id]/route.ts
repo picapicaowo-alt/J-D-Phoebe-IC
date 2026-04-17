@@ -21,6 +21,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       project: { include: { company: true } },
       knowledgeAsset: { include: { author: true } },
       contributor: true,
+      onboardingPackageFor: { include: { company: true } },
+      onboardingVideoFor: { include: { company: true } },
     },
   });
   if (!att) return new NextResponse("Not found", { status: 404 });

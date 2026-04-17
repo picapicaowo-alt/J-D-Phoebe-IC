@@ -1,4 +1,4 @@
-import type { Company, CompanyOnboardingMaterial } from "@prisma/client";
+import type { Attachment, Company, CompanyOnboardingMaterial } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const DEFAULT_COMPANY_ONBOARDING_VERSION = "v1";
@@ -15,12 +15,25 @@ type CompanyWithOnboardingMaterials = Pick<
   | "onboardingPackageVersion"
   | "onboardingDeadlineDays"
 > & {
-  onboardingMaterials?: CompanyOnboardingMaterial[];
+  onboardingMaterials?: (CompanyOnboardingMaterial & {
+    packageAttachment?: Pick<Attachment, "id" | "fileName" | "mimeType"> | null;
+    videoAttachment?: Pick<Attachment, "id" | "fileName" | "mimeType"> | null;
+  })[];
 };
 
 export type ResolvedCompanyOnboardingMaterial = CompanyOnboardingMaterial & {
   source: "db" | "legacy";
   isCurrent: boolean;
+  packageHref: string;
+  videoHref: string | null;
+  packageAttachmentName: string | null;
+  videoAttachmentName: string | null;
+  videoMimeType: string | null;
+};
+
+type MaterialWithAttachments = CompanyOnboardingMaterial & {
+  packageAttachment?: Pick<Attachment, "id" | "fileName" | "mimeType"> | null;
+  videoAttachment?: Pick<Attachment, "id" | "fileName" | "mimeType"> | null;
 };
 
 function normalizePackageVersion(value: string | null | undefined) {
@@ -40,6 +53,31 @@ function sortMaterialsDesc(materials: CompanyOnboardingMaterial[]) {
   });
 }
 
+export function attachmentHref(id: string) {
+  return `/api/attachments/${id}`;
+}
+
+export function resolveMaterialMedia(material: {
+  packageUrl: string;
+  videoUrl: string | null;
+  packageAttachmentId?: string | null;
+  videoAttachmentId?: string | null;
+  packageAttachment?: Pick<Attachment, "id" | "fileName" | "mimeType"> | null;
+  videoAttachment?: Pick<Attachment, "id" | "fileName" | "mimeType"> | null;
+}) {
+  const packageHref = material.packageAttachmentId ? attachmentHref(material.packageAttachmentId) : material.packageUrl.trim();
+  const videoHref = material.videoAttachmentId
+    ? attachmentHref(material.videoAttachmentId)
+    : (material.videoUrl?.trim() || null);
+  return {
+    packageHref,
+    videoHref,
+    packageAttachmentName: material.packageAttachment?.fileName ?? null,
+    videoAttachmentName: material.videoAttachment?.fileName ?? null,
+    videoMimeType: material.videoAttachment?.mimeType ?? null,
+  };
+}
+
 export function isLegacyCompanyOnboardingMaterialId(materialId: string) {
   return materialId.startsWith(LEGACY_COMPANY_ONBOARDING_MATERIAL_ID_PREFIX);
 }
@@ -53,6 +91,7 @@ export function resolveCompanyOnboardingMaterials(
       ...material,
       videoUrl: normalizeVideoUrl(material.videoUrl),
       packageVersion: normalizePackageVersion(material.packageVersion),
+      ...resolveMaterialMedia(material as MaterialWithAttachments),
       source: "db",
       isCurrent: index === 0,
     }));
@@ -69,8 +108,15 @@ export function resolveCompanyOnboardingMaterials(
       videoUrl: normalizeVideoUrl(company.onboardingVideoUrl),
       packageVersion: normalizePackageVersion(company.onboardingPackageVersion),
       deadlineDays: company.onboardingDeadlineDays ?? DEFAULT_COMPANY_ONBOARDING_DEADLINE_DAYS,
+      packageAttachmentId: null,
+      videoAttachmentId: null,
       createdAt: company.createdAt,
       updatedAt: company.updatedAt,
+      packageHref: packageUrl,
+      videoHref: normalizeVideoUrl(company.onboardingVideoUrl),
+      packageAttachmentName: null,
+      videoAttachmentName: null,
+      videoMimeType: null,
       source: "legacy",
       isCurrent: true,
     },
@@ -88,6 +134,10 @@ export async function migrateLegacyCompanyOnboardingMaterial(companyId: string) 
       onboardingMaterials: {
         orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
         take: 1,
+        include: {
+          packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
+          videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+        },
       },
     },
   });

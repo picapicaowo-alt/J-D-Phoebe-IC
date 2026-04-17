@@ -67,6 +67,18 @@ type VisiblePeerRow = {
   title: string | null;
   avatarUrl: string | null;
 };
+type LatestDirectMessageRef = {
+  peerId: string;
+  id: string;
+};
+type LatestGroupMessageRef = {
+  groupId: string;
+  id: string;
+};
+type GroupUnreadCountRow = {
+  groupId: string;
+  unreadCount: number;
+};
 
 export type ChatThreadType = "direct" | "group";
 
@@ -331,16 +343,48 @@ async function listCompanyMessagingCandidates(companyId: string, currentUserId: 
 async function buildGroupOptions(user: AccessUser): Promise<ChatCompanyOption[]> {
   const companies = await listManageableCompanies(user);
   if (!companies.length) return [];
+  const companyIds = companies.map((company) => company.id);
 
-  const options = await Promise.all(
-    companies.map(async (company) => ({
-      id: company.id,
-      name: company.name,
-      members: await listCompanyMessagingCandidates(company.id, user.id),
-    })),
-  );
+  const rows = await prisma.user.findMany({
+    where: {
+      active: true,
+      deletedAt: null,
+      OR: [
+        { id: user.id },
+        { companyMemberships: { some: { companyId: { in: companyIds } } } },
+        { projectMemberships: { some: { project: { companyId: { in: companyIds } } } } },
+      ],
+    },
+    orderBy: { name: "asc" },
+    select: {
+      ...memberSelect,
+      companyMemberships: {
+        where: { companyId: { in: companyIds } },
+        select: { companyId: true },
+      },
+      projectMemberships: {
+        where: { project: { companyId: { in: companyIds } } },
+        select: {
+          project: {
+            select: { companyId: true },
+          },
+        },
+      },
+    },
+  });
 
-  return options;
+  return companies.map((company) => ({
+    id: company.id,
+    name: company.name,
+    members: rows
+      .filter(
+        (row) =>
+          row.id === user.id ||
+          row.companyMemberships.some((membership) => membership.companyId === company.id) ||
+          row.projectMemberships.some((membership) => membership.project.companyId === company.id),
+      )
+      .map((row) => toMemberOption(row)),
+  }));
 }
 
 async function listDirectMessagePreferences(userId: string, peerIds: string[]): Promise<DirectPreferenceRow[]> {
@@ -404,6 +448,125 @@ async function findManagedMessageGroup(user: AccessUser, groupId: string) {
   return group;
 }
 
+async function getLatestDirectMessagesByPeer(userId: string, peerIds: string[]) {
+  if (!peerIds.length) return new Map<string, DirectMessageRow>();
+
+  const refs = await prisma.$queryRaw<LatestDirectMessageRef[]>(Prisma.sql`
+    SELECT DISTINCT ON ("peerId")
+      "peerId",
+      id
+    FROM (
+      SELECT
+        dm.id,
+        dm."createdAt",
+        CASE
+          WHEN dm."senderId" = ${userId} THEN dm."recipientId"
+          ELSE dm."senderId"
+        END AS "peerId"
+      FROM "DirectMessage" dm
+      WHERE
+        (dm."senderId" = ${userId} AND dm."recipientId" IN (${Prisma.join(peerIds)}))
+        OR (dm."recipientId" = ${userId} AND dm."senderId" IN (${Prisma.join(peerIds)}))
+    ) ranked
+    ORDER BY "peerId", "createdAt" DESC, id DESC
+  `);
+
+  if (!refs.length) return new Map<string, DirectMessageRow>();
+
+  const rows = await prisma.directMessage.findMany({
+    where: { id: { in: refs.map((ref) => ref.id) } },
+    include: directMessageInclude,
+  });
+
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  return new Map(refs.map((ref) => [ref.peerId, rowById.get(ref.id)]).filter((entry): entry is [string, DirectMessageRow] => !!entry[1]));
+}
+
+async function getLatestGroupMessagesByGroup(groupIds: string[]) {
+  if (!groupIds.length) return new Map<string, GroupMessageRow>();
+
+  const refs = await prisma.$queryRaw<LatestGroupMessageRef[]>(Prisma.sql`
+    SELECT DISTINCT ON ("groupId")
+      "groupId",
+      id
+    FROM "MessageGroupMessage"
+    WHERE "groupId" IN (${Prisma.join(groupIds)})
+    ORDER BY "groupId", "createdAt" DESC, id DESC
+  `);
+
+  if (!refs.length) return new Map<string, GroupMessageRow>();
+
+  const rows = await prisma.messageGroupMessage.findMany({
+    where: { id: { in: refs.map((ref) => ref.id) } },
+    include: groupMessageInclude,
+  });
+
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  return new Map(refs.map((ref) => [ref.groupId, rowById.get(ref.id)]).filter((entry): entry is [string, GroupMessageRow] => !!entry[1]));
+}
+
+async function getGroupUnreadCounts(userId: string, groupIds: string[]) {
+  if (!groupIds.length) return new Map<string, number>();
+
+  const rows = await prisma.$queryRaw<GroupUnreadCountRow[]>(Prisma.sql`
+    SELECT
+      mgm."groupId",
+      COUNT(*)::int AS "unreadCount"
+    FROM "MessageGroupMessage" mgm
+    INNER JOIN "MessageGroupMember" mgmb
+      ON mgmb."groupId" = mgm."groupId"
+      AND mgmb."userId" = ${userId}
+    WHERE
+      mgm."groupId" IN (${Prisma.join(groupIds)})
+      AND mgm."senderId" <> ${userId}
+      AND (mgmb."lastReadAt" IS NULL OR mgm."createdAt" > mgmb."lastReadAt")
+    GROUP BY mgm."groupId"
+  `);
+
+  return new Map(rows.map((row) => [row.groupId, Number(row.unreadCount)]));
+}
+
+function buildGroupThreadDetail(user: AccessUser, membership: GroupMembershipRow, latest: GroupMessageRow | null, unreadCount: number): ChatThreadDetail {
+  const members = sortByName(membership.group.members.map((member) => toMemberOption(member.user)));
+  const key = makeThreadKey("group", membership.groupId);
+  return {
+    key,
+    type: "group",
+    id: membership.groupId,
+    name: membership.group.name,
+    subtitle: membership.group.company.name,
+    avatarUrl: null,
+    unreadCount,
+    latestMessageAt: latest?.createdAt.toISOString() ?? null,
+    latestMessageText: latest ? normalizeText(latest.body) : null,
+    latestAttachmentCount: latest?.attachments.length ?? 0,
+    latestMessageFromSelf: latest ? latest.senderId === user.id : false,
+    canManage: canManageCompanyMessaging(user, membership.group.company),
+    isMuted: !!membership.mutedAt,
+    memberCount: members.length,
+    companyId: membership.group.company.id,
+    companyName: membership.group.company.name,
+    members,
+  };
+}
+
+function detailToSummary(detail: ChatThreadDetail): ChatThreadSummary {
+  const { members: _members, ...summary } = detail;
+  return summary;
+}
+
+async function getGroupThreadDetail(user: AccessUser, groupId: string) {
+  const membership = await findMessageGroupMembership(user, groupId);
+  if (!membership) return null;
+
+  const [latest, unreadCounts] = await Promise.all([
+    getLatestGroupMessagesByGroup([membership.groupId]),
+    getGroupUnreadCounts(user.id, [membership.groupId]),
+  ]);
+
+  return buildGroupThreadDetail(user, membership, latest.get(membership.groupId) ?? null, unreadCounts.get(membership.groupId) ?? 0);
+}
+
 async function buildDirectThreadSummaries(user: AccessUser, peers: VisiblePeerRow[]) {
   if (!peers.length) {
     return {
@@ -413,7 +576,7 @@ async function buildDirectThreadSummaries(user: AccessUser, peers: VisiblePeerRo
   }
 
   const peerIds = peers.map((peer) => peer.id);
-  const [unreadGroups, latestMessages, preferences] = await Promise.all([
+  const [unreadGroups, latestByPeer, preferences] = await Promise.all([
     prisma.directMessage.groupBy({
       by: ["senderId"],
       where: {
@@ -423,27 +586,12 @@ async function buildDirectThreadSummaries(user: AccessUser, peers: VisiblePeerRo
       },
       _count: { _all: true },
     }),
-    Promise.all(
-      peers.map((peer) =>
-        prisma.directMessage.findFirst({
-          where: directConversationWhere(user.id, peer.id),
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          include: directMessageInclude,
-        }),
-      ),
-    ),
+    getLatestDirectMessagesByPeer(user.id, peerIds),
     listDirectMessagePreferences(user.id, peerIds),
   ]);
 
   const unreadByPeer = new Map(unreadGroups.map((row) => [row.senderId, row._count._all]));
-  const latestByPeer = new Map<string, DirectMessageRow>();
   const preferenceByPeer = new Map(preferences.map((row) => [row.peerId, row]));
-
-  for (const message of latestMessages) {
-    if (!message) continue;
-    const peerId = message.senderId === user.id ? message.recipientId : message.senderId;
-    latestByPeer.set(peerId, message);
-  }
 
   const details = new Map<string, ChatThreadDetail>();
   const summaries = peers.map((peer) => {
@@ -484,53 +632,25 @@ async function buildGroupThreadSummaries(user: AccessUser, memberships: GroupMem
     };
   }
 
-  const rows = await Promise.all(
-    memberships.map(async (membership) => {
-      const [latest, unreadCount] = await Promise.all([
-        prisma.messageGroupMessage.findFirst({
-          where: { groupId: membership.groupId },
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          include: groupMessageInclude,
-        }),
-        prisma.messageGroupMessage.count({
-          where: {
-            groupId: membership.groupId,
-            senderId: { not: user.id },
-            ...(membership.lastReadAt ? { createdAt: { gt: membership.lastReadAt } } : {}),
-          },
-        }),
-      ]);
+  const groupIds = memberships.map((membership) => membership.groupId);
+  const [latestByGroup, unreadByGroup] = await Promise.all([
+    getLatestGroupMessagesByGroup(groupIds),
+    getGroupUnreadCounts(user.id, groupIds),
+  ]);
 
-      const members = sortByName(membership.group.members.map((member) => toMemberOption(member.user)));
-      const key = makeThreadKey("group", membership.groupId);
-      const summary: ChatThreadSummary = {
-        key,
-        type: "group",
-        id: membership.groupId,
-        name: membership.group.name,
-        subtitle: membership.group.company.name,
-        avatarUrl: null,
-        unreadCount,
-        latestMessageAt: latest?.createdAt.toISOString() ?? null,
-        latestMessageText: latest ? normalizeText(latest.body) : null,
-        latestAttachmentCount: latest?.attachments.length ?? 0,
-        latestMessageFromSelf: latest ? latest.senderId === user.id : false,
-        canManage: canManageCompanyMessaging(user, membership.group.company),
-        isMuted: !!membership.mutedAt,
-        memberCount: members.length,
-        companyId: membership.group.company.id,
-        companyName: membership.group.company.name,
-      };
+  const rows = memberships.map((membership) => {
+    const detail = buildGroupThreadDetail(
+      user,
+      membership,
+      latestByGroup.get(membership.groupId) ?? null,
+      unreadByGroup.get(membership.groupId) ?? 0,
+    );
 
-      return {
-        summary,
-        detail: {
-          ...summary,
-          members,
-        } satisfies ChatThreadDetail,
-      };
-    }),
-  );
+    return {
+      summary: detailToSummary(detail),
+      detail,
+    };
+  });
 
   const details = new Map<string, ChatThreadDetail>();
   for (const row of rows) details.set(row.summary.key, row.detail);
@@ -845,7 +965,12 @@ export async function createMessageGroup(user: AccessUser, input: { companyId: s
     select: { id: true },
   });
 
-  return { threadKey: makeThreadKey("group", group.id) };
+  const thread = await getGroupThreadDetail(user, group.id);
+  if (!thread) {
+    throw new Error("This group chat is not available.");
+  }
+
+  return { threadKey: thread.key, thread };
 }
 
 export async function updateMessageGroup(user: AccessUser, groupId: string, input: { name: string; memberIds: string[] }) {
@@ -897,7 +1022,12 @@ export async function updateMessageGroup(user: AccessUser, groupId: string, inpu
       : []),
   ]);
 
-  return { threadKey: makeThreadKey("group", group.id) };
+  const thread = await getGroupThreadDetail(user, group.id);
+  if (!thread) {
+    throw new Error("This group chat is not available.");
+  }
+
+  return { threadKey: thread.key, thread };
 }
 
 export async function deleteMessageGroup(user: AccessUser, groupId: string) {
@@ -907,11 +1037,11 @@ export async function deleteMessageGroup(user: AccessUser, groupId: string) {
   }
 
   await prisma.messageGroup.delete({ where: { id: group.id } });
-  return { ok: true };
+  return { ok: true, threadKey: makeThreadKey("group", group.id) };
 }
 
 export async function getMessagingUnreadCount(userId: string) {
-  const [mutedDirectPreferences, groupMemberships] = await Promise.all([
+  const [mutedDirectPreferences, groupRows] = await Promise.all([
     prisma.directMessagePreference.findMany({
       where: {
         userId,
@@ -919,10 +1049,17 @@ export async function getMessagingUnreadCount(userId: string) {
       },
       select: { peerId: true },
     }),
-    prisma.messageGroupMember.findMany({
-      where: { userId },
-      select: { groupId: true, lastReadAt: true, mutedAt: true },
-    }),
+    prisma.$queryRaw<{ unreadCount: number }[]>(Prisma.sql`
+      SELECT COUNT(*)::int AS "unreadCount"
+      FROM "MessageGroupMessage" mgm
+      INNER JOIN "MessageGroupMember" mgmb
+        ON mgmb."groupId" = mgm."groupId"
+        AND mgmb."userId" = ${userId}
+        AND mgmb."mutedAt" IS NULL
+      WHERE
+        mgm."senderId" <> ${userId}
+        AND (mgmb."lastReadAt" IS NULL OR mgm."createdAt" > mgmb."lastReadAt")
+    `),
   ]);
 
   const mutedPeerIds = mutedDirectPreferences.map((row) => row.peerId);
@@ -934,21 +1071,7 @@ export async function getMessagingUnreadCount(userId: string) {
     },
   });
 
-  const groupCounts = await Promise.all(
-    groupMemberships
-      .filter((membership) => !membership.mutedAt)
-      .map((membership) =>
-      prisma.messageGroupMessage.count({
-        where: {
-          groupId: membership.groupId,
-          senderId: { not: userId },
-          ...(membership.lastReadAt ? { createdAt: { gt: membership.lastReadAt } } : {}),
-        },
-      }),
-      ),
-  );
-
-  return directUnread + groupCounts.reduce((sum, count) => sum + count, 0);
+  return directUnread + Number(groupRows[0]?.unreadCount ?? 0);
 }
 
 export async function getRecentMessagesForStream(userId: string, after: Date) {

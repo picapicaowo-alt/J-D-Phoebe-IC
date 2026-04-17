@@ -1,16 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { CompanyStatus } from "@prisma/client";
+import { AttachmentResourceKind, CompanyStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import {
   DEFAULT_COMPANY_ONBOARDING_DEADLINE_DAYS,
   DEFAULT_COMPANY_ONBOARDING_VERSION,
+  attachmentHref,
   isLegacyCompanyOnboardingMaterialId,
   migrateLegacyCompanyOnboardingMaterial,
 } from "@/lib/company-onboarding-materials";
+import { sanitizeFileName, storeUploadedFile } from "@/lib/file-storage";
 import { backfillMemberOnboardingsForCompany } from "@/lib/member-onboarding";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -30,7 +32,7 @@ function parseOnboardingDeadlineDays(raw: FormDataEntryValue | null) {
 
 function parseCompanyOnboardingMaterial(formData: FormData) {
   return {
-    packageUrl: requireString(formData, "onboardingPackageUrl"),
+    packageUrl: String(formData.get("onboardingPackageUrl") ?? "").trim(),
     videoUrl: String(formData.get("onboardingVideoUrl") ?? "").trim() || null,
     packageVersion: String(formData.get("onboardingPackageVersion") ?? "").trim() || DEFAULT_COMPANY_ONBOARDING_VERSION,
     deadlineDays: parseOnboardingDeadlineDays(formData.get("onboardingDeadlineDays")),
@@ -43,6 +45,10 @@ async function requireCompanyForUpdate(actor: AccessUser, companyId: string) {
     include: {
       onboardingMaterials: {
         orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+        include: {
+          packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
+          videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+        },
       },
     },
   });
@@ -51,6 +57,22 @@ async function requireCompanyForUpdate(actor: AccessUser, companyId: string) {
     throw new Error("Forbidden");
   }
   return company;
+}
+
+async function requireEditableOnboardingMaterial(actor: AccessUser, companyId: string, materialId: string) {
+  await requireCompanyForUpdate(actor, companyId);
+  const targetMaterial = isLegacyCompanyOnboardingMaterialId(materialId)
+    ? await migrateLegacyCompanyOnboardingMaterial(companyId)
+    : await prisma.companyOnboardingMaterial.findFirst({
+        where: { id: materialId, companyId },
+        include: {
+          packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
+          videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+        },
+      });
+
+  if (!targetMaterial) throw new Error("Not found");
+  return targetMaterial;
 }
 
 function revalidateCompanyPaths(companyId: string) {
@@ -147,19 +169,19 @@ export async function updateCompanyOnboardingMaterialAction(formData: FormData) 
   const materialId = requireString(formData, "materialId");
   await requireCompanyForUpdate(user, companyId);
 
-  const targetMaterial = isLegacyCompanyOnboardingMaterialId(materialId)
-    ? await migrateLegacyCompanyOnboardingMaterial(companyId)
-    : await prisma.companyOnboardingMaterial.findFirst({
-        where: { id: materialId, companyId },
-      });
-
-  if (!targetMaterial) {
-    throw new Error("Not found");
-  }
+  const targetMaterial = await requireEditableOnboardingMaterial(user, companyId, materialId);
+  const nextValues = parseCompanyOnboardingMaterial(formData);
+  const currentPackageHref = targetMaterial.packageAttachmentId ? attachmentHref(targetMaterial.packageAttachmentId) : null;
+  const currentVideoHref = targetMaterial.videoAttachmentId ? attachmentHref(targetMaterial.videoAttachmentId) : null;
 
   await prisma.companyOnboardingMaterial.update({
     where: { id: targetMaterial.id },
-    data: parseCompanyOnboardingMaterial(formData),
+    data: {
+      ...nextValues,
+      packageAttachmentId: currentPackageHref && nextValues.packageUrl !== currentPackageHref ? null : targetMaterial.packageAttachmentId,
+      videoAttachmentId:
+        currentVideoHref && nextValues.videoUrl !== currentVideoHref ? null : targetMaterial.videoAttachmentId,
+    },
   });
 
   await backfillMemberOnboardingsForCompany(companyId);
@@ -184,9 +206,17 @@ export async function deleteCompanyOnboardingMaterialAction(formData: FormData) 
   } else {
     const material = await prisma.companyOnboardingMaterial.findFirst({
       where: { id: materialId, companyId },
-      select: { id: true },
+      select: { id: true, packageAttachmentId: true, videoAttachmentId: true },
     });
     if (!material) throw new Error("Not found");
+
+    const attachmentIds = [material.packageAttachmentId, material.videoAttachmentId].filter(Boolean) as string[];
+    if (attachmentIds.length) {
+      await prisma.attachment.updateMany({
+        where: { id: { in: attachmentIds }, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
+    }
 
     await prisma.companyOnboardingMaterial.delete({
       where: { id: material.id },
@@ -194,6 +224,69 @@ export async function deleteCompanyOnboardingMaterialAction(formData: FormData) 
   }
 
   revalidateCompanyPaths(companyId);
+}
+
+async function uploadOnboardingMaterialFile(
+  formData: FormData,
+  kind: "package" | "video",
+  acceptMimePrefix?: string,
+) {
+  const user = (await requireUser()) as AccessUser;
+  await assertPermission(user, "company.update");
+  const companyId = requireString(formData, "companyId");
+  const materialId = requireString(formData, "materialId");
+  const material = await requireEditableOnboardingMaterial(user, companyId, materialId);
+
+  const file = formData.get("file");
+  if (!file || typeof file === "string" || !("arrayBuffer" in file)) throw new Error("Missing file");
+  const mimeType = file.type || "application/octet-stream";
+  if (acceptMimePrefix && !mimeType.startsWith(acceptMimePrefix)) {
+    throw new Error(`Expected a ${acceptMimePrefix.replace("/", "")} file`);
+  }
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  const fileName = sanitizeFileName(file.name || "upload");
+  const previousVersionId = kind === "package" ? material.packageAttachmentId : material.videoAttachmentId;
+  const { storageKey, blobUrl } = await storeUploadedFile(buf, fileName, mimeType, `onboarding/${companyId}/${material.id}/${kind}`);
+
+  const attachment = await prisma.attachment.create({
+    data: {
+      resourceKind: AttachmentResourceKind.FILE,
+      previousVersionId,
+      fileName,
+      mimeType,
+      sizeBytes: buf.length,
+      storageKey,
+      blobUrl,
+      uploadedById: user.id,
+      description: kind === "package" ? "Onboarding package upload" : "Onboarding video upload",
+    },
+  });
+
+  await prisma.companyOnboardingMaterial.update({
+    where: { id: material.id },
+    data:
+      kind === "package"
+        ? {
+            packageAttachmentId: attachment.id,
+            packageUrl: attachmentHref(attachment.id),
+          }
+        : {
+            videoAttachmentId: attachment.id,
+            videoUrl: attachmentHref(attachment.id),
+          },
+  });
+
+  await backfillMemberOnboardingsForCompany(companyId);
+  revalidateCompanyPaths(companyId);
+}
+
+export async function uploadCompanyOnboardingPackageAction(formData: FormData) {
+  await uploadOnboardingMaterialFile(formData, "package");
+}
+
+export async function uploadCompanyOnboardingVideoAction(formData: FormData) {
+  await uploadOnboardingMaterialFile(formData, "video", "video/");
 }
 
 export async function archiveCompanyAction(formData: FormData) {

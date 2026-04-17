@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { UserFace } from "@/components/user-face";
 import { cn } from "@/lib/utils";
-import type { ChatMessage, ChatPageData, ChatThreadSummary } from "@/lib/direct-messages";
+import type { ChatMessage, ChatPageData, ChatThreadDetail, ChatThreadSummary } from "@/lib/direct-messages";
 
 type Props = {
   locale: "en" | "zh";
@@ -153,6 +153,26 @@ function appendMessage(messages: ChatMessage[], incoming: ChatMessage) {
   return [...messages, incoming].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
 
+function threadDetailToSummary(thread: ChatThreadDetail): ChatThreadSummary {
+  const { members: _members, ...summary } = thread;
+  return summary;
+}
+
+function summaryToDetail(thread: ChatThreadSummary): ChatThreadDetail {
+  return {
+    ...thread,
+    members: [],
+  };
+}
+
+function upsertThread(current: ChatThreadSummary[], nextThread: ChatThreadSummary) {
+  const existingIndex = current.findIndex((thread) => thread.key === nextThread.key);
+  if (existingIndex === -1) {
+    return sortThreads([...current, nextThread]);
+  }
+  return sortThreads(current.map((thread) => (thread.key === nextThread.key ? nextThread : thread)));
+}
+
 function previewText(thread: ChatThreadSummary, copy: ReturnType<typeof copyFor>) {
   if (thread.latestMessageText) return thread.latestMessageText;
   if (thread.latestAttachmentCount > 1) return copy.attachmentMany(thread.latestAttachmentCount);
@@ -209,6 +229,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   const [manageGroupName, setManageGroupName] = useState("");
   const [manageMemberIds, setManageMemberIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const threadsRef = useRef(initialData.threads);
   const selectedThreadRef = useRef<string | null>(initialData.selectedThreadKey);
   const requestRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -216,6 +237,10 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   const createDialogRef = useRef<HTMLDialogElement>(null);
   const manageDialogRef = useRef<HTMLDialogElement>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
+
+  useEffect(() => {
+    threadsRef.current = threads;
+  }, [threads]);
 
   useEffect(() => {
     selectedThreadRef.current = selectedThreadKey;
@@ -435,13 +460,19 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
           memberIds: createMemberIds,
         }),
       });
-      const data = await readJson<{ threadKey?: string; error?: string }>(response);
-      if (!response.ok || !data?.threadKey) {
+      const data = await readJson<{ thread?: ChatThreadDetail; error?: string }>(response);
+      if (!response.ok || !data?.thread) {
         setGroupError(data?.error ?? copy.loadError);
         return;
       }
       createDialogRef.current?.close();
-      await refreshPage(data.threadKey);
+      const nextThread = data.thread;
+      setThreads((current) => upsertThread(current, threadDetailToSummary(nextThread)));
+      setSelectedThreadKey(nextThread.key);
+      setSelectedThread(nextThread);
+      setMessages([]);
+      setError(null);
+      notifyUnreadChanged();
     } catch {
       setGroupError(copy.loadError);
     } finally {
@@ -464,13 +495,18 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
           memberIds: manageMemberIds,
         }),
       });
-      const data = await readJson<{ threadKey?: string; error?: string }>(response);
-      if (!response.ok || !data?.threadKey) {
+      const data = await readJson<{ thread?: ChatThreadDetail; error?: string }>(response);
+      if (!response.ok || !data?.thread) {
         setGroupError(data?.error ?? copy.loadError);
         return;
       }
       manageDialogRef.current?.close();
-      await refreshPage(data.threadKey);
+      const nextThread = data.thread;
+      setThreads((current) => upsertThread(current, threadDetailToSummary(nextThread)));
+      setSelectedThread(nextThread);
+      setSelectedThreadKey(nextThread.key);
+      setError(null);
+      notifyUnreadChanged();
     } catch {
       setGroupError(copy.loadError);
     } finally {
@@ -482,6 +518,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     if (!selectedThread || selectedThread.type !== "group") return;
     if (!window.confirm(copy.groupDeleteConfirm)) return;
 
+    const deletedThreadKey = selectedThread.key;
     setGroupSaving(true);
     setGroupError(null);
     try {
@@ -492,7 +529,17 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         return;
       }
       manageDialogRef.current?.close();
-      await refreshPage(null);
+      const remainingThreads = threadsRef.current.filter((thread) => thread.key !== deletedThreadKey);
+      const fallbackThread = remainingThreads[0] ?? null;
+      setThreads(remainingThreads);
+      setSelectedThreadKey(fallbackThread?.key ?? null);
+      setSelectedThread(fallbackThread ? summaryToDetail(fallbackThread) : null);
+      setMessages([]);
+      setError(null);
+      notifyUnreadChanged();
+      if (fallbackThread) {
+        void refreshPage(fallbackThread.key, { silent: true });
+      }
     } catch {
       setGroupError(copy.loadError);
     } finally {

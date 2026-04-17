@@ -33,13 +33,14 @@ type Props = {
   completed: boolean;
   progressSeconds: number;
   locale: Locale;
+  forceDirect?: boolean;
 };
 
-export function OnboardingVideoPanel({ onboardingId, videoUrl, completed, progressSeconds, locale }: Props) {
+export function OnboardingVideoPanel({ onboardingId, videoUrl, completed, progressSeconds, locale, forceDirect = false }: Props) {
   const lastSent = useRef(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const embed = useMemo(() => toYouTubeEmbed(videoUrl), [videoUrl]);
-  const direct = useMemo(() => isLikelyDirectVideo(videoUrl), [videoUrl]);
+  const direct = useMemo(() => forceDirect || isLikelyDirectVideo(videoUrl), [forceDirect, videoUrl]);
 
   const sendHtml5 = useCallback(
     async (watchedSeconds: number, durationSeconds: number) => {

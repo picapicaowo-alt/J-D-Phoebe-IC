@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import {
   createCompanyOnboardingMaterialAction,
   deleteCompanyOnboardingMaterialAction,
+  uploadCompanyOnboardingPackageAction,
+  uploadCompanyOnboardingVideoAction,
   updateCompanyOnboardingMaterialAction,
 } from "@/app/actions/company";
 import { softDeleteCompanyAction } from "@/app/actions/trash";
@@ -50,6 +52,10 @@ export default async function CompanyDetailPage({
       departments: { orderBy: { sortOrder: "asc" } },
       onboardingMaterials: {
         orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+        include: {
+          packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
+          videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+        },
       },
     },
   });
@@ -217,29 +223,43 @@ export default async function CompanyDetailPage({
                       ) : null}
                     </div>
                     <div className="mt-3 space-y-2 text-sm">
-                      <a
-                        href={material.packageUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
-                      >
-                        {t(locale, "onboardingOpenPackage")}
-                      </a>
+                      {material.packageHref ? (
+                        <a
+                          href={material.packageHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+                        >
+                          {t(locale, "onboardingOpenPackage")}
+                        </a>
+                      ) : (
+                        <p className="text-[hsl(var(--muted))]">{t(locale, "onboardingHubManagePackageMissing")}</p>
+                      )}
+                      {material.packageAttachmentName ? (
+                        <p className="text-[hsl(var(--muted))]">
+                          {t(locale, "companyOnboardingUploadedFile")}: {material.packageAttachmentName}
+                        </p>
+                      ) : null}
                       <p className="text-[hsl(var(--muted))]">
                         {t(locale, "companyOnboardingVersion")}: {material.packageVersion}
                       </p>
                       <p className="text-[hsl(var(--muted))]">
                         {t(locale, "companyOnboardingDeadlineDays")}: {material.deadlineDays}
                       </p>
-                      {material.videoUrl ? (
+                      {material.videoHref ? (
                         <a
-                          href={material.videoUrl}
+                          href={material.videoHref}
                           target="_blank"
                           rel="noreferrer"
                           className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
                         >
                           {t(locale, "onboardingVideoOpenLink")}
                         </a>
+                      ) : null}
+                      {material.videoAttachmentName ? (
+                        <p className="text-[hsl(var(--muted))]">
+                          {t(locale, "companyOnboardingUploadedFile")}: {material.videoAttachmentName}
+                        </p>
                       ) : null}
                     </div>
                   </div>
@@ -250,13 +270,14 @@ export default async function CompanyDetailPage({
                       <input type="hidden" name="materialId" value={material.id} />
                       <div className="space-y-1">
                         <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
-                        <Input name="onboardingPackageUrl" defaultValue={material.packageUrl} placeholder="https://..." required />
+                        <Input name="onboardingPackageUrl" defaultValue={material.packageUrl} placeholder="https://..." />
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
                         <Input name="onboardingVideoUrl" defaultValue={material.videoUrl ?? ""} placeholder="https://..." />
                         <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
                       </div>
+                      <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingUploadHelp")}</p>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-1">
                           <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>
@@ -273,6 +294,26 @@ export default async function CompanyDetailPage({
                         </FormSubmitButton>
                       </div>
                     </form>
+                    <div className="mt-3 grid gap-3 border-t border-[hsl(var(--border))] pt-3">
+                      <form action={uploadCompanyOnboardingPackageAction} encType="multipart/form-data" className="grid gap-2">
+                        <input type="hidden" name="companyId" value={company.id} />
+                        <input type="hidden" name="materialId" value={material.id} />
+                        <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadPackage")}</label>
+                        <input type="file" name="file" required className="text-xs" />
+                        <FormSubmitButton type="submit" variant="secondary">
+                          {t(locale, "companyOnboardingUploadPackage")}
+                        </FormSubmitButton>
+                      </form>
+                      <form action={uploadCompanyOnboardingVideoAction} encType="multipart/form-data" className="grid gap-2">
+                        <input type="hidden" name="companyId" value={company.id} />
+                        <input type="hidden" name="materialId" value={material.id} />
+                        <label className="text-xs font-medium">{t(locale, "companyOnboardingUploadVideo")}</label>
+                        <input type="file" name="file" accept="video/*" required className="text-xs" />
+                        <FormSubmitButton type="submit" variant="secondary">
+                          {t(locale, "companyOnboardingUploadVideo")}
+                        </FormSubmitButton>
+                      </form>
+                    </div>
 
                     <form action={deleteCompanyOnboardingMaterialAction} className="mt-3">
                       <input type="hidden" name="companyId" value={company.id} />
@@ -299,7 +340,7 @@ export default async function CompanyDetailPage({
               <input type="hidden" name="companyId" value={company.id} />
               <div className="space-y-1">
                 <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
-                <Input name="onboardingPackageUrl" placeholder="https://..." required />
+                <Input name="onboardingPackageUrl" placeholder="https://..." />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>

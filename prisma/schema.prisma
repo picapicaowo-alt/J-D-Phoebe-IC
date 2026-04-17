@@ -296,19 +296,25 @@ model Company {
 }
 
 model CompanyOnboardingMaterial {
-  id             String   @id @default(cuid())
-  companyId      String
-  packageUrl     String
-  videoUrl       String?
-  packageVersion String   @default("v1")
-  deadlineDays   Int      @default(14)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                  String      @id @default(cuid())
+  companyId           String
+  packageUrl          String
+  videoUrl            String?
+  packageVersion      String      @default("v1")
+  deadlineDays        Int         @default(14)
+  packageAttachmentId String?
+  videoAttachmentId   String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  packageAttachment Attachment?        @relation("CompanyOnboardingPackage", fields: [packageAttachmentId], references: [id], onDelete: SetNull)
+  videoAttachment   Attachment?        @relation("CompanyOnboardingVideo", fields: [videoAttachmentId], references: [id], onDelete: SetNull)
   memberOnboardings MemberOnboarding[]
 
   @@index([companyId, createdAt])
+  @@index([packageAttachmentId])
+  @@index([videoAttachmentId])
 }
 
 /// Business unit within a company (e.g. Marketing, Compliance).
@@ -754,6 +760,8 @@ model Attachment {
   nextVersions    Attachment[]                      @relation("AttachmentVersionChain")
   uploadedBy      User                              @relation("AttachmentUploader", fields: [uploadedById], references: [id])
   relationShares  ProjectRelationSharedAttachment[]
+  onboardingPackageFor CompanyOnboardingMaterial[] @relation("CompanyOnboardingPackage")
+  onboardingVideoFor   CompanyOnboardingMaterial[] @relation("CompanyOnboardingVideo")
 
   @@index([workflowNodeId])
   @@index([knowledgeAssetId])

@@ -9,7 +9,7 @@ import {
   softDeleteKnowledgeAssetAction,
   updateKnowledgeAssetAction,
 } from "@/app/actions/knowledge";
-import { addExternalResourceLinkAction } from "@/app/actions/attachments";
+import { addExternalResourceLinkAction, uploadKnowledgeAttachmentAction } from "@/app/actions/attachments";
 import { requireUser } from "@/lib/auth";
 import { canManageKnowledgeAsset, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
@@ -1005,6 +1005,41 @@ export async function KnowledgeBrowseBody({
                               <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
                             )}
                             <form
+                              action={uploadKnowledgeAttachmentAction}
+                              encType="multipart/form-data"
+                              className="grid gap-2 border-t border-[hsl(var(--border))] pt-2 md:grid-cols-2"
+                            >
+                              <input type="hidden" name="knowledgeAssetId" value={a.id} />
+                              <div className="space-y-1 md:col-span-2">
+                                <label className="text-xs font-medium">{t(locale, "kbUploadFile")}</label>
+                                <input type="file" name="file" required className="text-xs" />
+                              </div>
+                              <div className="space-y-1 md:col-span-2">
+                                <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
+                                <Input name="description" className="text-xs" />
+                              </div>
+                              <div className="space-y-1 md:col-span-2">
+                                <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
+                                <select
+                                  name="previousVersionId"
+                                  className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                                  defaultValue=""
+                                >
+                                  <option value="">{t(locale, "wfNewVersionNone")}</option>
+                                  {a.attachments.map((f) => (
+                                    <option key={f.id} value={f.id}>
+                                      {f.fileName} ({f.createdAt.toISOString().slice(0, 10)})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="md:col-span-2">
+                                <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                                  {t(locale, "kbUploadFile")}
+                                </FormSubmitButton>
+                              </div>
+                            </form>
+                            <form
                               action={addExternalResourceLinkAction}
                               className="grid gap-2 border-t border-[hsl(var(--border))] pt-2 md:grid-cols-2"
                             >
@@ -1073,6 +1108,41 @@ export async function KnowledgeBrowseBody({
                           ) : (
                             <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "wfNoFiles")}</p>
                           )}
+                          <form
+                            action={uploadKnowledgeAttachmentAction}
+                            encType="multipart/form-data"
+                            className="grid gap-2 border-t border-[hsl(var(--border))] pt-2 md:grid-cols-2"
+                          >
+                            <input type="hidden" name="knowledgeAssetId" value={a.id} />
+                            <div className="space-y-1 md:col-span-2">
+                              <label className="text-xs font-medium">{t(locale, "kbUploadFile")}</label>
+                              <input type="file" name="file" required className="text-xs" />
+                            </div>
+                            <div className="space-y-1 md:col-span-2">
+                              <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
+                              <Input name="description" className="text-xs" />
+                            </div>
+                            <div className="space-y-1 md:col-span-2">
+                              <label className="text-xs font-medium">{t(locale, "wfPrevVersion")}</label>
+                              <select
+                                name="previousVersionId"
+                                className="h-9 w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-2 text-xs"
+                                defaultValue=""
+                              >
+                                <option value="">{t(locale, "wfNewVersionNone")}</option>
+                                {a.attachments.map((f) => (
+                                  <option key={f.id} value={f.id}>
+                                    {f.fileName} ({f.createdAt.toISOString().slice(0, 10)})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="md:col-span-2">
+                              <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                                {t(locale, "kbUploadFile")}
+                              </FormSubmitButton>
+                            </div>
+                          </form>
                           <form
                             action={addExternalResourceLinkAction}
                             className="grid gap-2 border-t border-[hsl(var(--border))] pt-2 md:grid-cols-2"

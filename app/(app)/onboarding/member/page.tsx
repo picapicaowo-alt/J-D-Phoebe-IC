@@ -11,7 +11,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { MemberOnboardingChecklist } from "@/components/member-onboarding-checklist";
 import { acknowledgeMemberOnboardingMaterialsAction } from "@/app/actions/lifecycle";
 import { OnboardingVideoPanel } from "@/components/onboarding-video-panel";
-import { DEFAULT_COMPANY_ONBOARDING_VERSION, resolveCompanyOnboardingMaterials } from "@/lib/company-onboarding-materials";
+import { DEFAULT_COMPANY_ONBOARDING_VERSION, resolveCompanyOnboardingMaterials, resolveMaterialMedia } from "@/lib/company-onboarding-materials";
 
 export default async function MemberOnboardingPage({
   searchParams,
@@ -31,11 +31,20 @@ export default async function MemberOnboardingPage({
     where: { userId_companyId: { userId: user.id, companyId } },
     include: {
       checklistItems: { orderBy: { sortOrder: "asc" } },
-      assignedMaterial: true,
+      assignedMaterial: {
+        include: {
+          packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
+          videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+        },
+      },
       company: {
         include: {
           onboardingMaterials: {
             orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+            include: {
+              packageAttachment: { select: { id: true, fileName: true, mimeType: true } },
+              videoAttachment: { select: { id: true, fileName: true, mimeType: true } },
+            },
           },
         },
       },
@@ -50,14 +59,16 @@ export default async function MemberOnboardingPage({
   const companyMaterials = resolveCompanyOnboardingMaterials(ob.company);
   const currentCompanyMaterial = companyMaterials[0] ?? null;
   const effectiveAssignedMaterial = ob.assignedMaterial ?? (!ob.packageUrl.trim() ? currentCompanyMaterial : null);
-  const packageUrl = ob.packageUrl.trim() || effectiveAssignedMaterial?.packageUrl?.trim() || "";
+  const assignedMaterialMedia = effectiveAssignedMaterial ? resolveMaterialMedia(effectiveAssignedMaterial) : null;
+  const packageUrl = ob.packageUrl.trim() || assignedMaterialMedia?.packageHref || "";
   const hasPackageUrl = Boolean(packageUrl);
   const packageVersion = ob.packageVersion.trim() || effectiveAssignedMaterial?.packageVersion || DEFAULT_COMPANY_ONBOARDING_VERSION;
   const additionalMaterials = companyMaterials.filter((material) => {
     if (effectiveAssignedMaterial?.id) return material.id !== effectiveAssignedMaterial.id;
     return !(material.packageUrl === packageUrl && material.packageVersion === packageVersion);
   });
-  const videoUrl = ob.videoUrl?.trim() || effectiveAssignedMaterial?.videoUrl?.trim() || ob.company.onboardingVideoUrl?.trim() || "";
+  const videoUrl = ob.videoUrl?.trim() || assignedMaterialMedia?.videoHref || ob.company.onboardingVideoUrl?.trim() || "";
+  const videoIsDirect = Boolean(assignedMaterialMedia?.videoMimeType?.startsWith("video/"));
   const videoGateOk = !videoUrl || Boolean(ob.videoCompletedAt);
 
   return (
@@ -139,6 +150,11 @@ export default async function MemberOnboardingPage({
                     {t(locale, "onboardingVideoOpenLink")}
                   </a>
                 ) : null}
+                {assignedMaterialMedia?.packageAttachmentName ? (
+                  <p className="mt-3 text-sm text-[hsl(var(--muted))]">
+                    {t(locale, "companyOnboardingUploadedFile")}: {assignedMaterialMedia.packageAttachmentName}
+                  </p>
+                ) : null}
               </>
             ) : (
               <div className="mt-3 space-y-2 rounded-lg border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3">
@@ -173,23 +189,27 @@ export default async function MemberOnboardingPage({
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {additionalMaterials.map((material) => (
                 <div key={material.id} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
-                  <a
-                    href={material.packageUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
-                  >
-                    {t(locale, "onboardingOpenPackage")}
-                  </a>
+                  {material.packageHref ? (
+                    <a
+                      href={material.packageHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+                    >
+                      {t(locale, "onboardingOpenPackage")}
+                    </a>
+                  ) : (
+                    <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "onboardingNoPackage")}</p>
+                  )}
                   <p className="mt-2 text-sm text-[hsl(var(--muted))]">
                     {t(locale, "companyOnboardingVersion")}: {material.packageVersion}
                   </p>
                   <p className="text-sm text-[hsl(var(--muted))]">
                     {t(locale, "companyOnboardingDeadlineDays")}: {material.deadlineDays}
                   </p>
-                  {material.videoUrl ? (
+                  {material.videoHref ? (
                     <a
-                      href={material.videoUrl}
+                      href={material.videoHref}
                       target="_blank"
                       rel="noreferrer"
                       className="mt-2 inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
@@ -210,6 +230,7 @@ export default async function MemberOnboardingPage({
             completed={Boolean(ob.videoCompletedAt)}
             progressSeconds={ob.videoProgressSeconds}
             locale={locale}
+            forceDirect={videoIsDirect}
           />
         ) : null}
 
