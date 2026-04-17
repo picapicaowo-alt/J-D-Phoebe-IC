@@ -1,29 +1,31 @@
 "use server";
 
-import { hash } from "bcryptjs";
-import { redirect } from "next/navigation";
-import { OrgGroupStatus, CompanyStatus, Prisma } from "@prisma/client";
-import { getAppSession, invalidateAccessUserCache } from "@/lib/auth";
+import { OrgGroupStatus, CompanyStatus } from "@prisma/client";
 import { isClerkEnabled } from "@/lib/clerk-config";
-import { ensureMemberOnboardingForCompany } from "@/lib/member-onboarding";
-import { invalidatePermissionCache } from "@/lib/permissions";
+import { createAccountSetupToken } from "@/lib/account-setup";
+import { sendAccountSetupEmail } from "@/lib/auth-email";
+import { getEmailDeliveryMode } from "@/lib/email";
+import { getAppBaseUrl } from "@/lib/password-reset";
 import { prisma } from "@/lib/prisma";
-import { canReuseUserAccount, findReusableUserCandidateByEmail, reprovisionReusableUser } from "@/lib/user-account-reuse";
+import { canReuseUserAccount, findReusableUserCandidateByEmail } from "@/lib/user-account-reuse";
 
 export type RegisterActionResult =
   | {
-      ok: false;
+      ok: boolean;
       messageKey:
         | "registerEmailTaken"
-        | "registerWeakPassword"
         | "registerSetupMissing"
         | "registerInvalidEmail"
         | "homeRegisterErrorGeneric"
-        | "homeRegisterClerkHint";
+        | "homeRegisterClerkHint"
+        | "registerEmailSent"
+        | "registerEmailUnavailable"
+        | "registerEmailSendFailed";
     }
   | null;
 
 const DEFAULT_REGISTER_ROLE_KEY = "COMPANY_CONTRIBUTOR";
+const REGISTER_LINK_TTL_MS = 24 * 60 * 60 * 1000;
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -37,17 +39,16 @@ export async function registerAction(formData: FormData): Promise<RegisterAction
   const email = String(formData.get("email") ?? "")
     .trim()
     .toLowerCase();
-  const password = String(formData.get("password") ?? "");
   const name = String(formData.get("name") ?? "").trim();
 
   if (!isValidEmail(email)) {
     return { ok: false, messageKey: "registerInvalidEmail" };
   }
-  if (password.length < 8) {
-    return { ok: false, messageKey: "registerWeakPassword" };
-  }
   if (!name || name.length > 120) {
     return { ok: false, messageKey: "homeRegisterErrorGeneric" };
+  }
+  if (getEmailDeliveryMode() === "none") {
+    return { ok: false, messageKey: "registerEmailUnavailable" };
   }
 
   const existing = await findReusableUserCandidateByEmail(email);
@@ -73,58 +74,31 @@ export async function registerAction(formData: FormData): Promise<RegisterAction
     return { ok: false, messageKey: "registerSetupMissing" };
   }
 
-  const passwordHash = await hash(password, 10);
+  const expiresAt = Date.now() + REGISTER_LINK_TTL_MS;
+  const token = createAccountSetupToken({
+    kind: "register",
+    email,
+    name,
+    expiresAt,
+  });
+  const setupUrl = `${getAppBaseUrl()}/setup-account?token=${encodeURIComponent(token)}`;
 
-  try {
-    const user = await prisma.$transaction(async (tx) => {
-      const u = reusableExisting
-        ? await reprovisionReusableUser(tx, {
-            userId: reusableExisting.id,
-            name,
-            passwordHash,
-            mustChangePassword: false,
-          })
-        : await tx.user.create({
-            data: {
-              email,
-              passwordHash,
-              name,
-              active: true,
-            },
-          });
+  const sent = await sendAccountSetupEmail({
+    to: email,
+    recipientName: name,
+    setupUrl,
+    source: "register",
+  });
 
-      await tx.companyMembership.upsert({
-        where: { userId_companyId: { userId: u.id, companyId: company.id } },
-        create: {
-          userId: u.id,
-          companyId: company.id,
-          roleDefinitionId: role.id,
-        },
-        update: {
-          roleDefinitionId: role.id,
-          departmentId: null,
-          supervisorUserId: null,
-        },
-      });
-      return u;
-    });
-
-    invalidateAccessUserCache(user);
-    invalidatePermissionCache(user.id);
-    await ensureMemberOnboardingForCompany(user.id, company.id);
-
-    const session = await getAppSession();
-    session.userId = user.id;
-    session.isLoggedIn = true;
-    await session.save();
-  } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { ok: false, messageKey: "registerEmailTaken" };
+  if (!sent.ok) {
+    console.error(`[register] failed to send setup email to ${email}: ${sent.error}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`[register] setup link for ${email}: ${setupUrl}`);
     }
-    return { ok: false, messageKey: "homeRegisterErrorGeneric" };
+    return { ok: false, messageKey: "registerEmailSendFailed" };
   }
 
-  redirect("/onboarding/companion");
+  return { ok: true, messageKey: "registerEmailSent" };
 }
 
 export async function registerFormAction(

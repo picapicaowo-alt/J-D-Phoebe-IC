@@ -9,14 +9,17 @@ import { t, type MessageKey } from "@/lib/messages";
 
 type Props = { locale: Locale };
 
-function messageFor(result: RegisterActionResult | null, locale: Locale): string {
-  if (!result) return "";
-  return t(locale, result.messageKey as MessageKey);
+function messageFor(result: RegisterActionResult | null, locale: Locale): { text: string; tone: "success" | "error" } | null {
+  if (!result) return null;
+  return {
+    text: t(locale, result.messageKey as MessageKey),
+    tone: result.ok ? "success" : "error",
+  };
 }
 
 export function HomeRegisterForm({ locale }: Props) {
   const [state, formAction] = useFormState(registerFormAction, null);
-  const error = messageFor(state, locale);
+  const message = messageFor(state, locale);
 
   return (
     <form action={formAction} className="space-y-3">
@@ -32,13 +35,17 @@ export function HomeRegisterForm({ locale }: Props) {
         </label>
         <Input id="reg-email" name="email" type="email" autoComplete="email" required />
       </div>
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-[hsl(var(--muted))]" htmlFor="reg-password">
-          {t(locale, "homeRegisterPassword")}
-        </label>
-        <Input id="reg-password" name="password" type="password" autoComplete="new-password" required minLength={8} />
-      </div>
-      {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
+      {message ? (
+        <p
+          className={
+            message.tone === "success"
+              ? "rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+              : "rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+          }
+        >
+          {message.text}
+        </p>
+      ) : null}
       <FormSubmitButton type="submit" className="w-full" pendingLabel="…">
         {t(locale, "homeRegisterSubmit")}
       </FormSubmitButton>

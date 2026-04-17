@@ -3,7 +3,8 @@
 import { compare, hash } from "bcryptjs";
 import { redirect } from "next/navigation";
 import { getAppSession, requireUser } from "@/lib/auth";
-import { getEmailDeliveryMode, sendTransactionalEmail } from "@/lib/email";
+import { sendPasswordResetEmail } from "@/lib/auth-email";
+import { getEmailDeliveryMode } from "@/lib/email";
 import { createPasswordResetToken, getAppBaseUrl, parsePasswordResetToken, verifyPasswordResetToken } from "@/lib/password-reset";
 import { prisma } from "@/lib/prisma";
 
@@ -95,20 +96,9 @@ export async function requestPasswordResetAction(formData: FormData) {
       expiresAt: Date.now() + 30 * 60 * 1000,
     });
     const resetUrl = `${getAppBaseUrl()}/reset-password?token=${encodeURIComponent(token)}`;
-    const subject = "Reset your password";
-    const text = [
-      "We received a request to reset your password.",
-      "",
-      `Open this link to choose a new password: ${resetUrl}`,
-      "",
-      "This link expires in 30 minutes. If you did not request a reset, you can ignore this email.",
-    ].join("\n");
-
-    const sent = await sendTransactionalEmail({
+    const sent = await sendPasswordResetEmail({
       to: user.email,
-      subject,
-      text,
-      html: `<p>We received a request to reset your password.</p><p><a href="${resetUrl}">Choose a new password</a></p><p>This link expires in 30 minutes. If you did not request a reset, you can ignore this email.</p>`,
+      resetUrl,
     });
 
     if (!sent.ok) {

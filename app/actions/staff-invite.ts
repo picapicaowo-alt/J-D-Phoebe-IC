@@ -1,20 +1,19 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { hash } from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { writeAudit } from "@/lib/audit";
 import { isSuperAdmin, type AccessUser } from "@/lib/access";
-import { invalidateAccessUserCache, requireUser } from "@/lib/auth";
-import { sendTransactionalEmail } from "@/lib/email";
-import { generateStaffInviteOtpCode, hashStaffInviteOtp, verifyStaffInviteOtp } from "@/lib/otp";
-import { assertPermission, invalidatePermissionCache } from "@/lib/permissions";
+import { createAccountSetupToken } from "@/lib/account-setup";
+import { requireUser } from "@/lib/auth";
+import { sendAccountSetupEmail } from "@/lib/auth-email";
+import { getEmailDeliveryMode } from "@/lib/email";
+import { getAppBaseUrl } from "@/lib/password-reset";
+import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { canReuseUserAccount, findReusableUserCandidateByEmail, reprovisionReusableUser } from "@/lib/user-account-reuse";
+import { canReuseUserAccount, findReusableUserCandidateByEmail } from "@/lib/user-account-reuse";
 
-const INVITE_TTL_MS = 20 * 60 * 1000;
-const MAX_OTP_ATTEMPTS = 8;
+const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function requireString(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -34,8 +33,10 @@ export async function startStaffInviteAction(formData: FormData) {
     throw new Error("Invalid email address");
   }
   const name = requireString(formData, "name");
-  const password = requireString(formData, "password");
   const title = String(formData.get("title") ?? "").trim() || null;
+  if (getEmailDeliveryMode() === "none") {
+    redirect("/staff/new?error=email_not_configured");
+  }
 
   const existing = await findReusableUserCandidateByEmail(email);
   if (existing && !canReuseUserAccount(existing)) {
@@ -46,11 +47,8 @@ export async function startStaffInviteAction(formData: FormData) {
     where: { email, consumedAt: null, createdByUserId: actor.id },
   });
 
-  const passwordHash = await hash(password, 10);
-  const code = generateStaffInviteOtpCode();
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
   const inviteId = randomUUID();
-  const otpHash = hashStaffInviteOtp(inviteId, code);
 
   await prisma.staffInvite.create({
     data: {
@@ -58,97 +56,36 @@ export async function startStaffInviteAction(formData: FormData) {
       email,
       name,
       title,
-      passwordHash,
-      otpHash,
+      passwordHash: "",
+      otpHash: "",
       expiresAt,
       createdByUserId: actor.id,
     },
   });
 
-  const subject = "Your verification code — staff account";
-  const text = `Your verification code is: ${code}\n\nThis code expires in 20 minutes. If you did not expect this message, you can ignore it.\n\n— Do not reply to this message.`;
+  const token = createAccountSetupToken({
+    kind: "staff_invite",
+    inviteId,
+    email,
+    expiresAt: expiresAt.getTime(),
+  });
+  const setupUrl = `${getAppBaseUrl()}/setup-account?token=${encodeURIComponent(token)}`;
 
-  const sent = await sendTransactionalEmail({ to: email, subject, text });
-  if (!sent.ok && process.env.NODE_ENV !== "production") {
-    console.warn(`[staff-invite] OTP for ${email} (invite ${inviteId}): ${code}`);
-  }
-  if (!sent.ok && sent.error === "RESEND_API_KEY is not configured.") {
-    await prisma.staffInvite.delete({ where: { id: inviteId } });
-    redirect("/staff/new?error=email_not_configured");
-  }
-  if (!sent.ok && process.env.NODE_ENV === "production") {
+  const sent = await sendAccountSetupEmail({
+    to: email,
+    recipientName: name,
+    setupUrl,
+    source: "staff_invite",
+  });
+  if (!sent.ok) {
+    console.error(`[staff-invite] failed to send setup email to ${email}: ${sent.error}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`[staff-invite] setup link for ${email} (invite ${inviteId}): ${setupUrl}`);
+    }
     await prisma.staffInvite.delete({ where: { id: inviteId } });
     redirect("/staff/new?error=email_send_failed");
   }
 
   revalidatePath("/staff/new");
-  redirect(`/staff/new/verify?inviteId=${inviteId}`);
-}
-
-export async function confirmStaffInviteAction(formData: FormData) {
-  const actor = (await requireUser()) as AccessUser;
-  await assertPermission(actor, "staff.create");
-
-  const inviteId = requireString(formData, "inviteId");
-  const otp = String(formData.get("otp") ?? "").trim();
-
-  const invite = await prisma.staffInvite.findFirst({
-    where: { id: inviteId, consumedAt: null },
-  });
-  if (!invite || invite.createdByUserId !== actor.id) {
-    redirect("/staff/new?error=forbidden");
-  }
-  if (invite.expiresAt.getTime() < Date.now()) {
-    await prisma.staffInvite.delete({ where: { id: invite.id } }).catch(() => {});
-    redirect("/staff/new?error=invite_expired");
-  }
-  if (invite.attempts >= MAX_OTP_ATTEMPTS) {
-    await prisma.staffInvite.delete({ where: { id: invite.id } }).catch(() => {});
-    redirect("/staff/new?error=too_many_attempts");
-  }
-
-  const ok = verifyStaffInviteOtp(invite.id, otp, invite.otpHash);
-  if (!ok) {
-    await prisma.staffInvite.update({
-      where: { id: invite.id },
-      data: { attempts: { increment: 1 } },
-    });
-    redirect(`/staff/new/verify?inviteId=${invite.id}&error=bad_otp`);
-  }
-
-  const existing = await findReusableUserCandidateByEmail(invite.email);
-  const reusableExisting = canReuseUserAccount(existing) ? existing : null;
-  if (existing && !reusableExisting) {
-    await prisma.staffInvite.delete({ where: { id: invite.id } }).catch(() => {});
-    redirect("/staff/new?error=email_taken");
-  }
-
-  const user = await prisma.$transaction(async (tx) => {
-    const u = reusableExisting
-      ? await reprovisionReusableUser(tx, {
-          userId: reusableExisting.id,
-          name: invite.name,
-          title: invite.title,
-          passwordHash: invite.passwordHash,
-          mustChangePassword: true,
-        })
-      : await tx.user.create({
-          data: {
-            email: invite.email,
-            name: invite.name,
-            title: invite.title,
-            passwordHash: invite.passwordHash,
-            active: true,
-            mustChangePassword: true,
-          },
-        });
-    await tx.staffInvite.delete({ where: { id: invite.id } });
-    return u;
-  });
-
-  invalidateAccessUserCache(user);
-  invalidatePermissionCache(user.id);
-  await writeAudit({ actorId: actor.id, entityType: "USER", entityId: user.id, action: "CREATE", newValue: user.email });
-  revalidatePath("/staff");
-  redirect(`/staff/${user.id}`);
+  redirect(`/staff/new?sent=1&email=${encodeURIComponent(email)}`);
 }

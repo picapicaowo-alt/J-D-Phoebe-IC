@@ -19,7 +19,15 @@ import nodemailer from "nodemailer";
 export type SendEmailResult = { ok: true } | { ok: false; error: string };
 
 function getEmailFrom() {
-  return process.env.EMAIL_FROM?.trim() || "Onboarding <onboarding@resend.dev>";
+  const explicit = process.env.EMAIL_FROM?.trim();
+  if (explicit) return explicit;
+
+  const smtpUser = process.env.SMTP_USER?.trim();
+  if (smtpUser) {
+    return `J.D. Phoebe Group DO NOT REPLY <${smtpUser}>`;
+  }
+
+  return "Onboarding <onboarding@resend.dev>";
 }
 
 export function getEmailDeliveryMode() {

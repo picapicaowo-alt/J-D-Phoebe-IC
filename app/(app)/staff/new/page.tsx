@@ -13,12 +13,14 @@ import { t } from "@/lib/messages";
 export default async function NewStaffPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; sent?: string; email?: string }>;
 }) {
   const user = (await requireUser()) as AccessUser;
   const locale = await getLocale();
   const sp = await searchParams;
   const err = String(sp.error ?? "").trim();
+  const sent = String(sp.sent ?? "").trim() === "1";
+  const sentEmail = String(sp.email ?? "").trim();
 
   const ok =
     (await userHasPermission(user, "staff.create")) &&
@@ -53,6 +55,11 @@ export default async function NewStaffPage({
         {err === "email_send_failed" ? (
           <p className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm">{t(locale, "staffInviteErrEmailSendFailed")}</p>
         ) : null}
+        {sent ? (
+          <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            {t(locale, "staffInviteSent").replace("{email}", sentEmail || t(locale, "staffWorkEmailLogin"))}
+          </p>
+        ) : null}
         <form action={startStaffInviteAction} className="space-y-3">
           <div className="space-y-1">
             <label className="text-xs font-medium">{t(locale, "staffFullName")}</label>
@@ -63,16 +70,11 @@ export default async function NewStaffPage({
             <Input name="email" type="email" required />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "staffInitialPassword")}</label>
-            <Input name="password" type="password" required minLength={8} />
-          </div>
-          <div className="space-y-1">
             <label className="text-xs font-medium">{t(locale, "staffTitle")}</label>
             <Input name="title" />
           </div>
-          <FormSubmitButton type="submit">{t(locale, "staffInviteSendCode")}</FormSubmitButton>
+          <FormSubmitButton type="submit">{t(locale, "staffInviteSendLink")}</FormSubmitButton>
         </form>
-        <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "staffForcePasswordChange")}</p>
         <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "staffVerificationNote")}</p>
         <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "staffEmailNoreplyHint")}</p>
         <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "staffCreateAssignHint")}</p>
