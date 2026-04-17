@@ -92,6 +92,7 @@ export function StaffObservationsPanel({
   canViewFeedback,
   canManageFeedbackWithoutProject,
 }: Props) {
+  const showGrowthContext = canViewFeedback || canCreateFeedback;
   const recognitionItems = recognitions.map((item) => ({
     createdAt: item.createdAt,
     kind: "recognition" as const,
@@ -115,8 +116,10 @@ export function StaffObservationsPanel({
   return (
     <Card className="space-y-4 p-4">
       <div className="space-y-1">
-        <CardTitle>{t(locale, "staffObservationsTitle")}</CardTitle>
-        <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffObservationsHint")}</p>
+        <CardTitle>{t(locale, showGrowthContext ? "staffObservationsTitle" : "staffRecognitionOnlyTitle")}</CardTitle>
+        <p className="text-sm text-[hsl(var(--muted))]">
+          {t(locale, showGrowthContext ? "staffObservationsHint" : "staffRecognitionOnlyHint")}
+        </p>
       </div>
 
       {canCreateAny ? (
@@ -224,7 +227,9 @@ export function StaffObservationsPanel({
           )}
         </ul>
       ) : (
-        <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "staffObservationsEmpty")}</p>
+        <p className="text-sm text-[hsl(var(--muted))]">
+          {t(locale, showGrowthContext ? "staffObservationsEmpty" : "staffRecEmpty")}
+        </p>
       )}
     </Card>
   );

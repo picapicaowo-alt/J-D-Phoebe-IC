@@ -49,7 +49,6 @@ const PROJECT_MANAGER_PERMS = [
   "recognition.read",
   "recognition.create",
   "feedback.submit",
-  "feedback.read",
   "leaderboard.read",
   "knowledge.read",
   "knowledge.create",

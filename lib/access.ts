@@ -25,6 +25,12 @@ export function isGroupAdmin(user: AccessUser, orgGroupId: string) {
   return user.groupMemberships.some((m) => m.orgGroupId === orgGroupId && m.roleDefinition.key === "GROUP_ADMIN");
 }
 
+export function isAnyAdmin(user: AccessUser) {
+  if (user.isSuperAdmin) return true;
+  if (user.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN")) return true;
+  return user.companyMemberships.some((m) => m.roleDefinition.key === "COMPANY_ADMIN");
+}
+
 export function isCompanyAdmin(user: AccessUser, companyId: string) {
   if (user.isSuperAdmin) return true;
   if (user.companyMemberships.some((m) => m.companyId === companyId && m.roleDefinition.key === "COMPANY_ADMIN")) {

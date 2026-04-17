@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { updateCompanionAction } from "@/app/actions/companion";
 import { softDeleteUserAction } from "@/app/actions/trash";
 import {
-  assignCompanyAction,
   assignProjectAction,
   removeCompanyMembershipAction,
   removeProjectMembershipAction,
@@ -20,7 +19,7 @@ import {
 } from "@/app/actions/lifecycle";
 import { removeUserAvatarAction, uploadUserAvatarAction } from "@/app/actions/profile-media";
 import { requireUser } from "@/lib/auth";
-import { canManageProject, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { canManageProject, isAnyAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { tLedgerReason } from "@/lib/ledger-labels";
@@ -33,6 +32,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AbilityRadar } from "@/components/ability-radar";
+import { StaffAssignCompanyForm } from "@/components/staff-assign-company-form";
 import { StaffObservationsPanel } from "@/components/staff-observations-panel";
 import { UserFace } from "@/components/user-face";
 
@@ -47,6 +47,7 @@ export default async function StaffDetailPage({
   const { userId } = await params;
   const sp = (await searchParams) ?? {};
   const uploadError = Array.isArray(sp.uploadError) ? sp.uploadError[0] : sp.uploadError;
+  const canViewFeedback = isAnyAdmin(actor) && (await userHasPermission(actor, "feedback.read"));
 
   const target = await prisma.user.findFirst({
     where: { id: userId, deletedAt: null },
@@ -61,14 +62,18 @@ export default async function StaffDetailPage({
         orderBy: { createdAt: "desc" },
         take: 20,
       },
-      feedbackReceived: {
-        include: { fromUser: true, project: { include: { company: true } } },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-      },
     },
   });
   if (!target) notFound();
+
+  const feedbackReceived = canViewFeedback
+    ? await prisma.feedbackEvent.findMany({
+        where: { toUserId: target.id },
+        include: { fromUser: true, project: { include: { company: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      })
+    : [];
 
   const companionSpeciesOptions =
     isSuperAdmin(actor) && (actor.id !== target.id || target.companionIntroCompletedAt)
@@ -131,6 +136,14 @@ export default async function StaffDetailPage({
     companyRoles.find((r) => r.key === "COMPANY_CONTRIBUTOR")?.id ?? companyRoles[0]?.id ?? "";
   const defaultProjectRoleId =
     projectRoles.find((r) => r.key === "PROJECT_CONTRIBUTOR")?.id ?? projectRoles[0]?.id ?? "";
+  const assignCompanyFormCompanies = companies.map((company) => ({ id: company.id, name: company.name }));
+  const assignCompanyFormDepartments = departmentsForStaffForms.map((department) => ({
+    id: department.id,
+    name: department.name,
+    companyId: department.companyId,
+  }));
+  const assignCompanyFormRoles = companyRoles.map((role) => ({ id: role.id, displayName: role.displayName }));
+  const assignCompanyFormSupervisors = supervisorCandidates.map((user) => ({ id: user.id, name: user.name }));
 
   const canSoftDelete =
     (await userHasPermission(actor, "staff.soft_delete")) &&
@@ -164,7 +177,6 @@ export default async function StaffDetailPage({
   const canFeedbackHere =
     (await userHasPermission(actor, "feedback.submit")) &&
     (isSuperAdmin(actor) || isAnyGroupAdmin || isAnyCompanyAdmin || isAnyPm);
-  const canViewFeedback = canFeedbackHere || actor.id === target.id || (await userHasPermission(actor, "feedback.read"));
   const observationProjects = await prisma.project.findMany({
     where: { deletedAt: null, memberships: { some: { userId: target.id } } },
     include: { company: true },
@@ -372,7 +384,7 @@ export default async function StaffDetailPage({
         targetUserId={target.id}
         projectChoices={observationProjectChoices}
         recognitions={target.recognitionsReceived}
-        feedback={target.feedbackReceived}
+        feedback={feedbackReceived}
         canCreateRecognition={canRecognizeHere}
         canCreateFeedback={canFeedbackHere}
         canViewFeedback={canViewFeedback}
@@ -382,93 +394,24 @@ export default async function StaffDetailPage({
       {canAssignCompanyUI ? (
         <Card className="space-y-3 p-4">
           <CardTitle>{t(locale, "staffAssignCompany")}</CardTitle>
-          <form action={assignCompanyAction} className="flex flex-wrap gap-2">
-            <input type="hidden" name="userId" value={target.id} />
-            <Select name="companyId" required className="min-w-[180px]">
-              <option value="">{t(locale, "staffSelectCompany")}</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-            <Select name="departmentId" className="min-w-[200px]">
-              <option value="">{t(locale, "projDeptGroupNone")}</option>
-              {departmentsForStaffForms.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.company.name} / {d.name}
-                </option>
-              ))}
-            </Select>
-            <Select name="roleDefinitionId" required defaultValue={defaultCompanyRoleId} className="min-w-[200px]">
-              {companyRoles.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.displayName}
-                </option>
-              ))}
-            </Select>
-            <Select name="supervisorUserId" className="min-w-[200px]">
-              <option value="">{t(locale, "staffSupervisorNone")}</option>
-              {supervisorCandidates.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </Select>
-            <FormSubmitButton type="submit">{t(locale, "projAssignBtn")}</FormSubmitButton>
-          </form>
-        </Card>
-      ) : null}
-
-      {canAssignCompanyUI ? (
-        <Card className="space-y-3 p-4">
-          <CardTitle>{t(locale, "offboardingTitle")}</CardTitle>
-          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "offboardingChecklist")}</p>
-          <form action={startOffboardingRunAction} className="flex flex-wrap items-end gap-2">
-            <input type="hidden" name="userId" value={target.id} />
-            <Select name="companyId" required className="min-w-[220px]">
-              <option value="">{t(locale, "staffSelectCompany")}</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-            <FormSubmitButton type="submit" variant="secondary">
-              {t(locale, "offboardingStart")}
-            </FormSubmitButton>
-          </form>
-          <ul className="space-y-3 text-xs">
-            {offboardingRuns.map((run) => (
-              <li key={run.id} className="rounded-md border border-[hsl(var(--border))] p-3">
-                <div className="font-medium text-[hsl(var(--foreground))]">
-                  {run.company.name} · {run.status} · {run.startedAt.toISOString().slice(0, 10)}
-                </div>
-                <ul className="mt-2 space-y-1">
-                  {run.checklist.map((c) => (
-                    <li key={c.id} className="flex items-center justify-between gap-2">
-                      <span className={c.completedAt ? "text-[hsl(var(--muted))] line-through" : ""}>{c.label}</span>
-                      <form action={toggleOffboardingChecklistAction}>
-                        <input type="hidden" name="itemId" value={c.id} />
-                        <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
-                          {c.completedAt ? "Undo" : "Done"}
-                        </FormSubmitButton>
-                      </form>
-                    </li>
-                  ))}
-                </ul>
-                {run.status === "IN_PROGRESS" && run.checklist.every((c) => c.completedAt) ? (
-                  <form action={completeOffboardingRunAction} className="mt-2">
-                    <input type="hidden" name="runId" value={run.id} />
-                    <FormSubmitButton type="submit" className="h-8 text-xs">
-                      {t(locale, "onboardingCompleted")}
-                    </FormSubmitButton>
-                  </form>
-                ) : null}
-              </li>
-            ))}
-            {!offboardingRuns.length ? <li className="text-[hsl(var(--muted))]">—</li> : null}
-          </ul>
+          <StaffAssignCompanyForm
+            userId={target.id}
+            companies={assignCompanyFormCompanies}
+            departments={assignCompanyFormDepartments}
+            companyRoles={assignCompanyFormRoles}
+            supervisorCandidates={assignCompanyFormSupervisors}
+            defaultCompanyRoleId={defaultCompanyRoleId}
+            labels={{
+              company: t(locale, "commonCompany"),
+              department: t(locale, "projFieldDepartment"),
+              permission: locale === "zh" ? "权限" : "Permission",
+              supervisor: locale === "zh" ? "主管（如有）" : "Supervisor (if any)",
+              selectCompany: t(locale, "staffSelectCompany"),
+              noDepartment: t(locale, "projDeptGroupNone"),
+              noSupervisor: t(locale, "staffSupervisorNone"),
+              submit: t(locale, "projAssignBtn"),
+            }}
+          />
         </Card>
       ) : null}
 
@@ -497,16 +440,76 @@ export default async function StaffDetailPage({
         </Card>
       ) : null}
 
-      {canSoftDelete ? (
-        <Card className="border-rose-600/20 p-4">
-          <CardTitle>{t(locale, "projDangerSoftDelete")}</CardTitle>
-          <p className="mt-1 text-xs text-[hsl(var(--muted))]">{t(locale, "projSoftDeleteHint")}</p>
-          <form action={softDeleteUserAction} className="mt-3">
-            <input type="hidden" name="userId" value={target.id} />
-            <FormSubmitButton type="submit" variant="secondary" className="border border-rose-600/40 bg-rose-600/10 text-rose-900 dark:text-rose-100">
-              {t(locale, "projMoveUserTrash")}
-            </FormSubmitButton>
-          </form>
+      {canAssignCompanyUI || canSoftDelete ? (
+        <Card className={`p-4 ${canAssignCompanyUI && canSoftDelete ? "space-y-6" : "space-y-3"} ${!canAssignCompanyUI && canSoftDelete ? "border-rose-600/20" : ""}`}>
+          {canAssignCompanyUI ? (
+            <div className="space-y-3">
+              <CardTitle>{t(locale, "offboardingTitle")}</CardTitle>
+              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "offboardingChecklist")}</p>
+              <form action={startOffboardingRunAction} className="flex flex-wrap items-end gap-2">
+                <input type="hidden" name="userId" value={target.id} />
+                <Select name="companyId" required className="min-w-[220px]">
+                  <option value="">{t(locale, "staffSelectCompany")}</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+                <FormSubmitButton type="submit" variant="secondary">
+                  {t(locale, "offboardingStart")}
+                </FormSubmitButton>
+              </form>
+              <ul className="space-y-3 text-xs">
+                {offboardingRuns.map((run) => (
+                  <li key={run.id} className="rounded-md border border-[hsl(var(--border))] p-3">
+                    <div className="font-medium text-[hsl(var(--foreground))]">
+                      {run.company.name} · {run.status} · {run.startedAt.toISOString().slice(0, 10)}
+                    </div>
+                    <ul className="mt-2 space-y-1">
+                      {run.checklist.map((c) => (
+                        <li key={c.id} className="flex items-center justify-between gap-2">
+                          <span className={c.completedAt ? "text-[hsl(var(--muted))] line-through" : ""}>{c.label}</span>
+                          <form action={toggleOffboardingChecklistAction}>
+                            <input type="hidden" name="itemId" value={c.id} />
+                            <FormSubmitButton type="submit" variant="secondary" className="h-7 px-2 text-xs">
+                              {c.completedAt ? "Undo" : "Done"}
+                            </FormSubmitButton>
+                          </form>
+                        </li>
+                      ))}
+                    </ul>
+                    {run.status === "IN_PROGRESS" && run.checklist.every((c) => c.completedAt) ? (
+                      <form action={completeOffboardingRunAction} className="mt-2">
+                        <input type="hidden" name="runId" value={run.id} />
+                        <FormSubmitButton type="submit" className="h-8 text-xs">
+                          {t(locale, "onboardingCompleted")}
+                        </FormSubmitButton>
+                      </form>
+                    ) : null}
+                  </li>
+                ))}
+                {!offboardingRuns.length ? <li className="text-[hsl(var(--muted))]">—</li> : null}
+              </ul>
+            </div>
+          ) : null}
+
+          {canSoftDelete ? (
+            <div className={canAssignCompanyUI ? "space-y-3 border-t border-[hsl(var(--border))] pt-4" : "space-y-3"}>
+              <CardTitle>{t(locale, "projDangerSoftDelete")}</CardTitle>
+              <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "projSoftDeleteHint")}</p>
+              <form action={softDeleteUserAction}>
+                <input type="hidden" name="userId" value={target.id} />
+                <FormSubmitButton
+                  type="submit"
+                  variant="secondary"
+                  className="border border-rose-600/40 bg-rose-600/10 text-rose-900 dark:text-rose-100"
+                >
+                  {t(locale, "projMoveUserTrash")}
+                </FormSubmitButton>
+              </form>
+            </div>
+          ) : null}
         </Card>
       ) : null}
 
