@@ -64,6 +64,7 @@ type Props = {
   projectChoices: ProjectChoice[];
   recognitions: RecognitionRow[];
   feedback: FeedbackRow[];
+  canViewRecognition: boolean;
   canCreateRecognition: boolean;
   canCreateFeedback: boolean;
   canViewFeedback: boolean;
@@ -87,13 +88,14 @@ export function StaffObservationsPanel({
   projectChoices,
   recognitions,
   feedback,
+  canViewRecognition,
   canCreateRecognition,
   canCreateFeedback,
   canViewFeedback,
   canManageFeedbackWithoutProject,
 }: Props) {
   const showGrowthContext = canViewFeedback || canCreateFeedback;
-  const recognitionItems = recognitions.map((item) => ({
+  const recognitionItems = (canViewRecognition ? recognitions : []).map((item) => ({
     createdAt: item.createdAt,
     kind: "recognition" as const,
     canManage: !!item.project && canCreateRecognition && canManageProject(actor, item.project),

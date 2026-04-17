@@ -33,6 +33,7 @@ type StaffOption = {
   id: string;
   name: string;
   email: string;
+  companyIds: string[];
 };
 
 type Labels = {
@@ -40,6 +41,7 @@ type Labels = {
   department: string;
   projectGroup: string;
   none: string;
+  staffEmpty: string;
   projectName: string;
   description: string;
   ownerResponsible: string;
@@ -76,6 +78,7 @@ export function ProjectCreateForm({
   const [companyId, setCompanyId] = useState(defaultCompanyId);
   const [departmentId, setDepartmentId] = useState("");
   const [projectGroupId, setProjectGroupId] = useState("");
+  const [ownerId, setOwnerId] = useState(defaultOwnerId);
 
   useEffect(() => {
     if (departmentId && !departments.some((department) => department.id === departmentId && department.companyId === companyId)) {
@@ -88,6 +91,12 @@ export function ProjectCreateForm({
 
   const visibleDepartments = departments.filter((department) => department.companyId === companyId);
   const visibleProjectGroups = projectGroups.filter((group) => group.companyId === companyId);
+  const visibleStaff = staff.filter((member) => member.companyIds.includes(companyId));
+
+  useEffect(() => {
+    if (ownerId && visibleStaff.some((member) => member.id === ownerId)) return;
+    setOwnerId(visibleStaff[0]?.id ?? "");
+  }, [ownerId, visibleStaff]);
 
   return (
     <form action={createProjectAction} className="space-y-3">
@@ -165,8 +174,11 @@ export function ProjectCreateForm({
         <label htmlFor={`${idPrefix}-owner`} className="text-xs font-medium">
           {labels.ownerResponsible}
         </label>
-        <Select id={`${idPrefix}-owner`} name="ownerId" defaultValue={defaultOwnerId} required>
-          {staff.map((member) => (
+        <Select id={`${idPrefix}-owner`} name="ownerId" value={ownerId} onChange={(event) => setOwnerId(event.target.value)} required>
+          {!visibleStaff.length ? (
+            <option value="">{labels.none}</option>
+          ) : null}
+          {visibleStaff.map((member) => (
             <option key={member.id} value={member.id}>
               {member.name}
             </option>
@@ -177,13 +189,17 @@ export function ProjectCreateForm({
       <div className="space-y-2">
         <label className="text-xs font-medium">{labels.initialMembersHelp}</label>
         <div className="max-h-40 space-y-1 overflow-auto rounded-md border border-[hsl(var(--border))] p-2">
-          {staff.map((member) => (
-            <label key={member.id} className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="memberIds" value={member.id} />
-              <span>{member.name}</span>
-              <span className="text-xs text-[hsl(var(--muted))]">{member.email}</span>
-            </label>
-          ))}
+          {visibleStaff.length ? (
+            visibleStaff.map((member) => (
+              <label key={member.id} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="memberIds" value={member.id} />
+                <span>{member.name}</span>
+                <span className="text-xs text-[hsl(var(--muted))]">{member.email}</span>
+              </label>
+            ))
+          ) : (
+            <p className="text-sm text-[hsl(var(--muted))]">{labels.staffEmpty}</p>
+          )}
         </div>
         <p className="text-xs text-[hsl(var(--muted))]">{labels.ownerBecomesPmHint}</p>
       </div>

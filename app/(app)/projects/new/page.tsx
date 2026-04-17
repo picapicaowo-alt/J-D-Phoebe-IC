@@ -43,11 +43,27 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
     }),
   ]);
   const staff = await prisma.user.findMany({
-    where: { active: true, deletedAt: null },
-    select: { id: true, name: true, email: true },
+    where: {
+      active: true,
+      deletedAt: null,
+      companyMemberships: { some: { companyId: { in: manageableIds } } },
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      companyMemberships: {
+        where: { companyId: { in: manageableIds } },
+        select: { companyId: true },
+      },
+    },
     orderBy: { name: "asc" },
   });
-  const defaultOwnerId = staff.some((member) => member.id === user.id) ? user.id : (staff[0]?.id ?? "");
+  const defaultCompanyStaff = staff.filter((member) =>
+    member.companyMemberships.some((membership) => membership.companyId === defaultCompanyId),
+  );
+  const defaultOwnerId =
+    defaultCompanyStaff.find((member) => member.id === user.id)?.id ?? defaultCompanyStaff[0]?.id ?? "";
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
@@ -66,12 +82,18 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
           companies={manageable}
           departments={departmentsForCreate}
           projectGroups={projectGroupsForCreate}
-          staff={staff}
+          staff={staff.map((member) => ({
+            id: member.id,
+            name: member.name,
+            email: member.email,
+            companyIds: member.companyMemberships.map((membership) => membership.companyId),
+          }))}
           labels={{
             company: t(locale, "commonCompany"),
             department: t(locale, "projFieldDepartment"),
             projectGroup: t(locale, "projFieldProjectGroup"),
             none: t(locale, "projDeptGroupNone"),
+            staffEmpty: t(locale, "staffEmpty"),
             projectName: t(locale, "projProjectName"),
             description: t(locale, "commonDescription"),
             ownerResponsible: t(locale, "projOwnerResponsible"),

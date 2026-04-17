@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
-import { type AccessUser } from "@/lib/access";
+import { companyVisibilityWhere, staffVisibilityWhere, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
@@ -58,16 +58,18 @@ export async function StaffDirectoryBody({
     (user.isSuperAdmin || user.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN"));
   const showOnboardingTimeline = user.isSuperAdmin;
 
-  const where: Prisma.UserWhereInput = { deletedAt: null };
+  const whereClauses: Prisma.UserWhereInput[] = [{ deletedAt: null }, staffVisibilityWhere(user)];
   if (q) {
-    where.OR = [
-      { name: { contains: q, mode: "insensitive" } },
-      { email: { contains: q, mode: "insensitive" } },
-      { title: { contains: q, mode: "insensitive" } },
-    ];
+    whereClauses.push({
+      OR: [
+        { name: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+        { title: { contains: q, mode: "insensitive" } },
+      ],
+    });
   }
   if (companyFilter) {
-    where.companyMemberships = { some: { companyId: companyFilter } };
+    whereClauses.push({ companyMemberships: { some: { companyId: companyFilter } } });
   }
   let departmentFilter = "";
   if (departmentFilterRaw) {
@@ -80,15 +82,20 @@ export async function StaffDirectoryBody({
     if (dep) departmentFilter = dep.id;
   }
   if (departmentFilter) {
-    where.companyMemberships = {
-      some: {
-        departmentId: departmentFilter,
-        ...(companyFilter ? { companyId: companyFilter } : {}),
+    whereClauses.push({
+      companyMemberships: {
+        some: {
+          departmentId: departmentFilter,
+          ...(companyFilter ? { companyId: companyFilter } : {}),
+        },
       },
-    };
+    });
   }
-  if (activeRaw === "active") where.active = true;
-  else if (activeRaw === "inactive") where.active = false;
+  if (activeRaw === "active") whereClauses.push({ active: true });
+  else if (activeRaw === "inactive") whereClauses.push({ active: false });
+
+  const where: Prisma.UserWhereInput = whereClauses.length === 1 ? whereClauses[0]! : { AND: whereClauses };
+  const visibleCompanyWhere: Prisma.CompanyWhereInput = { deletedAt: null, ...companyVisibilityWhere(user) };
 
   const [staff, totalAll, companies] = await Promise.all([
     prisma.user.findMany({
@@ -107,13 +114,13 @@ export async function StaffDirectoryBody({
         },
       },
     }),
-    prisma.user.count({ where: { deletedAt: null } }),
-    prisma.company.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
+    prisma.user.count({ where: { deletedAt: null, ...staffVisibilityWhere(user) } }),
+    prisma.company.findMany({ where: visibleCompanyWhere, orderBy: { name: "asc" } }),
   ]);
 
   const departmentOptions = await prisma.department.findMany({
     where: {
-      company: { deletedAt: null },
+      company: visibleCompanyWhere,
       ...(companyFilter ? { companyId: companyFilter } : {}),
     },
     include: { company: true },

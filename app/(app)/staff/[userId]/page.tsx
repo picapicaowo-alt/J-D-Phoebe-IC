@@ -20,7 +20,7 @@ import {
 } from "@/app/actions/lifecycle";
 import { removeUserAvatarAction, uploadUserAvatarAction } from "@/app/actions/profile-media";
 import { requireUser } from "@/lib/auth";
-import { canManageProject, isAnyAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
+import { canManageProject, isAnyAdmin, isSuperAdmin, staffVisibilityWhere, type AccessUser } from "@/lib/access";
 import { getLocale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { tLedgerReason } from "@/lib/ledger-labels";
@@ -58,10 +58,17 @@ export default async function StaffDetailPage({
   const { userId } = await params;
   const sp = (await searchParams) ?? {};
   const uploadError = Array.isArray(sp.uploadError) ? sp.uploadError[0] : sp.uploadError;
+  const canReadStaff = actor.id === userId || (await userHasPermission(actor, "staff.read"));
+  if (!canReadStaff) notFound();
+  const canCreateRecognitionPermission = await userHasPermission(actor, "recognition.create");
+  const canViewRecognition = canCreateRecognitionPermission || (await userHasPermission(actor, "recognition.read"));
+  const canCreateFeedbackPermission = await userHasPermission(actor, "feedback.submit");
   const canViewFeedback = isAnyAdmin(actor) && (await userHasPermission(actor, "feedback.read"));
 
   const target = await prisma.user.findFirst({
-    where: { id: userId, deletedAt: null },
+    where: {
+      AND: [{ id: userId, deletedAt: null }, staffVisibilityWhere(actor)],
+    },
     include: {
       groupMemberships: { include: { roleDefinition: true, orgGroup: true } },
       companyMemberships: { include: { company: true, roleDefinition: true, department: true, supervisor: true } },
@@ -72,14 +79,18 @@ export default async function StaffDetailPage({
       projectMemberships: { include: { project: { include: { company: true } }, roleDefinition: true } },
       companionProfile: true,
       performanceSnapshots: { orderBy: { createdAt: "desc" }, take: 1 },
-      recognitionsReceived: {
-        include: { fromUser: true, project: { include: { company: true } } },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-      },
     },
   });
   if (!target) notFound();
+
+  const recognitionsReceived = canViewRecognition
+    ? await prisma.recognitionEvent.findMany({
+        where: { toUserId: target.id },
+        include: { fromUser: true, project: { include: { company: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      })
+    : [];
 
   const feedbackReceived = canViewFeedback
     ? await prisma.feedbackEvent.findMany({
@@ -204,10 +215,10 @@ export default async function StaffDetailPage({
   const growth = [...sorted].reverse().slice(0, 3);
 
   const canRecognizeHere =
-    (await userHasPermission(actor, "recognition.create")) &&
+    canCreateRecognitionPermission &&
     (isSuperAdmin(actor) || isAnyGroupAdmin || isAnyCompanyAdmin || isAnyPm);
   const canFeedbackHere =
-    (await userHasPermission(actor, "feedback.submit")) &&
+    canCreateFeedbackPermission &&
     (isSuperAdmin(actor) || isAnyGroupAdmin || isAnyCompanyAdmin || isAnyPm);
   const observationProjects = await prisma.project.findMany({
     where: { deletedAt: null, memberships: { some: { userId: target.id } } },
@@ -468,8 +479,9 @@ export default async function StaffDetailPage({
         locale={locale}
         targetUserId={target.id}
         projectChoices={observationProjectChoices}
-        recognitions={target.recognitionsReceived}
+        recognitions={recognitionsReceived}
         feedback={feedbackReceived}
+        canViewRecognition={canViewRecognition}
         canCreateRecognition={canRecognizeHere}
         canCreateFeedback={canFeedbackHere}
         canViewFeedback={canViewFeedback}

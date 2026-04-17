@@ -16,6 +16,13 @@ export type AccessUser = User & {
   }[];
 };
 
+type StaffVisibilityTarget = {
+  id: string;
+  groupMemberships: { orgGroupId: string }[];
+  companyMemberships: { companyId: string; company: { orgGroupId: string } }[];
+  projectMemberships: { projectId: string; project: { companyId: string; company: { orgGroupId: string } } }[];
+};
+
 export function isSuperAdmin(user: User) {
   return user.isSuperAdmin;
 }
@@ -137,4 +144,51 @@ export function companyVisibilityWhere(user: AccessUser): Prisma.CompanyWhereInp
   if (companyIds.length) OR.push({ id: { in: companyIds } });
 
   return OR.length ? { OR } : { id: { in: [] } };
+}
+
+export function staffVisibilityWhere(user: AccessUser): Prisma.UserWhereInput {
+  if (user.isSuperAdmin) return {};
+
+  const groupOrgIds = [...new Set(user.groupMemberships.map((m) => m.orgGroupId))];
+  const companyIds = [...new Set(user.companyMemberships.map((m) => m.companyId))];
+  const projectIds = [...new Set(user.projectMemberships.map((m) => m.projectId))];
+
+  const OR: Prisma.UserWhereInput[] = [{ id: user.id }];
+  if (groupOrgIds.length) {
+    OR.push(
+      { groupMemberships: { some: { orgGroupId: { in: groupOrgIds } } } },
+      { companyMemberships: { some: { company: { orgGroupId: { in: groupOrgIds } } } } },
+      { projectMemberships: { some: { project: { company: { orgGroupId: { in: groupOrgIds } } } } } },
+    );
+  }
+  if (companyIds.length) {
+    OR.push(
+      { companyMemberships: { some: { companyId: { in: companyIds } } } },
+      { projectMemberships: { some: { project: { companyId: { in: companyIds } } } } },
+    );
+  }
+  if (projectIds.length) OR.push({ projectMemberships: { some: { projectId: { in: projectIds } } } });
+
+  return { OR };
+}
+
+export function canViewStaffMember(user: AccessUser, target: StaffVisibilityTarget) {
+  if (user.isSuperAdmin || user.id === target.id) return true;
+
+  const groupOrgIds = new Set(user.groupMemberships.map((m) => m.orgGroupId));
+  const companyIds = new Set(user.companyMemberships.map((m) => m.companyId));
+  const projectIds = new Set(user.projectMemberships.map((m) => m.projectId));
+
+  return (
+    target.groupMemberships.some((membership) => groupOrgIds.has(membership.orgGroupId)) ||
+    target.companyMemberships.some(
+      (membership) => companyIds.has(membership.companyId) || groupOrgIds.has(membership.company.orgGroupId),
+    ) ||
+    target.projectMemberships.some(
+      (membership) =>
+        projectIds.has(membership.projectId) ||
+        companyIds.has(membership.project.companyId) ||
+        groupOrgIds.has(membership.project.company.orgGroupId),
+    )
+  );
 }

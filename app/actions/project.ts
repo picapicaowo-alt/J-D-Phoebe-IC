@@ -42,7 +42,26 @@ export async function createProjectAction(formData: FormData) {
   const deadlineRaw = String(formData.get("deadline") ?? "").trim();
   const deadline = deadlineRaw ? parseDatetimeLocalInTimeZone(deadlineRaw, user.timezone) : null;
   const requestedMemberIds = getStringArray(formData, "memberIds");
+  const selectedCompanyMemberIds = [...new Set([ownerId, ...requestedMemberIds])];
   const memberIds = [...new Set([user.id, ownerId, ...requestedMemberIds])];
+
+  if (selectedCompanyMemberIds.length) {
+    const selectedCompanyMemberships = await prisma.companyMembership.findMany({
+      where: {
+        companyId,
+        userId: { in: selectedCompanyMemberIds },
+        user: { deletedAt: null, active: true },
+      },
+      select: { userId: true },
+    });
+    const validCompanyMemberIds = new Set(selectedCompanyMemberships.map((membership) => membership.userId));
+    if (!validCompanyMemberIds.has(ownerId)) {
+      throw new Error("Owner must be an active member of the selected company");
+    }
+    if (requestedMemberIds.some((memberId) => !validCompanyMemberIds.has(memberId))) {
+      throw new Error("Assigned staff must be active members of the selected company");
+    }
+  }
 
   const departmentIdRaw = String(formData.get("departmentId") ?? "").trim();
   const departmentId: string | null = departmentIdRaw
