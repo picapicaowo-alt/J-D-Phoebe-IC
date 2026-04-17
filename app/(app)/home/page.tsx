@@ -18,13 +18,18 @@ export default async function HomePage({
 }) {
   const user = (await requireUser()) as AccessUser;
   if (!user.companionIntroCompletedAt) redirect("/onboarding/companion");
-  if (!(await userHasPermission(user, "project.read"))) redirect("/group");
 
-  const sp = await searchParams;
+  const [sp, canReadProjects, locale] = await Promise.all([
+    searchParams,
+    userHasPermission(user, "project.read"),
+    getLocale(),
+  ]);
+  if (!canReadProjects) redirect("/group");
+
   const snapshot = String(sp.snapshot ?? "").trim();
   const skipOnboardingQuery = String(sp.skipOnboarding ?? "");
-  const allowSkipOnboarding = await userHasPermission(user, "lifecycle.onboarding.skip");
-  const skipOnboarding = skipOnboardingQuery === "1" && allowSkipOnboarding;
+  const skipOnboarding =
+    skipOnboardingQuery === "1" && (await userHasPermission(user, "lifecycle.onboarding.skip"));
 
   if (!skipOnboarding) {
     const pendingOnboardingRoute = await getPendingMemberOnboardingRoute(user.id);
@@ -34,16 +39,12 @@ export default async function HomePage({
   after(async () => {
     try {
       const m = await import("@/lib/member-onboarding");
-      if (skipOnboarding) {
-        await m.ensureAllMemberOnboardingsForUser(user.id);
-      }
+      await m.ensureAllMemberOnboardingsForUser(user.id);
       await m.refreshOnboardingOverdueReminders(user.id);
     } catch (err) {
       console.error("[home member onboarding after]", err);
     }
   });
-
-  const locale = await getLocale();
 
   return (
     <div className="space-y-8">

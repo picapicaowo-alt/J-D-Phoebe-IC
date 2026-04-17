@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { closeAllOpenDialogs } from "@/components/dialog-launcher";
@@ -40,8 +41,10 @@ function NavLink({
 }) {
   const active = isActive(pathname, href);
   return (
-    <a
+    <Link
       href={href}
+      prefetch={shouldPrefetchRoutes}
+      aria-current={active ? "page" : undefined}
       onFocus={() => warmRoute(href)}
       onPointerEnter={() => warmRoute(href)}
       onPointerDown={() => prepareForNavigation()}
@@ -54,7 +57,7 @@ function NavLink({
       )}
     >
       {label}
-    </a>
+    </Link>
   );
 }
 
@@ -159,10 +162,12 @@ function NavDropdown({
             role="menu"
           >
             {dd.items.map((item) => (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 role="menuitem"
+                aria-current={isActive(pathname, item.href) ? "page" : undefined}
                 onFocus={() => warmRoute(item.href)}
                 onPointerEnter={() => warmRoute(item.href)}
                 onPointerDown={() => prepareForNavigation()}
@@ -180,7 +185,7 @@ function NavDropdown({
                   {item.label}
                 </div>
                 {item.description ? <p className="mt-0.5 text-sm leading-snug text-[hsl(var(--muted))]">{item.description}</p> : null}
-              </a>
+              </Link>
             ))}
           </div>
         </div>

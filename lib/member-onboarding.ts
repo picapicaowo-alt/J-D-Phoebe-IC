@@ -83,16 +83,12 @@ export async function ensureMemberOnboardingForCompany(
 
 export async function ensureAllMemberOnboardingsForUser(userId: string) {
   const memberships = await prisma.companyMembership.findMany({ where: { userId }, select: { companyId: true } });
-  for (const m of memberships) {
-    await ensureMemberOnboardingForCompany(userId, m.companyId);
-  }
+  await Promise.all(memberships.map((m) => ensureMemberOnboardingForCompany(userId, m.companyId)));
 }
 
 export async function backfillMemberOnboardingsForCompany(companyId: string) {
   const memberships = await prisma.companyMembership.findMany({ where: { companyId }, select: { userId: true } });
-  for (const m of memberships) {
-    await ensureMemberOnboardingForCompany(m.userId, companyId);
-  }
+  await Promise.all(memberships.map((m) => ensureMemberOnboardingForCompany(m.userId, companyId)));
 }
 
 /** Send one-time overdue reminders (member + supervisor). */
