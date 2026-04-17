@@ -1279,6 +1279,12 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                       if (!selectedThreadKey) return;
                       updateComposer(selectedThreadKey, (current) => ({ ...current, draft: event.target.value }));
                     }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" || event.shiftKey) return;
+                      if (!selectedThreadKey || sending || (!draft.trim() && files.length === 0)) return;
+                      event.preventDefault();
+                      event.currentTarget.form?.requestSubmit();
+                    }}
                     placeholder={copy.placeholder}
                     className="min-h-[108px] w-full rounded-[22px] border border-[hsl(var(--border))] bg-transparent px-4 py-3 text-sm text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))]/20 transition focus:ring-2"
                   />

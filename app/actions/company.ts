@@ -211,13 +211,26 @@ export async function createCompanyOnboardingMaterialAction(formData: FormData) 
           deadlineDays: values.deadlineDays,
         },
       });
-      await uploadOnboardingMaterialBlob({
-        userId: user.id,
-        companyId,
-        materialId: material.id,
-        kind: "package",
-        file: packageUpload,
-      });
+
+      try {
+        await uploadOnboardingMaterialBlob({
+          userId: user.id,
+          companyId,
+          materialId: material.id,
+          kind: "package",
+          file: packageUpload,
+        });
+      } catch (error) {
+        await prisma.companyOnboardingMaterial.delete({
+          where: { id: material.id },
+        }).catch(() => undefined);
+
+        const message =
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "Unable to save the uploaded onboarding file.";
+        throw new Error(message);
+      }
     }
   } else {
     await prisma.companyOnboardingMaterial.create({
