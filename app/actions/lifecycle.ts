@@ -14,6 +14,7 @@ import {
   getDefaultCalendarLabelId,
   normalizeCalendarLabelColor,
 } from "@/lib/calendar-labels";
+import { getCurrentCompanyOnboardingMaterial } from "@/lib/company-onboarding-materials";
 
 function must(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -85,10 +86,24 @@ export async function acknowledgeMemberOnboardingMaterialsAction(formData: FormD
   const onboardingId = must(formData, "onboardingId");
   const ob = await prisma.memberOnboarding.findFirst({
     where: { id: onboardingId, userId: user.id },
-    include: { assignedMaterial: true, company: true },
+    include: {
+      assignedMaterial: true,
+      company: {
+        include: {
+          onboardingMaterials: {
+            orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+          },
+        },
+      },
+    },
   });
   if (!ob) throw new Error("Forbidden");
-  const videoUrl = ob.videoUrl?.trim() || ob.assignedMaterial?.videoUrl?.trim() || ob.company.onboardingVideoUrl?.trim();
+  const fallbackMaterial = !ob.packageUrl.trim() ? getCurrentCompanyOnboardingMaterial(ob.company) : null;
+  const packageUrl = ob.packageUrl.trim() || fallbackMaterial?.packageUrl?.trim() || "";
+  if (!packageUrl) {
+    redirect(`/onboarding/member?companyId=${ob.companyId}&onboardingErr=materials_unavailable`);
+  }
+  const videoUrl = ob.videoUrl?.trim() || ob.assignedMaterial?.videoUrl?.trim() || fallbackMaterial?.videoUrl?.trim() || ob.company.onboardingVideoUrl?.trim();
   if (videoUrl && !ob.videoCompletedAt) {
     redirect(`/onboarding/member?companyId=${ob.companyId}&onboardingErr=video`);
   }

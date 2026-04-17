@@ -55,6 +55,7 @@ async function requireCompanyForUpdate(actor: AccessUser, companyId: string) {
 
 function revalidateCompanyPaths(companyId: string) {
   revalidatePath("/onboarding");
+  revalidatePath("/onboarding/member");
   revalidatePath(`/companies/${companyId}`);
   revalidatePath("/companies");
   revalidatePath("/group");

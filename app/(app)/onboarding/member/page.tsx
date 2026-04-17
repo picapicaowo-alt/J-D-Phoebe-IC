@@ -11,7 +11,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { MemberOnboardingChecklist } from "@/components/member-onboarding-checklist";
 import { acknowledgeMemberOnboardingMaterialsAction } from "@/app/actions/lifecycle";
 import { OnboardingVideoPanel } from "@/components/onboarding-video-panel";
-import { resolveCompanyOnboardingMaterials } from "@/lib/company-onboarding-materials";
+import { DEFAULT_COMPANY_ONBOARDING_VERSION, resolveCompanyOnboardingMaterials } from "@/lib/company-onboarding-materials";
 
 export default async function MemberOnboardingPage({
   searchParams,
@@ -25,7 +25,7 @@ export default async function MemberOnboardingPage({
   if (!companyId) redirect("/onboarding");
 
   const { ensureMemberOnboardingForCompany } = await import("@/lib/member-onboarding");
-  await ensureMemberOnboardingForCompany(user.id, companyId);
+  await ensureMemberOnboardingForCompany(user.id, companyId, { createPlaceholder: true });
 
   const ob = await prisma.memberOnboarding.findUnique({
     where: { userId_companyId: { userId: user.id, companyId } },
@@ -48,11 +48,16 @@ export default async function MemberOnboardingPage({
   const overdue = !ob.completedAt && ob.deadlineAt.getTime() < Date.now();
   const canSkipGate = await userHasPermission(user, "lifecycle.onboarding.skip");
   const companyMaterials = resolveCompanyOnboardingMaterials(ob.company);
+  const currentCompanyMaterial = companyMaterials[0] ?? null;
+  const effectiveAssignedMaterial = ob.assignedMaterial ?? (!ob.packageUrl.trim() ? currentCompanyMaterial : null);
+  const packageUrl = ob.packageUrl.trim() || effectiveAssignedMaterial?.packageUrl?.trim() || "";
+  const hasPackageUrl = Boolean(packageUrl);
+  const packageVersion = ob.packageVersion.trim() || effectiveAssignedMaterial?.packageVersion || DEFAULT_COMPANY_ONBOARDING_VERSION;
   const additionalMaterials = companyMaterials.filter((material) => {
-    if (ob.assignedMaterial?.id) return material.id !== ob.assignedMaterial.id;
-    return !(material.packageUrl === ob.packageUrl && material.packageVersion === ob.packageVersion);
+    if (effectiveAssignedMaterial?.id) return material.id !== effectiveAssignedMaterial.id;
+    return !(material.packageUrl === packageUrl && material.packageVersion === packageVersion);
   });
-  const videoUrl = ob.videoUrl?.trim() || ob.assignedMaterial?.videoUrl?.trim() || ob.company.onboardingVideoUrl?.trim() || "";
+  const videoUrl = ob.videoUrl?.trim() || effectiveAssignedMaterial?.videoUrl?.trim() || ob.company.onboardingVideoUrl?.trim() || "";
   const videoGateOk = !videoUrl || Boolean(ob.videoCompletedAt);
 
   return (
@@ -80,6 +85,11 @@ export default async function MemberOnboardingPage({
       {onboardingErr === "materials" ? (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-base text-[hsl(var(--foreground))]">{t(locale, "onboardingErrMaterials")}</p>
       ) : null}
+      {onboardingErr === "materials_unavailable" ? (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-base text-[hsl(var(--foreground))]">
+          {t(locale, "onboardingErrMaterialsUnavailable")}
+        </p>
+      ) : null}
       {onboardingErr === "order" ? (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-base text-[hsl(var(--foreground))]">{t(locale, "onboardingErrOrder")}</p>
       ) : null}
@@ -106,27 +116,36 @@ export default async function MemberOnboardingPage({
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "onboardingAssignedMaterial")}</p>
-            <a
-              href={ob.packageUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-flex text-lg font-semibold text-[hsl(var(--primary))] underline-offset-4 hover:underline"
-            >
-              {t(locale, "onboardingOpenPackage")}
-            </a>
-            <p className="mt-3 text-base leading-relaxed text-[hsl(var(--muted))]">
-              {t(locale, "companyOnboardingVersion")}: {ob.packageVersion}
-            </p>
-            {videoUrl ? (
-              <a
-                href={videoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
-              >
-                {t(locale, "onboardingVideoOpenLink")}
-              </a>
-            ) : null}
+            {hasPackageUrl ? (
+              <>
+                <a
+                  href={packageUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex text-lg font-semibold text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+                >
+                  {t(locale, "onboardingOpenPackage")}
+                </a>
+                <p className="mt-3 text-base leading-relaxed text-[hsl(var(--muted))]">
+                  {t(locale, "companyOnboardingVersion")}: {packageVersion}
+                </p>
+                {videoUrl ? (
+                  <a
+                    href={videoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+                  >
+                    {t(locale, "onboardingVideoOpenLink")}
+                  </a>
+                ) : null}
+              </>
+            ) : (
+              <div className="mt-3 space-y-2 rounded-lg border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3">
+                <p className="text-sm font-medium text-[hsl(var(--foreground))]">{t(locale, "onboardingNoPackage")}</p>
+                <p className="text-sm leading-relaxed text-[hsl(var(--muted))]">{t(locale, "onboardingNoPackageHelp")}</p>
+              </div>
+            )}
           </div>
           <div className="space-y-4 text-base leading-relaxed">
             <div>
@@ -194,7 +213,7 @@ export default async function MemberOnboardingPage({
           />
         ) : null}
 
-        {!ob.completedAt && !ob.materialsOpenedAt && videoGateOk ? (
+        {!ob.completedAt && !ob.materialsOpenedAt && videoGateOk && hasPackageUrl ? (
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
             <p className="font-medium text-[hsl(var(--foreground))]">{t(locale, "onboardingMaterialsAckTitle")}</p>
             <p className="mt-2 text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "onboardingMaterialsAckHelp")}</p>
@@ -206,19 +225,27 @@ export default async function MemberOnboardingPage({
             </form>
           </div>
         ) : null}
+        {!ob.completedAt && !ob.materialsOpenedAt && !hasPackageUrl ? (
+          <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+            <p className="font-medium text-[hsl(var(--foreground))]">{t(locale, "onboardingNoPackage")}</p>
+            <p className="mt-2 text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "onboardingNoPackageHelp")}</p>
+          </div>
+        ) : null}
         {ob.materialsOpenedAt && !ob.completedAt ? (
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
             <p className="text-base text-emerald-700 dark:text-emerald-300">
               {t(locale, "onboardingMaterialsOpenedAt")}: {ob.materialsOpenedAt.toISOString().slice(0, 16).replace("T", " ")}
             </p>
-            <a
-              href={ob.packageUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
-            >
-              {t(locale, "onboardingReviewMaterials")}
-            </a>
+            {hasPackageUrl ? (
+              <a
+                href={packageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+              >
+                {t(locale, "onboardingReviewMaterials")}
+              </a>
+            ) : null}
             {videoUrl ? (
               <a
                 href={videoUrl}
@@ -237,14 +264,18 @@ export default async function MemberOnboardingPage({
         <Card className="space-y-3 rounded-[12px] border border-[hsl(var(--border))] p-5">
           <CardTitle className="font-display text-base font-bold">{t(locale, "onboardingResourcesAfterComplete")}</CardTitle>
           <p className="text-base leading-relaxed text-[hsl(var(--muted))]">{t(locale, "onboardingResourcesAfterCompleteHelp")}</p>
-          <a
-            href={ob.packageUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex font-medium text-[hsl(var(--primary))] hover:underline"
-          >
-            {t(locale, "onboardingOpenPackage")}
-          </a>
+          {hasPackageUrl ? (
+            <a
+              href={packageUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex font-medium text-[hsl(var(--primary))] hover:underline"
+            >
+              {t(locale, "onboardingOpenPackage")}
+            </a>
+          ) : (
+            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "onboardingNoPackageHelp")}</p>
+          )}
         </Card>
       ) : null}
 

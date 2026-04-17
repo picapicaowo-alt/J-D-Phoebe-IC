@@ -1,5 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { getCurrentCompanyOnboardingMaterial } from "@/lib/company-onboarding-materials";
+import {
+  DEFAULT_COMPANY_ONBOARDING_DEADLINE_DAYS,
+  DEFAULT_COMPANY_ONBOARDING_VERSION,
+  getCurrentCompanyOnboardingMaterial,
+} from "@/lib/company-onboarding-materials";
 
 const DEFAULT_ITEM_KEYS = ["OB_READ_PACKAGE", "OB_ACK_POLICIES", "OB_SUPERVISOR_MEET"] as const;
 
@@ -9,8 +13,13 @@ function addDays(d: Date, days: number) {
   return x;
 }
 
-/** Create onboarding run when company has a package URL and membership exists. */
-export async function ensureMemberOnboardingForCompany(userId: string, companyId: string) {
+/** Create an onboarding run for every member/company pair, even before HR uploads materials. */
+export async function ensureMemberOnboardingForCompany(
+  userId: string,
+  companyId: string,
+  opts?: { createPlaceholder?: boolean },
+) {
+  const createPlaceholder = opts?.createPlaceholder ?? false;
   const company = await prisma.company.findFirst({
     where: { id: companyId, deletedAt: null },
     include: {
@@ -19,14 +28,7 @@ export async function ensureMemberOnboardingForCompany(userId: string, companyId
       },
     },
   });
-  const material = company ? getCurrentCompanyOnboardingMaterial(company) : null;
-  const url = material?.packageUrl?.trim();
-  if (!company || !material || !url) return null;
-
-  const existing = await prisma.memberOnboarding.findUnique({
-    where: { userId_companyId: { userId, companyId } },
-  });
-  if (existing) return existing;
+  if (!company) return null;
 
   const membership = await prisma.companyMembership.findUnique({
     where: { userId_companyId: { userId, companyId } },
@@ -34,17 +36,39 @@ export async function ensureMemberOnboardingForCompany(userId: string, companyId
   });
   if (!membership) return null;
 
-  const deadlineAt = addDays(new Date(), material.deadlineDays);
+  const material = getCurrentCompanyOnboardingMaterial(company);
+  const existing = await prisma.memberOnboarding.findUnique({
+    where: { userId_companyId: { userId, companyId } },
+  });
+  if (existing) {
+    const existingPackageUrl = existing.packageUrl.trim();
+    if (!existingPackageUrl && material) {
+      return prisma.memberOnboarding.update({
+        where: { id: existing.id },
+        data: {
+          companyOnboardingMaterialId: material.source === "db" ? material.id : null,
+          packageUrl: material.packageUrl.trim(),
+          videoUrl: material.videoUrl?.trim() || null,
+          packageVersion: material.packageVersion ?? DEFAULT_COMPANY_ONBOARDING_VERSION,
+          deadlineAt: addDays(new Date(), material.deadlineDays),
+        },
+      });
+    }
+    return existing;
+  }
+  if (!material && !createPlaceholder) return null;
+
+  const deadlineAt = addDays(new Date(), material?.deadlineDays ?? DEFAULT_COMPANY_ONBOARDING_DEADLINE_DAYS);
   const liaison = membership.supervisor;
 
   const ob = await prisma.memberOnboarding.create({
     data: {
       userId,
       companyId,
-      companyOnboardingMaterialId: material.source === "db" ? material.id : null,
-      packageUrl: url,
-      videoUrl: material.videoUrl?.trim() || null,
-      packageVersion: material.packageVersion ?? "v1",
+      companyOnboardingMaterialId: material?.source === "db" ? material.id : null,
+      packageUrl: material?.packageUrl?.trim() || "",
+      videoUrl: material?.videoUrl?.trim() || null,
+      packageVersion: material?.packageVersion ?? DEFAULT_COMPANY_ONBOARDING_VERSION,
       deadlineAt,
       liaisonUserId: liaison?.id ?? null,
       liaisonName: liaison?.name ?? null,

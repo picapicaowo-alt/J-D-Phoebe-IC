@@ -100,7 +100,9 @@ export async function updateCompanionAction(formData: FormData) {
     }
 
     selectedCompanyId = selectedCompany.id;
-    selectedCompanyOnboardingExists = Boolean(await ensureMemberOnboardingForCompany(targetUserId, selectedCompany.id));
+    selectedCompanyOnboardingExists = Boolean(
+      await ensureMemberOnboardingForCompany(targetUserId, selectedCompany.id, { createPlaceholder: true }),
+    );
   }
 
   const all = getCompanionManifest();
