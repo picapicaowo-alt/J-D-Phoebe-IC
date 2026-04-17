@@ -47,6 +47,7 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
     select: { id: true, name: true, email: true },
     orderBy: { name: "asc" },
   });
+  const defaultOwnerId = staff.some((member) => member.id === user.id) ? user.id : (staff[0]?.id ?? "");
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
@@ -61,6 +62,7 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
         <ProjectCreateForm
           locale={locale}
           defaultCompanyId={defaultCompanyId}
+          defaultOwnerId={defaultOwnerId}
           companies={manageable}
           departments={departmentsForCreate}
           projectGroups={projectGroupsForCreate}

@@ -54,6 +54,7 @@ type Labels = {
 type Props = {
   locale: Locale;
   defaultCompanyId: string;
+  defaultOwnerId: string;
   companies: CompanyOption[];
   departments: DepartmentOption[];
   projectGroups: ProjectGroupOption[];
@@ -64,6 +65,7 @@ type Props = {
 export function ProjectCreateForm({
   locale,
   defaultCompanyId,
+  defaultOwnerId,
   companies,
   departments,
   projectGroups,
@@ -163,7 +165,7 @@ export function ProjectCreateForm({
         <label htmlFor={`${idPrefix}-owner`} className="text-xs font-medium">
           {labels.ownerResponsible}
         </label>
-        <Select id={`${idPrefix}-owner`} name="ownerId" required>
+        <Select id={`${idPrefix}-owner`} name="ownerId" defaultValue={defaultOwnerId} required>
           {staff.map((member) => (
             <option key={member.id} value={member.id}>
               {member.name}

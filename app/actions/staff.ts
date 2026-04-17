@@ -128,6 +128,7 @@ export async function assignCompanyAction(formData: FormData) {
   });
   const { ensureMemberOnboardingForCompany } = await import("@/lib/member-onboarding");
   await ensureMemberOnboardingForCompany(userId, companyId);
+  invalidateAccessUserCache(userId);
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath(`/companies/${companyId}`);
@@ -175,6 +176,7 @@ export async function updateCompanyMembershipSupervisorAction(formData: FormData
       data: { liaisonUserId: null, liaisonName: null, liaisonEmail: null },
     });
   }
+  invalidateAccessUserCache(userId);
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath(`/companies/${companyId}`);
@@ -207,6 +209,7 @@ export async function updateCompanyMembershipDepartmentAction(formData: FormData
     where: { id: membership.id },
     data: { departmentId },
   });
+  invalidateAccessUserCache(userId);
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath(`/companies/${companyId}`);
@@ -253,6 +256,7 @@ export async function updateCompanyMembershipRoleAction(formData: FormData) {
     where: { id: membership.id },
     data: { roleDefinitionId: role.id },
   });
+  invalidateAccessUserCache(userId);
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath(`/companies/${companyId}`);
@@ -281,6 +285,7 @@ export async function assignProjectAction(formData: FormData) {
     create: { userId, projectId, roleDefinitionId: role.id },
     update: { roleDefinitionId: role.id },
   });
+  invalidateAccessUserCache(userId);
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath(`/projects/${projectId}`);
@@ -329,6 +334,7 @@ export async function updateProjectMembershipRoleAction(formData: FormData) {
     where: { id: membership.id },
     data: { roleDefinitionId: role.id },
   });
+  invalidateAccessUserCache(userId);
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath(`/projects/${projectId}`);
@@ -342,6 +348,7 @@ export async function removeCompanyMembershipAction(formData: FormData) {
   if (!company) throw new Error("Company not found");
   if (!(await canManageCompanyMemberships(actor, company))) throw new Error("Forbidden");
   await prisma.companyMembership.deleteMany({ where: { userId, companyId } });
+  invalidateAccessUserCache(userId);
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath(`/companies/${companyId}`);
@@ -358,6 +365,7 @@ export async function removeProjectMembershipAction(formData: FormData) {
   if (!project) throw new Error("Project not found");
   if (!(await canManageProjectMemberships(actor, project))) throw new Error("Forbidden");
   await prisma.projectMembership.deleteMany({ where: { userId, projectId } });
+  invalidateAccessUserCache(userId);
   invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath(`/projects/${projectId}`);
@@ -391,6 +399,7 @@ export async function assignMultipleToProjectAction(formData: FormData) {
       create: { userId: id, projectId, roleDefinitionId: role.id },
       update: { roleDefinitionId: role.id },
     });
+    invalidateAccessUserCache(id);
     invalidatePermissionCache(id);
   }
   revalidatePath(`/projects/${projectId}`);

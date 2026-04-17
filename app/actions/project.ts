@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Priority, ProjectRelationType, ProjectStatus } from "@prisma/client";
-import { requireUser } from "@/lib/auth";
+import { invalidateAccessUserCache, requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import { canManageProject, type AccessUser } from "@/lib/access";
-import { assertPermission } from "@/lib/permissions";
+import { assertPermission, invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { canCreateProjectInCompany } from "@/lib/scoped-role-access";
 import { parseDatetimeLocalInTimeZone } from "@/lib/timezone";
@@ -42,7 +42,7 @@ export async function createProjectAction(formData: FormData) {
   const deadlineRaw = String(formData.get("deadline") ?? "").trim();
   const deadline = deadlineRaw ? parseDatetimeLocalInTimeZone(deadlineRaw, user.timezone) : null;
   const requestedMemberIds = getStringArray(formData, "memberIds");
-  const memberIds = [...new Set([ownerId, ...requestedMemberIds])];
+  const memberIds = [...new Set([user.id, ownerId, ...requestedMemberIds])];
 
   const departmentIdRaw = String(formData.get("departmentId") ?? "").trim();
   const departmentId: string | null = departmentIdRaw
@@ -104,9 +104,15 @@ export async function createProjectAction(formData: FormData) {
     });
   }
 
+  for (const touchedUserId of new Set([user.id, ...validMemberIds])) {
+    invalidateAccessUserCache(touchedUserId);
+    invalidatePermissionCache(touchedUserId);
+  }
+
   await writeAudit({ actorId: user.id, entityType: "PROJECT", entityId: p.id, action: "CREATE", newValue: name });
   revalidatePath("/projects");
   revalidatePath("/calendar");
+  revalidatePath(`/projects/${p.id}`);
   revalidatePath(`/companies/${companyId}`);
   redirect(`/projects/${p.id}`);
 }
