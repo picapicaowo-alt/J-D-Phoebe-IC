@@ -1,7 +1,6 @@
-import { readFileSync } from "fs";
-import path from "path";
 import type { CompanionSpecies } from "@prisma/client";
 import type { AccessUser } from "@/lib/access";
+import manifestJson from "@/public/companions/manifest.json";
 
 export type CompanionManifestEntry = {
   id: string;
@@ -15,8 +14,8 @@ let cached: CompanionManifestEntry[] | null = null;
 
 export function getCompanionManifest(): CompanionManifestEntry[] {
   if (cached) return cached;
-  const p = path.join(process.cwd(), "public/companions/manifest.json");
-  cached = JSON.parse(readFileSync(p, "utf-8")) as CompanionManifestEntry[];
+  const rows = Array.isArray(manifestJson) ? (manifestJson as CompanionManifestEntry[]) : [];
+  cached = rows.filter((row) => row && typeof row.species === "string" && typeof row.file === "string");
   return cached;
 }
 
