@@ -204,7 +204,7 @@ function collectWaitingRecipientIds(state: Pick<WorkflowNodeNotificationSnapshot
 }
 
 async function createTaskOperationalNotifications(args: {
-  tx: Prisma.TransactionClient;
+  tx: DbClient;
   actorUserId: string;
   projectName: string;
   nodeId: string;
@@ -364,7 +364,7 @@ export async function addProjectTaskAction(formData: FormData) {
   });
   const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
 
-  const createdNodeId = await prisma.$transaction(async (tx) => {
+  const createdNode = await prisma.$transaction(async (tx) => {
     const node = await tx.workflowNode.create({
       data: {
         projectId,
@@ -401,23 +401,25 @@ export async function addProjectTaskAction(formData: FormData) {
       });
     }
 
-    await createTaskOperationalNotifications({
-      tx,
-      actorUserId: user.id,
-      projectName: project.name,
-      nodeId: node.id,
-      nodeTitle: node.title,
-      previousState: null,
-      nextState: node,
-    });
-
-    return node.id;
+    return node;
   });
-
-  revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/calendar");
+  after(async () => {
+    try {
+      await createTaskOperationalNotifications({
+        tx: prisma,
+        actorUserId: user.id,
+        projectName: project.name,
+        nodeId: createdNode.id,
+        nodeTitle: createdNode.title,
+        previousState: null,
+        nextState: createdNode,
+      });
+    } catch (err) {
+      console.error("[addProjectTaskAction.notifications]", projectId, err);
+    }
+  });
   scheduleTaskRollupRevalidate(projectId);
-  return { nodeId: createdNodeId };
+  return { nodeId: createdNode.id };
 }
 
 export async function addProjectSubtaskAction(formData: FormData) {
@@ -443,7 +445,7 @@ export async function addProjectSubtaskAction(formData: FormData) {
   });
   const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
 
-  const createdNodeId = await prisma.$transaction(async (tx) => {
+  const createdNode = await prisma.$transaction(async (tx) => {
     const sub = await tx.workflowNode.create({
       data: {
         projectId,
@@ -480,23 +482,25 @@ export async function addProjectSubtaskAction(formData: FormData) {
       });
     }
 
-    await createTaskOperationalNotifications({
-      tx,
-      actorUserId: user.id,
-      projectName: project.name,
-      nodeId: sub.id,
-      nodeTitle: sub.title,
-      previousState: null,
-      nextState: sub,
-    });
-
-    return sub.id;
+    return sub;
   });
-
-  revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/calendar");
+  after(async () => {
+    try {
+      await createTaskOperationalNotifications({
+        tx: prisma,
+        actorUserId: user.id,
+        projectName: project.name,
+        nodeId: createdNode.id,
+        nodeTitle: createdNode.title,
+        previousState: null,
+        nextState: createdNode,
+      });
+    } catch (err) {
+      console.error("[addProjectSubtaskAction.notifications]", projectId, err);
+    }
+  });
   scheduleTaskRollupRevalidate(projectId);
-  return { nodeId: createdNodeId };
+  return { nodeId: createdNode.id };
 }
 
 export async function updateWorkflowNodeMetaAction(formData: FormData) {
