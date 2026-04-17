@@ -204,6 +204,37 @@ function removeNode(forest: ProjectTaskRow[], nodeId: string): ProjectTaskRow[] 
   return out;
 }
 
+function reconcileOptimisticTaskRow(forest: ProjectTaskRow[], optimisticId: string, nextId: string): ProjectTaskRow[] {
+  let changed = false;
+  const nextForest = forest.map((node) => {
+    if (node.id === optimisticId) {
+      changed = true;
+      return {
+        ...node,
+        id: nextId,
+        optimistic: false,
+      };
+    }
+
+    if (!node.children.length) {
+      return node;
+    }
+
+    const nextChildren = reconcileOptimisticTaskRow(node.children, optimisticId, nextId);
+    if (nextChildren !== node.children) {
+      changed = true;
+      return {
+        ...node,
+        children: nextChildren,
+      };
+    }
+
+    return node;
+  });
+
+  return changed ? nextForest : forest;
+}
+
 function applyTasksOptimistic(prev: ProjectTaskRow[], action: TaskOptimisticAction): ProjectTaskRow[] {
   switch (action.type) {
     case "add-root":
@@ -1173,8 +1204,20 @@ export function ProjectTasksPanel({
     [commitVisibleTasks],
   );
 
+  const finalizeOptimisticAdd = useCallback(
+    (optimisticId: string, persistedId: string) => {
+      commitVisibleTasks(reconcileOptimisticTaskRow(visibleTasksRef.current, optimisticId, persistedId));
+    },
+    [commitVisibleTasks],
+  );
+
   const runTrackedMutation = useCallback(
-    async (key: string, action: () => Promise<void>, optimisticAction?: OptimisticMutation) => {
+    async <T,>(
+      key: string,
+      action: () => Promise<T>,
+      optimisticAction?: OptimisticMutation,
+      onSuccess?: (result: T) => void,
+    ) => {
       setSubmitting(key, true);
       setMutationError(null);
       const rollback = optimisticAction
@@ -1183,7 +1226,8 @@ export function ProjectTasksPanel({
           : applyOptimisticMutation(optimisticAction)
         : null;
       try {
-        await action();
+        const result = await action();
+        onSuccess?.(result);
         refreshRoute();
       } catch (error) {
         rollback?.();
@@ -1318,8 +1362,11 @@ export function ProjectTasksPanel({
                 if (!title) return;
                 const optimisticRow = buildOptimisticTaskRow(fd, memberOptions);
                 const mutationKey = `add-root:${optimisticRow.id}`;
-                void runTrackedMutation(mutationKey, () => addProjectTaskAction(fd), () =>
-                  applyOptimisticAdd({ type: "add-root", row: optimisticRow }),
+                void runTrackedMutation(
+                  mutationKey,
+                  () => addProjectTaskAction(fd),
+                  () => applyOptimisticAdd({ type: "add-root", row: optimisticRow }),
+                  (result) => finalizeOptimisticAdd(optimisticRow.id, result.nodeId),
                 );
                 form.reset();
               }}
@@ -1721,12 +1768,16 @@ export function ProjectTasksPanel({
                           const optimisticRow = buildOptimisticTaskRow(fd, memberOptions);
                           const mutationKey = `add-sub:${task.id}:${optimisticRow.id}`;
                           setOpen((current) => ({ ...current, [task.id]: true }));
-                          void runTrackedMutation(mutationKey, () => addProjectSubtaskAction(fd), () =>
-                            applyOptimisticAdd({
-                              type: "add-sub",
-                              parentId: task.id,
-                              row: optimisticRow,
-                            }),
+                          void runTrackedMutation(
+                            mutationKey,
+                            () => addProjectSubtaskAction(fd),
+                            () =>
+                              applyOptimisticAdd({
+                                type: "add-sub",
+                                parentId: task.id,
+                                row: optimisticRow,
+                              }),
+                            (result) => finalizeOptimisticAdd(optimisticRow.id, result.nodeId),
                           );
                           form.reset();
                         }}

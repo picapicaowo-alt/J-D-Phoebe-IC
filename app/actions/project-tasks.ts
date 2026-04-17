@@ -364,7 +364,7 @@ export async function addProjectTaskAction(formData: FormData) {
   });
   const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
 
-  await prisma.$transaction(async (tx) => {
+  const createdNodeId = await prisma.$transaction(async (tx) => {
     const node = await tx.workflowNode.create({
       data: {
         projectId,
@@ -410,11 +410,14 @@ export async function addProjectTaskAction(formData: FormData) {
       previousState: null,
       nextState: node,
     });
+
+    return node.id;
   });
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
+  return { nodeId: createdNodeId };
 }
 
 export async function addProjectSubtaskAction(formData: FormData) {
@@ -440,7 +443,7 @@ export async function addProjectSubtaskAction(formData: FormData) {
   });
   const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
 
-  await prisma.$transaction(async (tx) => {
+  const createdNodeId = await prisma.$transaction(async (tx) => {
     const sub = await tx.workflowNode.create({
       data: {
         projectId,
@@ -486,11 +489,14 @@ export async function addProjectSubtaskAction(formData: FormData) {
       previousState: null,
       nextState: sub,
     });
+
+    return sub.id;
   });
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
+  return { nodeId: createdNodeId };
 }
 
 export async function updateWorkflowNodeMetaAction(formData: FormData) {
