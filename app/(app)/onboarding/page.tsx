@@ -126,20 +126,22 @@ export default async function OnboardingHubPage() {
               {managedCompanies.map((company) => {
                 const materials = resolveCompanyOnboardingMaterials(company);
                 return (
-                  <section key={company.id} className="rounded-[12px] border border-[hsl(var(--border))] p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
+                  <details key={company.id} className="rounded-[12px] border border-[hsl(var(--border))] p-4">
+                    <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 [&::-webkit-details-marker]:hidden">
                       <div>
                         <h2 className="font-display text-lg font-bold text-[hsl(var(--foreground))]">{company.name}</h2>
                         <p className="mt-1 text-xs text-[hsl(var(--muted))]">
                           {t(locale, "onboardingHubManageAssignedCount").replace("{n}", String(company.memberOnboardings.length))}
                         </p>
                       </div>
-                      <Link href={`/companies/${company.id}`} className="text-xs font-medium text-[hsl(var(--primary))] hover:underline">
-                        {t(locale, "companyPreviewOpenFull")}
-                      </Link>
-                    </div>
+                    </summary>
 
-                    <div className="mt-4 space-y-3">
+                    <div className="mt-4 space-y-3 border-t border-[hsl(var(--border))] pt-4">
+                      <div className="flex justify-end">
+                        <Link href={`/companies/${company.id}`} className="text-xs font-medium text-[hsl(var(--primary))] hover:underline">
+                          {t(locale, "companyPreviewOpenFull")}
+                        </Link>
+                      </div>
                       {!materials.length ? (
                         <p className="rounded-[10px] border border-dashed border-[hsl(var(--border))] px-4 py-3 text-sm text-[hsl(var(--muted))]">
                           {t(locale, "onboardingHubManagePackageMissing")}
@@ -313,7 +315,7 @@ export default async function OnboardingHubPage() {
                         </ul>
                       )}
                     </div>
-                  </section>
+                  </details>
                 );
               })}
             </div>
