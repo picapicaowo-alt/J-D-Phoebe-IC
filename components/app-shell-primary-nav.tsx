@@ -13,8 +13,11 @@ export async function AppShellPrimaryNav() {
   const primaryLinks: ShellNavLink[] = [];
   if (keys?.has("project.read")) {
     primaryLinks.push({ href: "/home", label: t(locale, "navHome") });
+    primaryLinks.push({ href: "/messages", label: locale === "zh" ? "消息" : "Messages" });
     primaryLinks.push({ href: "/projects", label: t(locale, "navProjects") });
     primaryLinks.push({ href: "/calendar", label: t(locale, "navCalendar") });
+  } else {
+    primaryLinks.push({ href: "/messages", label: locale === "zh" ? "消息" : "Messages" });
   }
   if (keys?.has("knowledge.read")) primaryLinks.push({ href: "/knowledge", label: t(locale, "navKnowledge") });
   if (keys?.has("staff.read")) primaryLinks.push({ href: "/staff", label: t(locale, "navStaff") });

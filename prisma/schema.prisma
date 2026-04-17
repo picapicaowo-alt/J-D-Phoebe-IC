@@ -403,6 +403,8 @@ model User {
   offboardingRunsSubject   OffboardingRun[]       @relation("OffboardingSubject")
   offboardingRunsStarted   OffboardingRun[]       @relation("OffboardingStartedBy")
   staffInvitesCreated      StaffInvite[]
+  directMessagesSent       DirectMessage[]        @relation("DirectMessageSender")
+  directMessagesReceived   DirectMessage[]        @relation("DirectMessageRecipient")
 }
 
 model Session {
@@ -1059,6 +1061,39 @@ model InAppNotification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt, createdAt])
+}
+
+model DirectMessage {
+  id          String    @id @default(cuid())
+  senderId    String
+  recipientId String
+  body        String?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  sender      User                      @relation("DirectMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient   User                      @relation("DirectMessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  attachments DirectMessageAttachment[]
+
+  @@index([senderId, createdAt])
+  @@index([recipientId, createdAt])
+  @@index([recipientId, readAt, createdAt])
+  @@index([senderId, recipientId, createdAt])
+}
+
+model DirectMessageAttachment {
+  id        String   @id @default(cuid())
+  messageId String
+  fileName  String
+  mimeType  String?
+  sizeBytes Int      @default(0)
+  storageKey String?
+  blobUrl   String?
+  createdAt DateTime @default(now())
+
+  message DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId, createdAt])
 }
 
 model OffboardingRun {
