@@ -8,8 +8,8 @@ import { t } from "@/lib/messages";
 import type { AccessUser } from "@/lib/access";
 import { AlertsSection } from "./home-alerts-section";
 import { HomeDashboardStreams } from "./home-dashboard-streams";
-import { HomeMemberOnboardingRedirect } from "./home-member-onboarding-redirect";
 import { HomeAlertsFallback } from "./home-suspense-fallback";
+import { getPendingMemberOnboardingRoute } from "@/lib/user-landing";
 
 export default async function HomePage({
   searchParams,
@@ -23,11 +23,20 @@ export default async function HomePage({
   const sp = await searchParams;
   const snapshot = String(sp.snapshot ?? "").trim();
   const skipOnboardingQuery = String(sp.skipOnboarding ?? "");
+  const allowSkipOnboarding = await userHasPermission(user, "lifecycle.onboarding.skip");
+  const skipOnboarding = skipOnboardingQuery === "1" && allowSkipOnboarding;
+
+  if (!skipOnboarding) {
+    const pendingOnboardingRoute = await getPendingMemberOnboardingRoute(user.id);
+    if (pendingOnboardingRoute) redirect(pendingOnboardingRoute);
+  }
 
   after(async () => {
     try {
       const m = await import("@/lib/member-onboarding");
-      await m.ensureAllMemberOnboardingsForUser(user.id);
+      if (skipOnboarding) {
+        await m.ensureAllMemberOnboardingsForUser(user.id);
+      }
       await m.refreshOnboardingOverdueReminders(user.id);
     } catch (err) {
       console.error("[home member onboarding after]", err);
@@ -38,10 +47,6 @@ export default async function HomePage({
 
   return (
     <div className="space-y-8">
-      <Suspense fallback={null}>
-        <HomeMemberOnboardingRedirect user={user} skipOnboardingQuery={skipOnboardingQuery} />
-      </Suspense>
-
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{t(locale, "homeTitle")}</h1>
         <p className="mt-2 text-base text-zinc-500 dark:text-zinc-400">{t(locale, "homeSubtitle")}</p>

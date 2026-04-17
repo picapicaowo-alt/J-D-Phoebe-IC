@@ -7,6 +7,7 @@ import { sendPasswordResetEmail } from "@/lib/auth-email";
 import { getEmailDeliveryMode } from "@/lib/email";
 import { createPasswordResetToken, getAppBaseUrl, parsePasswordResetToken, verifyPasswordResetToken } from "@/lib/password-reset";
 import { prisma } from "@/lib/prisma";
+import { getSignedInRedirectPath } from "@/lib/user-landing";
 
 type LoginCheckResult =
   | { ok: true; userId: string; redirectTo: string }
@@ -39,7 +40,11 @@ async function verifyLoginCredentials(email: string, password: string): Promise<
   return {
     ok: true,
     userId: user.id,
-    redirectTo: user.mustChangePassword ? "/settings/change-password" : user.companionIntroCompletedAt ? "/home" : "/onboarding/companion",
+    redirectTo: await getSignedInRedirectPath({
+      userId: user.id,
+      mustChangePassword: user.mustChangePassword,
+      companionIntroCompletedAt: user.companionIntroCompletedAt,
+    }),
   };
 }
 
@@ -140,7 +145,13 @@ export async function changePasswordAction(formData: FormData) {
     data: { passwordHash: await hash(newPassword, 10), mustChangePassword: false },
   });
 
-  redirect(row.companionIntroCompletedAt ? "/home" : "/onboarding/companion");
+  redirect(
+    await getSignedInRedirectPath({
+      userId: user.id,
+      mustChangePassword: false,
+      companionIntroCompletedAt: row.companionIntroCompletedAt,
+    }),
+  );
 }
 
 export async function resetPasswordAction(formData: FormData) {

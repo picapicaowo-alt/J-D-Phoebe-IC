@@ -207,9 +207,29 @@ export default async function MemberOnboardingPage({
           </div>
         ) : null}
         {ob.materialsOpenedAt && !ob.completedAt ? (
-          <p className="text-base text-emerald-700 dark:text-emerald-300">
-            {t(locale, "onboardingMaterialsOpenedAt")}: {ob.materialsOpenedAt.toISOString().slice(0, 16).replace("T", " ")}
-          </p>
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
+            <p className="text-base text-emerald-700 dark:text-emerald-300">
+              {t(locale, "onboardingMaterialsOpenedAt")}: {ob.materialsOpenedAt.toISOString().slice(0, 16).replace("T", " ")}
+            </p>
+            <a
+              href={ob.packageUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+            >
+              {t(locale, "onboardingReviewMaterials")}
+            </a>
+            {videoUrl ? (
+              <a
+                href={videoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+              >
+                {t(locale, "onboardingVideoOpenLink")}
+              </a>
+            ) : null}
+          </div>
         ) : null}
       </Card>
 

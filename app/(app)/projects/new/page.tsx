@@ -1,20 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createProjectAction } from "@/app/actions/project";
 import { requireUser } from "@/lib/auth";
 import { canManageCompanyProjects, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { ProjectCreateForm } from "@/components/project-create-form";
 import { getLocale } from "@/lib/locale";
-import { t, tPriority, tProjectStatus } from "@/lib/messages";
-import { Priority, ProjectStatus } from "@prisma/client";
-
-const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
-const STATUSES: ProjectStatus[] = ["PLANNING", "ACTIVE", "AT_RISK", "ON_HOLD"];
+import { t } from "@/lib/messages";
 
 export default async function NewProjectPage({ searchParams }: { searchParams: Promise<{ companyId?: string }> }) {
   const user = (await requireUser()) as AccessUser;
@@ -36,17 +29,18 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
   const [departmentsForCreate, projectGroupsForCreate] = await Promise.all([
     prisma.department.findMany({
       where: { companyId: { in: manageableIds } },
-      include: { company: true },
+      select: { id: true, name: true, companyId: true },
       orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
     }),
     prisma.projectGroup.findMany({
       where: { companyId: { in: manageableIds } },
-      include: { company: true },
+      select: { id: true, name: true, companyId: true },
       orderBy: [{ company: { name: "asc" } }, { sortOrder: "asc" }],
     }),
   ]);
   const staff = await prisma.user.findMany({
     where: { active: true, deletedAt: null },
+    select: { id: true, name: true, email: true },
     orderBy: { name: "asc" },
   });
 
@@ -60,98 +54,29 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
       </div>
       <Card className="space-y-4 p-6">
         <CardTitle>{t(locale, "projCreateProjectTitle")}</CardTitle>
-        <form action={createProjectAction} className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "commonCompany")}</label>
-            <Select name="companyId" defaultValue={defaultCompanyId} required>
-              {manageable.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "projFieldDepartment")}</label>
-            <Select name="departmentId" defaultValue="">
-              <option value="">{t(locale, "projDeptGroupNone")}</option>
-              {departmentsForCreate.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.company.name} / {d.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "projFieldProjectGroup")}</label>
-            <Select name="projectGroupId" defaultValue="">
-              <option value="">{t(locale, "projDeptGroupNone")}</option>
-              {projectGroupsForCreate.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.company.name} / {g.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "projProjectName")}</label>
-            <Input name="name" required />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "commonDescription")}</label>
-            <textarea name="description" rows={3} className="w-full rounded-md border border-[hsl(var(--border))] px-3 py-2 text-sm" />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "projOwnerResponsible")}</label>
-            <Select name="ownerId" required>
-              {staff.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-medium">{t(locale, "projInitialMembersHelp")}</label>
-            <div className="max-h-40 space-y-1 overflow-auto rounded-md border border-[hsl(var(--border))] p-2">
-              {staff.map((s) => (
-                <label key={s.id} className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" name="memberIds" value={s.id} />
-                  <span>{s.name}</span>
-                  <span className="text-xs text-[hsl(var(--muted))]">{s.email}</span>
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "projOwnerBecomesPmHint")}</p>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">{t(locale, "projProjectDeadlineLabel")}</label>
-            <Input name="deadline" type="datetime-local" />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonPriority")}</label>
-              <Select name="priority" defaultValue="MEDIUM">
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {tPriority(locale, p)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">{t(locale, "commonStatus")}</label>
-              <Select name="status" defaultValue="PLANNING">
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {tProjectStatus(locale, s)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-          <FormSubmitButton type="submit">{t(locale, "projCreateSubmit")}</FormSubmitButton>
-        </form>
+        <ProjectCreateForm
+          locale={locale}
+          defaultCompanyId={defaultCompanyId}
+          companies={manageable}
+          departments={departmentsForCreate}
+          projectGroups={projectGroupsForCreate}
+          staff={staff}
+          labels={{
+            company: t(locale, "commonCompany"),
+            department: t(locale, "projFieldDepartment"),
+            projectGroup: t(locale, "projFieldProjectGroup"),
+            none: t(locale, "projDeptGroupNone"),
+            projectName: t(locale, "projProjectName"),
+            description: t(locale, "commonDescription"),
+            ownerResponsible: t(locale, "projOwnerResponsible"),
+            initialMembersHelp: t(locale, "projInitialMembersHelp"),
+            ownerBecomesPmHint: t(locale, "projOwnerBecomesPmHint"),
+            deadline: t(locale, "projProjectDeadlineLabel"),
+            priority: t(locale, "commonPriority"),
+            status: t(locale, "commonStatus"),
+            submit: t(locale, "projCreateSubmit"),
+          }}
+        />
       </Card>
     </div>
   );

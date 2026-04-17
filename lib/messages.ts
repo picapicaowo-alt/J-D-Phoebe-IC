@@ -173,6 +173,7 @@ const M = {
     onboardingMemberMaterialsLead:
       "Open the handbook and pack first; confirm below so your checklist stays honest. Video and documents stay available here anytime.",
     onboardingMaterialsOpenedAt: "Materials confirmation recorded",
+    onboardingReviewMaterials: "Review materials",
     onboardingResourcesAfterComplete: "Resources (still available)",
     onboardingResourcesAfterCompleteHelp: "You can always return to this page to reopen the package and review materials after completion.",
     projRelatedEventsTitle: "Related calendar events",
@@ -1181,6 +1182,7 @@ const M = {
     onboardingMemberMaterialsLead:
       "请先打开员工手册与资料包，并在下方确认，以便清单按规则解锁。视频与文档将始终保留在本页供回顾。",
     onboardingMaterialsOpenedAt: "材料确认已记录",
+    onboardingReviewMaterials: "重新查看材料",
     onboardingResourcesAfterComplete: "资料（完成后仍可查看）",
     onboardingResourcesAfterCompleteHelp: "完成后仍可随时回到本页重新打开资料包与链接。",
     projRelatedEventsTitle: "关联日历事件",
