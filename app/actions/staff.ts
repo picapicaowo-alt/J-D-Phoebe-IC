@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth";
+import { invalidateAccessUserCache, requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { assertPermission, invalidatePermissionCache, userHasPermission } from "@/lib/permissions";
@@ -27,6 +27,7 @@ export async function updateStaffAction(formData: FormData) {
   const name = requireString(formData, "name");
   const title = String(formData.get("title") ?? "").trim() || null;
   const active = String(formData.get("active") ?? "") === "on";
+  const nextIsSuperAdmin = isSuperAdmin(actor) ? String(formData.get("isSuperAdmin") ?? "") === "on" : target.isSuperAdmin;
 
   if (name !== target.name) {
     await writeAudit({
@@ -40,10 +41,29 @@ export async function updateStaffAction(formData: FormData) {
     });
   }
 
-  const data: { name: string; title: string | null; active?: boolean; contactEmails?: string | null; phone?: string | null } = {
+  if (target.isSuperAdmin !== nextIsSuperAdmin) {
+    await writeAudit({
+      actorId: actor.id,
+      entityType: "USER",
+      entityId: userId,
+      action: nextIsSuperAdmin ? "SUPERADMIN_GRANT" : "SUPERADMIN_REVOKE",
+      field: "isSuperAdmin",
+      oldValue: String(target.isSuperAdmin),
+      newValue: String(nextIsSuperAdmin),
+    });
+  }
+
+  const data: {
+    name: string;
+    title: string | null;
+    active?: boolean;
+    isSuperAdmin?: boolean;
+    contactEmails?: string | null;
+    phone?: string | null;
+  } = {
     name,
     title,
-    ...(isSuperAdmin(actor) ? { active } : {}),
+    ...(isSuperAdmin(actor) ? { active, isSuperAdmin: nextIsSuperAdmin } : {}),
   };
   if (formData.has("contactEmails")) {
     data.contactEmails = String(formData.get("contactEmails") ?? "").trim() || null;
@@ -56,6 +76,8 @@ export async function updateStaffAction(formData: FormData) {
     where: { id: userId },
     data,
   });
+  invalidateAccessUserCache(target);
+  invalidatePermissionCache(userId);
   revalidatePath(`/staff/${userId}`);
   revalidatePath("/staff");
   revalidatePath("/settings/profile");

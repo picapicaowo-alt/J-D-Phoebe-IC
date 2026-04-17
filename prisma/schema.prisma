@@ -289,8 +289,25 @@ model Company {
   knowledgeAssets       KnowledgeAsset[]
   memberOutputs         MemberOutput[]
   memberOnboardings     MemberOnboarding[]
+  onboardingMaterials   CompanyOnboardingMaterial[]
   offboardingRuns       OffboardingRun[]
   lifecycleTriggerRules LifecycleTriggerRule[]
+}
+
+model CompanyOnboardingMaterial {
+  id             String   @id @default(cuid())
+  companyId      String
+  packageUrl     String
+  videoUrl       String?
+  packageVersion String   @default("v1")
+  deadlineDays   Int      @default(14)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberOnboardings MemberOnboarding[]
+
+  @@index([companyId, createdAt])
 }
 
 /// Business unit within a company (e.g. Marketing, Compliance).
@@ -930,7 +947,9 @@ model MemberOnboarding {
   id                          String    @id @default(cuid())
   userId                      String
   companyId                   String
+  companyOnboardingMaterialId String?
   packageUrl                  String
+  videoUrl                    String?
   packageVersion              String
   deadlineAt                  DateTime
   completedAt                 DateTime?
@@ -950,10 +969,12 @@ model MemberOnboarding {
 
   user           User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
   company        Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedMaterial CompanyOnboardingMaterial?    @relation(fields: [companyOnboardingMaterialId], references: [id], onDelete: SetNull)
   liaison        User?                           @relation("OnboardingLiaison", fields: [liaisonUserId], references: [id], onDelete: SetNull)
   checklistItems MemberOnboardingChecklistItem[]
 
   @@unique([userId, companyId])
+  @@index([companyOnboardingMaterialId])
   @@index([userId, completedAt])
   @@index([deadlineAt])
 }

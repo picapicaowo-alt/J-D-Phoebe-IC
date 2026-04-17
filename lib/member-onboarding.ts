@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getCurrentCompanyOnboardingMaterial } from "@/lib/company-onboarding-materials";
 
 const DEFAULT_ITEM_KEYS = ["OB_READ_PACKAGE", "OB_ACK_POLICIES", "OB_SUPERVISOR_MEET"] as const;
 
@@ -12,9 +13,15 @@ function addDays(d: Date, days: number) {
 export async function ensureMemberOnboardingForCompany(userId: string, companyId: string) {
   const company = await prisma.company.findFirst({
     where: { id: companyId, deletedAt: null },
+    include: {
+      onboardingMaterials: {
+        orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+      },
+    },
   });
-  const url = company?.onboardingPackageUrl?.trim();
-  if (!company || !url) return null;
+  const material = company ? getCurrentCompanyOnboardingMaterial(company) : null;
+  const url = material?.packageUrl?.trim();
+  if (!company || !material || !url) return null;
 
   const existing = await prisma.memberOnboarding.findUnique({
     where: { userId_companyId: { userId, companyId } },
@@ -27,15 +34,17 @@ export async function ensureMemberOnboardingForCompany(userId: string, companyId
   });
   if (!membership) return null;
 
-  const deadlineAt = addDays(new Date(), company.onboardingDeadlineDays);
+  const deadlineAt = addDays(new Date(), material.deadlineDays);
   const liaison = membership.supervisor;
 
   const ob = await prisma.memberOnboarding.create({
     data: {
       userId,
       companyId,
+      companyOnboardingMaterialId: material.source === "db" ? material.id : null,
       packageUrl: url,
-      packageVersion: company.onboardingPackageVersion ?? "v1",
+      videoUrl: material.videoUrl?.trim() || null,
+      packageVersion: material.packageVersion ?? "v1",
       deadlineAt,
       liaisonUserId: liaison?.id ?? null,
       liaisonName: liaison?.name ?? null,

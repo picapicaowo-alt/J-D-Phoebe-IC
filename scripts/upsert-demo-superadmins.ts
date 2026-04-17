@@ -11,8 +11,8 @@ const SUPERADMINS = [
   { email: "admin@jdphoebe.local", name: "Group Super Admin" },
   { email: "admin2@jdphoebe.local", name: "Group Super Admin 2" },
   { email: "admin3@jdphoebe.local", name: "Group Super Admin 3" },
-  { email: "admin4@jdphoebe.local", name: "Group Super Admin 4" },
 ];
+const LEGACY_DEMO_SUPERADMIN_EMAILS = ["admin4@jdphoebe.local"];
 
 function parseLine(line: string) {
   const trimmed = line.trim();
@@ -87,6 +87,19 @@ async function main() {
       });
 
       console.log(`upserted superadmin: ${user.email}`);
+    }
+
+    const retiredDemoEmails = LEGACY_DEMO_SUPERADMIN_EMAILS.filter(
+      (email) => !SUPERADMINS.some((account) => account.email === email),
+    );
+    if (retiredDemoEmails.length) {
+      const retired = await prisma.user.updateMany({
+        where: { email: { in: retiredDemoEmails } },
+        data: { isSuperAdmin: false },
+      });
+      if (retired.count > 0) {
+        console.log(`retired demo superadmin access from ${retired.count} account(s): ${retiredDemoEmails.join(", ")}`);
+      }
     }
 
     const total = await prisma.user.count({

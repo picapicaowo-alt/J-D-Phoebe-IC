@@ -267,10 +267,16 @@ export default async function StaffDetailPage({
               <Input name="phone" defaultValue={target.phone ?? ""} />
             </div>
             {isSuperAdmin(actor) ? (
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" name="active" defaultChecked={target.active} />
-                {t(locale, "staffActive")}
-              </label>
+              <>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="active" defaultChecked={target.active} />
+                  {t(locale, "staffActive")}
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="isSuperAdmin" defaultChecked={target.isSuperAdmin} />
+                  {t(locale, "superAdminBadge")}
+                </label>
+              </>
             ) : null}
             <FormSubmitButton type="submit">{t(locale, "staffSave")}</FormSubmitButton>
           </form>

@@ -17,6 +17,7 @@ export type StaffDirectoryRowDTO = {
   activeProjectCount: number;
   contactLine?: string | null;
   onboarding: { label: string; tone: "done" | "pending" | "none" };
+  onboardingTimeline?: { key: string; label: string }[];
   companies: { key: string; label: string }[];
 };
 
@@ -123,6 +124,15 @@ export function StaffDirectoryRows({ rows, copy }: { rows: StaffDirectoryRowDTO[
                 <p className="mt-2 text-xs text-[hsl(var(--muted))]">
                   {copy.activeProjectsTpl.replace("{n}", String(s.activeProjectCount))}
                 </p>
+                {s.onboardingTimeline?.length ? (
+                  <div className="mt-2 space-y-1">
+                    {s.onboardingTimeline.map((item) => (
+                      <p key={item.key} className="text-xs text-[hsl(var(--muted))]">
+                        {item.label}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2">

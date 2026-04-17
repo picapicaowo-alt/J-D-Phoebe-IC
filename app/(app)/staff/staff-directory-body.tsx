@@ -20,6 +20,10 @@ function onboardingBadgeText(rows: { completedAt: Date | null }[], locale: Local
   return { label: t(locale, "staffOnboardingPending"), tone: "pending" };
 }
 
+function formatOnboardingTimestamp(when: Date) {
+  return when.toISOString().slice(0, 16).replace("T", " ");
+}
+
 function IconPeople({ className }: { className?: string }) {
   return (
     <svg className={className} width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -52,6 +56,7 @@ export async function StaffDirectoryBody({
   const canCreate =
     (await userHasPermission(user, "staff.create")) &&
     (user.isSuperAdmin || user.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN"));
+  const showOnboardingTimeline = user.isSuperAdmin;
 
   const where: Prisma.UserWhereInput = { deletedAt: null };
   if (q) {
@@ -91,7 +96,7 @@ export async function StaffDirectoryBody({
       orderBy: { name: "asc" },
       include: {
         companyMemberships: { include: { company: true, roleDefinition: true, department: true } },
-        memberOnboardings: { select: { completedAt: true, companyId: true } },
+        memberOnboardings: { select: { completedAt: true, companyId: true, company: { select: { name: true } } } },
         projectMemberships: {
           where: {
             project: {
@@ -210,6 +215,16 @@ export async function StaffDirectoryBody({
           isSuperAdmin: s.isSuperAdmin,
           activeProjectCount: s.projectMemberships.length,
           onboarding: onboardingBadgeText(s.memberOnboardings, locale),
+          onboardingTimeline: showOnboardingTimeline
+            ? [...s.memberOnboardings]
+                .sort((a, b) => a.company.name.localeCompare(b.company.name))
+                .map((ob) => ({
+                  key: `${ob.companyId}:${ob.completedAt?.toISOString() ?? "pending"}`,
+                  label: ob.completedAt
+                    ? `${ob.company.name} · ${t(locale, "onboardingCompletedAtLabel")}: ${formatOnboardingTimestamp(ob.completedAt)}`
+                    : `${ob.company.name} · ${t(locale, "staffOnboardingPending")}`,
+                }))
+            : [],
           companies: s.companyMemberships.map((m) => ({
             key: m.id,
             label: `${m.company.name}${m.department ? ` · ${m.department.name}` : ""}`,

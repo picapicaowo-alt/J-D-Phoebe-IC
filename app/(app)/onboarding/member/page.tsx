@@ -11,6 +11,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { MemberOnboardingChecklist } from "@/components/member-onboarding-checklist";
 import { acknowledgeMemberOnboardingMaterialsAction } from "@/app/actions/lifecycle";
 import { OnboardingVideoPanel } from "@/components/onboarding-video-panel";
+import { resolveCompanyOnboardingMaterials } from "@/lib/company-onboarding-materials";
 
 export default async function MemberOnboardingPage({
   searchParams,
@@ -28,14 +29,30 @@ export default async function MemberOnboardingPage({
 
   const ob = await prisma.memberOnboarding.findUnique({
     where: { userId_companyId: { userId: user.id, companyId } },
-    include: { checklistItems: { orderBy: { sortOrder: "asc" } }, company: true, liaison: true },
+    include: {
+      checklistItems: { orderBy: { sortOrder: "asc" } },
+      assignedMaterial: true,
+      company: {
+        include: {
+          onboardingMaterials: {
+            orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+          },
+        },
+      },
+      liaison: true,
+    },
   });
   if (!ob) redirect("/onboarding");
 
   const locale = await getLocale();
   const overdue = !ob.completedAt && ob.deadlineAt.getTime() < Date.now();
   const canSkipGate = await userHasPermission(user, "lifecycle.onboarding.skip");
-  const videoUrl = ob.company.onboardingVideoUrl?.trim() ?? "";
+  const companyMaterials = resolveCompanyOnboardingMaterials(ob.company);
+  const additionalMaterials = companyMaterials.filter((material) => {
+    if (ob.assignedMaterial?.id) return material.id !== ob.assignedMaterial.id;
+    return !(material.packageUrl === ob.packageUrl && material.packageVersion === ob.packageVersion);
+  });
+  const videoUrl = ob.videoUrl?.trim() || ob.assignedMaterial?.videoUrl?.trim() || ob.company.onboardingVideoUrl?.trim() || "";
   const videoGateOk = !videoUrl || Boolean(ob.videoCompletedAt);
 
   return (
@@ -88,7 +105,7 @@ export default async function MemberOnboardingPage({
         </div>
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "onboardingPackageLink")}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "onboardingAssignedMaterial")}</p>
             <a
               href={ob.packageUrl}
               target="_blank"
@@ -100,6 +117,16 @@ export default async function MemberOnboardingPage({
             <p className="mt-3 text-base leading-relaxed text-[hsl(var(--muted))]">
               {t(locale, "companyOnboardingVersion")}: {ob.packageVersion}
             </p>
+            {videoUrl ? (
+              <a
+                href={videoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+              >
+                {t(locale, "onboardingVideoOpenLink")}
+              </a>
+            ) : null}
           </div>
           <div className="space-y-4 text-base leading-relaxed">
             <div>
@@ -118,6 +145,44 @@ export default async function MemberOnboardingPage({
             </div>
           </div>
         </div>
+
+        {additionalMaterials.length ? (
+          <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
+              {t(locale, "onboardingAdditionalMaterials")}
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {additionalMaterials.map((material) => (
+                <div key={material.id} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
+                  <a
+                    href={material.packageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+                  >
+                    {t(locale, "onboardingOpenPackage")}
+                  </a>
+                  <p className="mt-2 text-sm text-[hsl(var(--muted))]">
+                    {t(locale, "companyOnboardingVersion")}: {material.packageVersion}
+                  </p>
+                  <p className="text-sm text-[hsl(var(--muted))]">
+                    {t(locale, "companyOnboardingDeadlineDays")}: {material.deadlineDays}
+                  </p>
+                  {material.videoUrl ? (
+                    <a
+                      href={material.videoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+                    >
+                      {t(locale, "onboardingVideoOpenLink")}
+                    </a>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {videoUrl ? (
           <OnboardingVideoPanel

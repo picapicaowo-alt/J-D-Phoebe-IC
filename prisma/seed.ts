@@ -225,7 +225,6 @@ async function main() {
     { email: "admin@jdphoebe.local", name: "Group Super Admin" },
     { email: "admin2@jdphoebe.local", name: "Group Super Admin 2" },
     { email: "admin3@jdphoebe.local", name: "Group Super Admin 3" },
-    { email: "admin4@jdphoebe.local", name: "Group Super Admin 4" },
   ];
 
   const group = await prisma.orgGroup.create({
@@ -244,9 +243,13 @@ async function main() {
       companyType: "Legal & compliance",
       introduction: "Legal strategy, governance, and partnership structuring for the group and portfolio companies.",
       status: CompanyStatus.ACTIVE,
-      onboardingPackageUrl: "https://jdphoebe.local/demo/legal-onboarding-pack",
-      onboardingPackageVersion: "v1",
-      onboardingDeadlineDays: 14,
+      onboardingMaterials: {
+        create: {
+          packageUrl: "https://jdphoebe.local/demo/legal-onboarding-pack",
+          packageVersion: "v1",
+          deadlineDays: 14,
+        },
+      },
     },
   });
 

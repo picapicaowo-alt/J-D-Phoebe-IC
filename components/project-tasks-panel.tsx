@@ -774,7 +774,7 @@ function NodeLabelsDialog({
   );
   const riskLabelOptions = copy.labelOptions.filter((option) => EXECUTION_RISK_LABELS.includes(option.value));
   const router = useRouter();
-  const [, startLabelsTransition] = useTransition();
+  const [isSavingLabels, startLabelsTransition] = useTransition();
   const [selectedLabels, setSelectedLabels] = useState<WorkflowNodeLabel[]>(node.operationalLabels);
   const [selectedWaitingUserIds, setSelectedWaitingUserIds] = useState<string[]>(node.waitingOnUserIds);
   const [activeCategory, setActiveCategory] = useState<TaskLabelCategory>(() => getDefaultLabelCategory(node));
@@ -835,12 +835,13 @@ function NodeLabelsDialog({
         />
       </div>
       <form
+        key={syncKey}
         className="max-h-[calc(90vh-100px)] space-y-4 overflow-y-auto p-4"
         onSubmit={(e) => {
           e.preventDefault();
           const fd = new FormData(e.currentTarget);
           startLabelsTransition(() => {
-            void updateWorkflowNodeOperationalAction(fd).finally(() => {
+            void updateWorkflowNodeOperationalAction(fd).then(() => {
               (document.getElementById(dialogId) as HTMLDialogElement | null)?.close();
               router.refresh();
             });
@@ -849,6 +850,7 @@ function NodeLabelsDialog({
       >
         <input type="hidden" name="projectId" value={projectId} />
         <input type="hidden" name="nodeId" value={node.id} />
+        <input type="hidden" name="status" value={node.status} />
         <div className="space-y-1">
           <label className="text-xs font-medium text-[hsl(var(--muted))]">{copy.categoryLabel}</label>
           <div className="grid gap-2 sm:grid-cols-3">
@@ -982,14 +984,15 @@ function NodeLabelsDialog({
           />
         </div>
 
-        <div className="flex flex-wrap gap-2 pt-1">
-          <Button type="submit" className="min-w-[120px]">
+        <div className="sticky bottom-0 -mx-4 mt-2 flex flex-wrap gap-2 border-t border-[hsl(var(--border))] bg-[hsl(var(--card))]/95 px-4 py-3 backdrop-blur">
+          <Button type="submit" className="min-w-[120px]" disabled={isSavingLabels}>
             {copy.saveMeta}
           </Button>
           <CloseDialogButton
             dialogId={dialogId}
-            className="rounded-lg border border-[hsl(var(--border))] px-4 py-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+            className="rounded-lg border border-[hsl(var(--border))] px-4 py-2 text-sm font-medium hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
             label={copy.dialogClose}
+            disabled={isSavingLabels}
           />
         </div>
       </form>

@@ -8,7 +8,6 @@ import { writeAudit } from "@/lib/audit";
 import { verifyAccountSetupToken } from "@/lib/account-setup";
 import { getAppSession, invalidateAccessUserCache } from "@/lib/auth";
 import { isClerkEnabled } from "@/lib/clerk-config";
-import { ensureMemberOnboardingForCompany } from "@/lib/member-onboarding";
 import { invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { canReuseUserAccount, findReusableUserCandidateByEmail, reprovisionReusableUser } from "@/lib/user-account-reuse";
@@ -51,61 +50,47 @@ export async function completeAccountSetupAction(formData: FormData) {
       redirect(`/setup-account?token=${tokenQuery}&error=email_taken`);
     }
 
-    const company = await prisma.company.findFirst({
-      where: {
-        deletedAt: null,
-        status: CompanyStatus.ACTIVE,
-        orgGroup: { deletedAt: null, status: OrgGroupStatus.ACTIVE },
-      },
-      orderBy: { createdAt: "asc" },
-    });
-
-    const role = await prisma.roleDefinition.findUnique({
-      where: { key: DEFAULT_REGISTER_ROLE_KEY },
-    });
+    const [company, role] = await Promise.all([
+      prisma.company.findFirst({
+        where: {
+          deletedAt: null,
+          status: CompanyStatus.ACTIVE,
+          orgGroup: { deletedAt: null, status: OrgGroupStatus.ACTIVE },
+        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      }),
+      prisma.roleDefinition.findUnique({
+        where: { key: DEFAULT_REGISTER_ROLE_KEY },
+        select: { id: true },
+      }),
+    ]);
 
     if (!company || !role) {
       redirect(`/setup-account?token=${tokenQuery}&error=setup_missing`);
     }
 
     try {
-      const user = await prisma.$transaction(async (tx) => {
-        const u = reusableExisting
-          ? await reprovisionReusableUser(tx, {
+      const user = await prisma.$transaction(async (tx) =>
+        reusableExisting
+          ? reprovisionReusableUser(tx, {
               userId: reusableExisting.id,
               name,
               passwordHash,
               mustChangePassword: false,
             })
-          : await tx.user.create({
+          : tx.user.create({
               data: {
                 email,
                 passwordHash,
                 name,
                 active: true,
               },
-            });
-
-        await tx.companyMembership.upsert({
-          where: { userId_companyId: { userId: u.id, companyId: company.id } },
-          create: {
-            userId: u.id,
-            companyId: company.id,
-            roleDefinitionId: role.id,
-          },
-          update: {
-            roleDefinitionId: role.id,
-            departmentId: null,
-            supervisorUserId: null,
-          },
-        });
-
-        return u;
-      });
+            }),
+      );
 
       invalidateAccessUserCache(user);
       invalidatePermissionCache(user.id);
-      await ensureMemberOnboardingForCompany(user.id, company.id);
       await writeAudit({
         actorId: null,
         entityType: "USER",

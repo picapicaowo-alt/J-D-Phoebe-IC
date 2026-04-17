@@ -85,10 +85,10 @@ export async function acknowledgeMemberOnboardingMaterialsAction(formData: FormD
   const onboardingId = must(formData, "onboardingId");
   const ob = await prisma.memberOnboarding.findFirst({
     where: { id: onboardingId, userId: user.id },
-    include: { company: true },
+    include: { assignedMaterial: true, company: true },
   });
   if (!ob) throw new Error("Forbidden");
-  const videoUrl = ob.company.onboardingVideoUrl?.trim();
+  const videoUrl = ob.videoUrl?.trim() || ob.assignedMaterial?.videoUrl?.trim() || ob.company.onboardingVideoUrl?.trim();
   if (videoUrl && !ob.videoCompletedAt) {
     redirect(`/onboarding/member?companyId=${ob.companyId}&onboardingErr=video`);
   }
@@ -113,9 +113,11 @@ export async function updateOnboardingVideoProgressAction(formData: FormData) {
 
   const ob = await prisma.memberOnboarding.findFirst({
     where: { id: onboardingId, userId: user.id },
-    include: { company: true },
+    include: { assignedMaterial: true, company: true },
   });
-  if (!ob?.company.onboardingVideoUrl?.trim()) throw new Error("Forbidden");
+  if (!ob) throw new Error("Forbidden");
+  const videoUrl = ob?.videoUrl?.trim() || ob?.assignedMaterial?.videoUrl?.trim() || ob?.company.onboardingVideoUrl?.trim();
+  if (!videoUrl) throw new Error("Forbidden");
 
   if (ob.videoCompletedAt) {
     revalidatePath("/onboarding/member");

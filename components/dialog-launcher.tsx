@@ -94,12 +94,24 @@ export function OpenDialogButton({
   );
 }
 
-export function CloseDialogButton({ dialogId, className, label }: { dialogId: string; className?: string; label: string }) {
+export function CloseDialogButton({
+  dialogId,
+  className,
+  label,
+  disabled = false,
+}: {
+  dialogId: string;
+  className?: string;
+  label: string;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       className={className}
+      disabled={disabled}
       onClick={() => {
+        if (disabled) return;
         const el = getDialogById(dialogId);
         el?.close();
       }}

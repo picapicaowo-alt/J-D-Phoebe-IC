@@ -2,9 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { CompanionSpecies } from "@prisma/client";
+import { CompanyStatus, OrgGroupStatus, type CompanionSpecies } from "@prisma/client";
 import { invalidateAccessUserCache, requireUser } from "@/lib/auth";
 import type { AccessUser } from "@/lib/access";
+import { ensureMemberOnboardingForCompany } from "@/lib/member-onboarding";
+import { invalidatePermissionCache } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCompanionManifest, getCompanionManifestForUser } from "@/lib/companion-manifest";
 
@@ -13,6 +15,7 @@ const userInclude = {
   companyMemberships: { include: { roleDefinition: true, company: true } },
   projectMemberships: { include: { roleDefinition: true, project: { include: { company: true } } } },
 } as const;
+const DEFAULT_REGISTER_ROLE_KEY = "COMPANY_CONTRIBUTOR";
 
 function must(formData: FormData, key: string) {
   const v = String(formData.get(key) ?? "").trim();
@@ -25,6 +28,7 @@ export async function updateCompanionAction(formData: FormData) {
   const species = must(formData, "species") as CompanionSpecies;
   const name = String(formData.get("name") ?? "").trim() || null;
   const targetUserId = String(formData.get("userId") ?? "").trim() || actor.id;
+  const companyId = String(formData.get("companyId") ?? "").trim() || null;
 
   if (targetUserId !== actor.id && !actor.isSuperAdmin) {
     throw new Error("Only a superadmin can change another user’s companion.");
@@ -40,6 +44,49 @@ export async function updateCompanionAction(formData: FormData) {
   const editingSelf = targetUserId === actor.id;
   if (locked && !actor.isSuperAdmin) {
     throw new Error("Companion choice is permanent for your account. Contact a superadmin to change it.");
+  }
+  const requiresInitialCompany =
+    editingSelf &&
+    !actor.isSuperAdmin &&
+    !target.isSuperAdmin &&
+    !target.companionIntroCompletedAt &&
+    target.companyMemberships.length === 0;
+  let assignedCompanyId: string | null = null;
+
+  if (requiresInitialCompany) {
+    if (!companyId) {
+      redirect("/onboarding/companion?error=company_required");
+    }
+    const [selectedCompany, role] = await Promise.all([
+      prisma.company.findFirst({
+        where: {
+          id: companyId,
+          deletedAt: null,
+          status: CompanyStatus.ACTIVE,
+          orgGroup: { deletedAt: null, status: OrgGroupStatus.ACTIVE },
+        },
+      }),
+      prisma.roleDefinition.findUnique({
+        where: { key: DEFAULT_REGISTER_ROLE_KEY },
+      }),
+    ]);
+    if (!selectedCompany || !role) {
+      redirect("/onboarding/companion?error=company_unavailable");
+    }
+
+    await prisma.companyMembership.upsert({
+      where: { userId_companyId: { userId: targetUserId, companyId: selectedCompany.id } },
+      create: {
+        userId: targetUserId,
+        companyId: selectedCompany.id,
+        roleDefinitionId: role.id,
+      },
+      update: {
+        roleDefinitionId: role.id,
+      },
+    });
+    await ensureMemberOnboardingForCompany(targetUserId, selectedCompany.id);
+    assignedCompanyId = selectedCompany.id;
   }
 
   const all = getCompanionManifest();
@@ -71,11 +118,20 @@ export async function updateCompanionAction(formData: FormData) {
       data: { companionIntroCompletedAt: now },
     });
   }
+  if (assignedCompanyId) {
+    invalidatePermissionCache(targetUserId);
+  }
   invalidateAccessUserCache(targetUserId, target.clerkId);
   revalidatePath("/home");
+  revalidatePath("/onboarding");
+  revalidatePath("/onboarding/member");
+  revalidatePath("/staff");
   revalidatePath(`/staff/${targetUserId}`);
   revalidatePath("/onboarding/companion");
   revalidatePath("/settings/profile");
+  if (assignedCompanyId) {
+    revalidatePath(`/companies/${assignedCompanyId}`);
+  }
   const next = String(formData.get("next") ?? "").trim();
   if (next === "home") redirect("/home");
 }

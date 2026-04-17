@@ -1,10 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import {
+  createCompanyOnboardingMaterialAction,
+  deleteCompanyOnboardingMaterialAction,
+  updateCompanyOnboardingMaterialAction,
+} from "@/app/actions/company";
 import { softDeleteCompanyAction } from "@/app/actions/trash";
 import { archiveCompanyAction, restoreCompanyAction, updateCompanyAction } from "@/app/actions/company";
 import { createDepartmentAction, deleteDepartmentAction, updateDepartmentAction } from "@/app/actions/department";
 import { removeCompanyLogoAction, uploadCompanyLogoAction } from "@/app/actions/profile-media";
 import { requireUser } from "@/lib/auth";
+import { resolveCompanyOnboardingMaterials } from "@/lib/company-onboarding-materials";
 import { isCompanyAdmin, isGroupAdmin, isSuperAdmin, type AccessUser } from "@/lib/access";
 import { userHasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -38,6 +44,9 @@ export default async function CompanyDetailPage({
       projects: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" }, take: 30 },
       memberships: { include: { user: true, roleDefinition: true, department: true } },
       departments: { orderBy: { sortOrder: "asc" } },
+      onboardingMaterials: {
+        orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+      },
     },
   });
   if (!company) notFound();
@@ -57,6 +66,7 @@ export default async function CompanyDetailPage({
     (isSuperAdmin(user) || isGroupAdmin(user, company.orgGroupId));
 
   const locale = await getLocale();
+  const onboardingMaterials = resolveCompanyOnboardingMaterials(company);
 
   return (
     <div className="space-y-8">
@@ -135,32 +145,6 @@ export default async function CompanyDetailPage({
                 className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
               />
             </div>
-            <div className="space-y-2 border-t border-[hsl(var(--border))] pt-3">
-              <p className="text-xs font-semibold text-[hsl(var(--foreground))]">{t(locale, "companyOnboardingTitle")}</p>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
-                <Input name="onboardingPackageUrl" defaultValue={company.onboardingPackageUrl ?? ""} placeholder="https://..." />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
-                <Input name="onboardingVideoUrl" defaultValue={company.onboardingVideoUrl ?? ""} placeholder="https://…" />
-                <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>
-                <Input name="onboardingPackageVersion" defaultValue={company.onboardingPackageVersion ?? "v1"} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">{t(locale, "companyOnboardingDeadlineDays")}</label>
-                <Input
-                  name="onboardingDeadlineDays"
-                  type="number"
-                  min={1}
-                  max={365}
-                  defaultValue={String(company.onboardingDeadlineDays ?? 14)}
-                />
-              </div>
-            </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "commonStatus")}</label>
               <Select name="status" defaultValue={company.status}>
@@ -200,6 +184,138 @@ export default async function CompanyDetailPage({
               </FormSubmitButton>
             </form>
           ) : null}
+        </Card>
+      ) : null}
+
+      {canManage ? (
+        <Card className="space-y-4 p-4">
+          <CardTitle>{t(locale, "companyOnboardingTitle")}</CardTitle>
+          <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "onboardingHubManageLead")}</p>
+
+          {!onboardingMaterials.length ? (
+            <p className="rounded-md border border-dashed border-[hsl(var(--border))] px-3 py-3 text-sm text-[hsl(var(--muted))]">
+              {t(locale, "onboardingHubManagePackageMissing")}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {onboardingMaterials.map((material) => (
+                <div key={material.id} className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_420px]">
+                  <div className="rounded-[10px] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
+                        {t(locale, "companyOnboardingTitle")}
+                      </p>
+                      {material.isCurrent ? (
+                        <span className="rounded-full bg-[hsl(var(--primary))]/10 px-2 py-0.5 text-[11px] font-semibold text-[hsl(var(--primary))]">
+                          {t(locale, "onboardingHubManageCurrentMaterial")}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 space-y-2 text-sm">
+                      <a
+                        href={material.packageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+                      >
+                        {t(locale, "onboardingOpenPackage")}
+                      </a>
+                      <p className="text-[hsl(var(--muted))]">
+                        {t(locale, "companyOnboardingVersion")}: {material.packageVersion}
+                      </p>
+                      <p className="text-[hsl(var(--muted))]">
+                        {t(locale, "companyOnboardingDeadlineDays")}: {material.deadlineDays}
+                      </p>
+                      {material.videoUrl ? (
+                        <a
+                          href={material.videoUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex font-medium text-[hsl(var(--primary))] underline-offset-4 hover:underline"
+                        >
+                          {t(locale, "onboardingVideoOpenLink")}
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[10px] border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
+                    <form action={updateCompanyOnboardingMaterialAction} className="grid gap-3">
+                      <input type="hidden" name="companyId" value={company.id} />
+                      <input type="hidden" name="materialId" value={material.id} />
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
+                        <Input name="onboardingPackageUrl" defaultValue={material.packageUrl} placeholder="https://..." required />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
+                        <Input name="onboardingVideoUrl" defaultValue={material.videoUrl ?? ""} placeholder="https://..." />
+                        <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>
+                          <Input name="onboardingPackageVersion" defaultValue={material.packageVersion} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium">{t(locale, "companyOnboardingDeadlineDays")}</label>
+                          <Input name="onboardingDeadlineDays" type="number" min={1} max={365} defaultValue={String(material.deadlineDays)} />
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <FormSubmitButton type="submit" variant="secondary">
+                          {t(locale, "onboardingHubManageSaveContent")}
+                        </FormSubmitButton>
+                      </div>
+                    </form>
+
+                    <form action={deleteCompanyOnboardingMaterialAction} className="mt-3">
+                      <input type="hidden" name="companyId" value={company.id} />
+                      <input type="hidden" name="materialId" value={material.id} />
+                      <FormSubmitButton
+                        type="submit"
+                        variant="secondary"
+                        className="border border-rose-600/30 bg-rose-600/5 text-rose-900 dark:text-rose-100"
+                      >
+                        {t(locale, "onboardingHubManageDeleteContent")}
+                      </FormSubmitButton>
+                    </form>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="rounded-[10px] border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">
+              {t(locale, "onboardingHubManageAddContent")}
+            </p>
+            <form action={createCompanyOnboardingMaterialAction} className="mt-3 grid gap-3">
+              <input type="hidden" name="companyId" value={company.id} />
+              <div className="space-y-1">
+                <label className="text-xs font-medium">{t(locale, "companyOnboardingUrl")}</label>
+                <Input name="onboardingPackageUrl" placeholder="https://..." required />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">{t(locale, "companyOnboardingVideoUrl")}</label>
+                <Input name="onboardingVideoUrl" placeholder="https://..." />
+                <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "companyOnboardingVideoUrlHelp")}</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">{t(locale, "companyOnboardingVersion")}</label>
+                  <Input name="onboardingPackageVersion" defaultValue="v1" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">{t(locale, "companyOnboardingDeadlineDays")}</label>
+                  <Input name="onboardingDeadlineDays" type="number" min={1} max={365} defaultValue="14" />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <FormSubmitButton type="submit">{t(locale, "onboardingHubManageAddContent")}</FormSubmitButton>
+              </div>
+            </form>
+          </div>
         </Card>
       ) : null}
 
