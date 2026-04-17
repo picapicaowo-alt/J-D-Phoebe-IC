@@ -18,6 +18,22 @@ type Props = {
 };
 
 type ApiErrorShape = { error?: string };
+type ComposerState = { draft: string; files: File[] };
+type RenderMessage = ChatMessage & { optimisticId?: string; pending?: boolean };
+type ThreadCacheData = {
+  thread: ChatThreadDetail | null;
+  messages: RenderMessage[];
+};
+type GroupOptionsResponse = {
+  groupOptions?: ChatPageData["groupOptions"];
+  groupOptionsLoaded?: boolean;
+  error?: string;
+};
+type PendingSendResponse = { message?: ChatMessage; error?: string };
+type PendingGroupCreateResponse = { thread?: ChatThreadDetail; error?: string };
+type PendingThreadUpdateResponse = { threadPatch?: ChatThreadGroupPatch; error?: string };
+
+const EMPTY_COMPOSER: ComposerState = { draft: "", files: [] };
 
 function copyFor(locale: "en" | "zh") {
   return locale === "zh"
@@ -170,14 +186,70 @@ function sortMembersByName<T extends { name: string }>(members: T[]) {
   return [...members].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
 
-function appendMessage(messages: ChatMessage[], incoming: ChatMessage) {
+function sortMessages<T extends { createdAt: string }>(messages: T[]) {
+  return [...messages].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+}
+
+function attachmentFingerprint(attachments: Pick<ChatMessage["attachments"][number], "fileName" | "sizeBytes">[]) {
+  return attachments.map((attachment) => `${attachment.fileName}:${attachment.sizeBytes}`).join("|");
+}
+
+function matchesOptimisticMessage(message: RenderMessage, incoming: ChatMessage) {
+  return (
+    !!message.pending &&
+    message.threadKey === incoming.threadKey &&
+    message.senderId === incoming.senderId &&
+    (message.body ?? null) === (incoming.body ?? null) &&
+    attachmentFingerprint(message.attachments) === attachmentFingerprint(incoming.attachments)
+  );
+}
+
+function insertMessage(messages: RenderMessage[], incoming: RenderMessage) {
+  if (messages.some((message) => message.id === incoming.id || (incoming.optimisticId && message.optimisticId === incoming.optimisticId))) {
+    return messages;
+  }
+
+  return sortMessages([...messages, incoming]);
+}
+
+function appendIncomingMessage(messages: RenderMessage[], incoming: ChatMessage) {
   if (messages.some((message) => message.id === incoming.id)) return messages;
-  return [...messages, incoming].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+
+  const optimisticIndex = messages.findIndex((message) => matchesOptimisticMessage(message, incoming));
+  if (optimisticIndex === -1) {
+    return sortMessages([...messages, incoming]);
+  }
+
+  const next = [...messages];
+  next.splice(optimisticIndex, 1, incoming);
+  return sortMessages(next);
+}
+
+function replaceOptimisticMessage(messages: RenderMessage[], optimisticId: string, incoming: ChatMessage) {
+  const next = messages.filter((message) => message.optimisticId !== optimisticId && message.id !== incoming.id);
+  return sortMessages([...next, incoming]);
 }
 
 function threadDetailToSummary(thread: ChatThreadDetail): ChatThreadSummary {
-  const { members: _members, creatorId: _creatorId, ...summary } = thread;
-  return summary;
+  return {
+    key: thread.key,
+    type: thread.type,
+    id: thread.id,
+    name: thread.name,
+    subtitle: thread.subtitle,
+    avatarUrl: thread.avatarUrl,
+    unreadCount: thread.unreadCount,
+    latestMessageAt: thread.latestMessageAt,
+    latestMessageText: thread.latestMessageText,
+    latestAttachmentCount: thread.latestAttachmentCount,
+    latestMessageFromSelf: thread.latestMessageFromSelf,
+    canManage: thread.canManage,
+    canMentionAll: thread.canMentionAll,
+    isMuted: thread.isMuted,
+    memberCount: thread.memberCount,
+    companyId: thread.companyId,
+    companyName: thread.companyName,
+  };
 }
 
 function summaryToDetail(thread: ChatThreadSummary): ChatThreadDetail {
@@ -237,11 +309,12 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   const [threads, setThreads] = useState(initialData.threads);
   const [selectedThreadKey, setSelectedThreadKey] = useState(initialData.selectedThreadKey);
   const [selectedThread, setSelectedThread] = useState(initialData.selectedThread);
-  const [messages, setMessages] = useState(initialData.messages);
+  const [messages, setMessages] = useState<RenderMessage[]>(initialData.messages);
   const [groupOptions, setGroupOptions] = useState(initialData.groupOptions);
-  const [draft, setDraft] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
-  const [sending, setSending] = useState(false);
+  const [groupOptionsLoaded, setGroupOptionsLoaded] = useState(initialData.groupOptionsLoaded);
+  const [groupOptionsLoading, setGroupOptionsLoading] = useState(false);
+  const [composerByThread, setComposerByThread] = useState<Record<string, ComposerState>>({});
+  const [sendingByThread, setSendingByThread] = useState<Record<string, boolean>>({});
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [groupError, setGroupError] = useState<string | null>(null);
@@ -258,14 +331,16 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   const [searchQuery, setSearchQuery] = useState("");
   const threadsRef = useRef(initialData.threads);
   const selectedThreadRef = useRef<string | null>(initialData.selectedThreadKey);
+  const groupOptionsLoadedRef = useRef(initialData.groupOptionsLoaded);
   const threadDataCacheRef = useRef(
-    new Map<string, ChatThreadData>(
+    new Map<string, ThreadCacheData>(
       initialData.selectedThreadKey && initialData.selectedThread
         ? [[initialData.selectedThreadKey, { thread: initialData.selectedThread, messages: initialData.messages }]]
         : [],
     ),
   );
   const requestRef = useRef(0);
+  const groupOptionsRequestRef = useRef<Promise<boolean> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const createDialogRef = useRef<HTMLDialogElement>(null);
@@ -273,6 +348,10 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   const memberListDialogRef = useRef<HTMLDialogElement>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const deferredMemberListQuery = useDeferredValue(memberListQuery);
+  const selectedComposer = selectedThreadKey ? composerByThread[selectedThreadKey] ?? EMPTY_COMPOSER : EMPTY_COMPOSER;
+  const draft = selectedComposer.draft;
+  const files = selectedComposer.files;
+  const sending = selectedThreadKey ? !!sendingByThread[selectedThreadKey] : false;
 
   useEffect(() => {
     threadsRef.current = threads;
@@ -281,6 +360,10 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   useEffect(() => {
     selectedThreadRef.current = selectedThreadKey;
   }, [selectedThreadKey]);
+
+  useEffect(() => {
+    groupOptionsLoadedRef.current = groupOptionsLoaded;
+  }, [groupOptionsLoaded]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -295,12 +378,86 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     }
   }, [createCompanyId, groupOptions]);
 
+  function updateComposer(threadKey: string, updater: (current: ComposerState) => ComposerState) {
+    setComposerByThread((current) => {
+      const base = current[threadKey] ?? EMPTY_COMPOSER;
+      const next = updater(base);
+      if (!next.draft && next.files.length === 0) {
+        const rest = { ...current };
+        delete rest[threadKey];
+        return rest;
+      }
+      return { ...current, [threadKey]: next };
+    });
+  }
+
+  function updateThreadMessages(threadKey: string, updater: (current: RenderMessage[]) => RenderMessage[]) {
+    const cached = threadDataCacheRef.current.get(threadKey);
+    const nextMessages = updater(cached?.messages ?? []);
+    threadDataCacheRef.current.set(threadKey, {
+      thread: cached?.thread ?? (selectedThreadRef.current === threadKey ? selectedThread : null),
+      messages: nextMessages,
+    });
+    if (selectedThreadRef.current === threadKey) {
+      setMessages(nextMessages);
+    }
+  }
+
+  function setThreadSending(threadKey: string, isSending: boolean) {
+    setSendingByThread((current) => {
+      if (isSending) {
+        return { ...current, [threadKey]: true };
+      }
+      const rest = { ...current };
+      delete rest[threadKey];
+      return rest;
+    });
+  }
+
+  async function loadGroupOptions() {
+    if (groupOptionsLoadedRef.current) return true;
+    if (groupOptionsRequestRef.current) {
+      return groupOptionsRequestRef.current;
+    }
+
+    const request = (async () => {
+      setGroupOptionsLoading(true);
+      try {
+        const response = await fetch("/api/messages/groups", { cache: "no-store" });
+        const data = await readJson<GroupOptionsResponse>(response);
+        if (!response.ok || !data?.groupOptions) {
+          setGroupError(data?.error ?? copy.loadError);
+          return false;
+        }
+        setGroupOptions(data.groupOptions);
+        setGroupOptionsLoaded(Boolean(data.groupOptionsLoaded));
+        setGroupError(null);
+        return true;
+      } catch {
+        setGroupError(copy.loadError);
+        return false;
+      } finally {
+        setGroupOptionsLoading(false);
+      }
+    })();
+
+    groupOptionsRequestRef.current = request;
+    const result = await request;
+    if (groupOptionsRequestRef.current === request) {
+      groupOptionsRequestRef.current = null;
+    }
+    return result;
+  }
+
   const applyPageData = useEffectEvent((data: ChatPageData) => {
     setThreads(data.threads);
     setSelectedThreadKey(data.selectedThreadKey);
     setSelectedThread(data.selectedThread);
     setMessages(data.messages);
-    setGroupOptions(data.groupOptions);
+    if (data.groupOptionsLoaded || !groupOptionsLoadedRef.current) {
+      setGroupOptions(data.groupOptions);
+    }
+    setGroupOptionsLoaded((current) => current || data.groupOptionsLoaded);
     if (data.selectedThreadKey && data.selectedThread) {
       threadDataCacheRef.current.set(data.selectedThreadKey, {
         thread: data.selectedThread,
@@ -310,14 +467,14 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     notifyUnreadChanged();
   });
 
-  const applyThreadData = useEffectEvent((threadKey: string, data: ChatThreadData) => {
+  function applyThreadData(threadKey: string, data: ChatThreadData) {
     threadDataCacheRef.current.set(threadKey, data);
     startTransition(() => {
       setSelectedThreadKey(threadKey);
       setSelectedThread(data.thread);
       setMessages(data.messages);
     });
-  });
+  }
 
   const refreshPage = useEffectEvent(async (threadKey?: string | null, opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoadingConversation(true);
@@ -344,7 +501,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     }
   });
 
-  const refreshThread = useEffectEvent(async (threadKey: string, opts?: { silent?: boolean }) => {
+  async function refreshThread(threadKey: string, opts?: { silent?: boolean }) {
     const cleanThreadKey = String(threadKey ?? "").trim();
     if (!cleanThreadKey) return;
     if (!opts?.silent) setLoadingConversation(true);
@@ -368,7 +525,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         setLoadingConversation(false);
       }
     }
-  });
+  }
 
   const markRead = useEffectEvent(async (threadKey: string) => {
     const cleanThreadKey = String(threadKey ?? "").trim();
@@ -390,14 +547,14 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     if (unread > 0) {
       void markRead(selectedThreadKey);
     }
-  }, [markRead, selectedThreadKey, threads]);
+  }, [selectedThreadKey, threads]);
 
   const applyIncomingMessage = useEffectEvent((incoming: ChatMessage) => {
     const cachedThread = threadDataCacheRef.current.get(incoming.threadKey);
     if (cachedThread) {
       threadDataCacheRef.current.set(incoming.threadKey, {
         thread: cachedThread.thread,
-        messages: appendMessage(cachedThread.messages, incoming),
+        messages: appendIncomingMessage(cachedThread.messages, incoming),
       });
     }
 
@@ -425,7 +582,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     }
 
     if (selectedThreadRef.current === incoming.threadKey) {
-      setMessages((current) => appendMessage(current, incoming));
+      setMessages((current) => appendIncomingMessage(current, incoming));
       if (!incoming.isOwn) {
         void markRead(incoming.threadKey);
       }
@@ -447,7 +604,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     return () => {
       source.close();
     };
-  }, [applyIncomingMessage]);
+  }, []);
 
   async function openThread(threadKey: string) {
     const cleanThreadKey = String(threadKey ?? "").trim();
@@ -475,34 +632,75 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     event.preventDefault();
     if (!selectedThreadKey || sending) return;
 
-    setSending(true);
+    const threadKey = selectedThreadKey;
+    const body = draft;
+    const pendingFiles = [...files];
+    const optimisticId = `optimistic:${threadKey}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    const optimisticMessage: RenderMessage = {
+      id: optimisticId,
+      optimisticId,
+      pending: true,
+      threadKey,
+      threadType: selectedThread?.type ?? (threadKey.startsWith("group:") ? "group" : "direct"),
+      body: body.trim() ? body : null,
+      createdAt: new Date().toISOString(),
+      senderId: currentUserId,
+      senderName: selectedThread?.type === "direct" ? copy.you : selectedThread?.type === "group" ? copy.you : copy.you,
+      senderAvatarUrl: null,
+      isOwn: true,
+      attachments: pendingFiles.map((file, index) => ({
+        id: `${optimisticId}:${index}`,
+        fileName: file.name || `upload-${index + 1}`,
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        url: "",
+        isImage: file.type.startsWith("image/"),
+      })),
+    };
+
+    setThreadSending(threadKey, true);
     setError(null);
+    updateComposer(threadKey, () => EMPTY_COMPOSER);
+    updateThreadMessages(threadKey, (current) => insertMessage(current, optimisticMessage));
+    setThreads((current) =>
+      sortThreads(
+        current.map((thread) =>
+          thread.key === threadKey
+            ? {
+                ...thread,
+                latestMessageAt: optimisticMessage.createdAt,
+                latestMessageText: optimisticMessage.body,
+                latestAttachmentCount: optimisticMessage.attachments.length,
+                latestMessageFromSelf: true,
+                unreadCount: 0,
+              }
+            : thread,
+        ),
+      ),
+    );
 
     const formData = new FormData();
-    formData.set("threadKey", selectedThreadKey);
-    formData.set("body", draft);
-    for (const file of files) {
+    formData.set("threadKey", threadKey);
+    formData.set("body", body);
+    for (const file of pendingFiles) {
       formData.append("files", file);
     }
 
     try {
       const response = await fetch("/api/messages", { method: "POST", body: formData });
-      const data = await readJson<{ message?: ChatMessage; error?: string }>(response);
+      const data = await readJson<PendingSendResponse>(response);
       if (!response.ok || !data?.message) {
         setError(data?.error ?? copy.sendError);
+        updateThreadMessages(threadKey, (current) => current.filter((message) => message.optimisticId !== optimisticId));
+        updateComposer(threadKey, (current) => (current.draft || current.files.length ? current : { draft: body, files: pendingFiles }));
         return;
       }
 
-      const cachedThread = threadDataCacheRef.current.get(selectedThreadKey)?.thread;
-      setMessages((current) => appendMessage(current, data.message!));
-      threadDataCacheRef.current.set(selectedThreadKey, {
-        thread: selectedThread ?? cachedThread ?? null,
-        messages: appendMessage(threadDataCacheRef.current.get(selectedThreadKey)?.messages ?? [], data.message!),
-      });
+      updateThreadMessages(threadKey, (current) => replaceOptimisticMessage(current, optimisticId, data.message!));
       setThreads((current) =>
         sortThreads(
           current.map((thread) =>
-            thread.key === selectedThreadKey
+            thread.key === threadKey
               ? {
                   ...thread,
                   latestMessageAt: data.message!.createdAt,
@@ -515,15 +713,15 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
           ),
         ),
       );
-      setDraft("");
-      setFiles([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     } catch {
       setError(copy.sendError);
+      updateThreadMessages(threadKey, (current) => current.filter((message) => message.optimisticId !== optimisticId));
+      updateComposer(threadKey, (current) => (current.draft || current.files.length ? current : { draft: body, files: pendingFiles }));
     } finally {
-      setSending(false);
+      setThreadSending(threadKey, false);
     }
   }
 
@@ -535,6 +733,9 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     setGroupError(null);
     if (!createDialogRef.current?.open) {
       createDialogRef.current?.showModal();
+    }
+    if (!groupOptionsLoadedRef.current) {
+      void loadGroupOptions();
     }
   }
 
@@ -552,6 +753,9 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     setGroupError(null);
     if (!manageDialogRef.current?.open) {
       manageDialogRef.current?.showModal();
+    }
+    if (!groupOptionsLoadedRef.current) {
+      void loadGroupOptions();
     }
   }
 
@@ -581,7 +785,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
           memberIds: createMemberIds,
         }),
       });
-      const data = await readJson<{ thread?: ChatThreadDetail; error?: string }>(response);
+      const data = await readJson<PendingGroupCreateResponse>(response);
       if (!response.ok || !data?.thread) {
         setGroupError(data?.error ?? copy.loadError);
         return;
@@ -621,7 +825,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         method: "PATCH",
         body: formData,
       });
-      const data = await readJson<{ threadPatch?: ChatThreadGroupPatch; error?: string }>(response);
+      const data = await readJson<PendingThreadUpdateResponse>(response);
       if (!response.ok || !data?.threadPatch) {
         setGroupError(data?.error ?? copy.loadError);
         return;
@@ -977,19 +1181,41 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                           {message.body ? <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p> : null}
                           {message.attachments.length > 0 ? (
                             <div className={cn("grid gap-3", message.body ? "mt-3" : "")}>
-                              {message.attachments.map((attachment) =>
-                                attachment.isImage ? (
-                                  <a
-                                    key={attachment.id}
-                                    href={attachment.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="block overflow-hidden rounded-[18px] border border-white/15 bg-black/5"
-                                  >
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={attachment.url} alt={attachment.fileName} className="max-h-72 w-full object-cover" />
-                                  </a>
-                                ) : (
+                              {message.attachments.map((attachment) => {
+                                const cardClassName = cn(
+                                  "block overflow-hidden rounded-[18px] border",
+                                  message.isOwn ? "border-white/15 bg-black/5" : "border-[hsl(var(--border))] bg-black/[0.03] dark:bg-white/[0.03]",
+                                );
+
+                                if (message.pending) {
+                                  return (
+                                    <div key={attachment.id} className={cn(cardClassName, "px-3 py-2 text-sm")}>
+                                      <div className="min-w-0">
+                                        <p className="truncate font-medium">{attachment.fileName}</p>
+                                        <p className={cn("text-xs", message.isOwn ? "text-white/75" : "text-[hsl(var(--muted))]")}>
+                                          {copy.sending}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                if (attachment.isImage) {
+                                  return (
+                                    <a
+                                      key={attachment.id}
+                                      href={attachment.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className={cn(cardClassName, message.isOwn ? "" : "border-[hsl(var(--border))]")}
+                                    >
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img src={attachment.url} alt={attachment.fileName} className="max-h-72 w-full object-cover" />
+                                    </a>
+                                  );
+                                }
+
+                                return (
                                   <a
                                     key={attachment.id}
                                     href={attachment.url}
@@ -1010,12 +1236,14 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                                       {Math.max(1, Math.round(attachment.sizeBytes / 1024))} KB
                                     </span>
                                   </a>
-                                ),
-                              )}
+                                );
+                              })}
                             </div>
                           ) : null}
                         </div>
-                        <p className="mt-1.5 px-1 text-xs text-[hsl(var(--muted))]">{formatMessageTime(message.createdAt, locale)}</p>
+                        <p className="mt-1.5 px-1 text-xs text-[hsl(var(--muted))]">
+                          {message.pending ? copy.sending : formatMessageTime(message.createdAt, locale)}
+                        </p>
                       </div>
                     </div>
                   ))
@@ -1026,7 +1254,10 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                 <form onSubmit={handleSend} className="space-y-3">
                   <textarea
                     value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
+                    onChange={(event) => {
+                      if (!selectedThreadKey) return;
+                      updateComposer(selectedThreadKey, (current) => ({ ...current, draft: event.target.value }));
+                    }}
                     placeholder={copy.placeholder}
                     className="min-h-[108px] w-full rounded-[22px] border border-[hsl(var(--border))] bg-transparent px-4 py-3 text-sm text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))]/20 transition focus:ring-2"
                   />
@@ -1041,7 +1272,13 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                           <span className="max-w-[14rem] truncate">{file.name}</span>
                           <button
                             type="button"
-                            onClick={() => setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                            onClick={() => {
+                              if (!selectedThreadKey) return;
+                              updateComposer(selectedThreadKey, (current) => ({
+                                ...current,
+                                files: current.files.filter((_, currentIndex) => currentIndex !== index),
+                              }));
+                            }}
                             className="text-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
                           >
                             {copy.remove}
@@ -1059,9 +1296,13 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                         multiple
                         className="hidden"
                         onChange={(event) => {
+                          if (!selectedThreadKey) return;
                           const picked = Array.from(event.target.files ?? []);
                           if (!picked.length) return;
-                          setFiles((current) => [...current, ...picked].slice(0, 5));
+                          updateComposer(selectedThreadKey, (current) => ({
+                            ...current,
+                            files: [...current.files, ...picked].slice(0, 5),
+                          }));
                           event.target.value = "";
                         }}
                       />
@@ -1069,7 +1310,14 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                         {copy.attach}
                       </Button>
                       {files.length > 0 ? (
-                        <Button type="button" variant="ghost" onClick={() => setFiles([])}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => {
+                            if (!selectedThreadKey) return;
+                            updateComposer(selectedThreadKey, (current) => ({ ...current, files: [] }));
+                          }}
+                        >
                           {copy.clearFiles}
                         </Button>
                       ) : null}
@@ -1140,36 +1388,40 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                     <div className="mb-3 rounded-[14px] border border-dashed border-[hsl(var(--border))] px-3 py-2 text-sm text-[hsl(var(--muted))]">
                       {copy.currentUserLocked}
                     </div>
-                    <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-                      {createOption?.members
-                        .filter((member) => member.id !== currentUserId)
-                        .map((member) => {
-                          const checked = createMemberIds.includes(member.id);
-                          return (
-                            <label
-                              key={member.id}
-                              className="flex cursor-pointer items-center justify-between gap-3 rounded-[14px] border border-[hsl(var(--border))] px-3 py-2"
-                            >
-                              <span className="flex min-w-0 items-center gap-3">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(event) =>
-                                    setCreateMemberIds((current) =>
-                                      event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id),
-                                    )
-                                  }
-                                />
-                                <UserFace name={member.name} avatarUrl={member.avatarUrl} size={28} />
-                                <span className="min-w-0">
-                                  <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
-                                  <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
+                    {groupOptionsLoading && !groupOptionsLoaded ? (
+                      <p className="text-sm text-[hsl(var(--muted))]">{copy.loading}</p>
+                    ) : (
+                      <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                        {createOption?.members
+                          .filter((member) => member.id !== currentUserId)
+                          .map((member) => {
+                            const checked = createMemberIds.includes(member.id);
+                            return (
+                              <label
+                                key={member.id}
+                                className="flex cursor-pointer items-center justify-between gap-3 rounded-[14px] border border-[hsl(var(--border))] px-3 py-2"
+                              >
+                                <span className="flex min-w-0 items-center gap-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(event) =>
+                                      setCreateMemberIds((current) =>
+                                        event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id),
+                                      )
+                                    }
+                                  />
+                                  <UserFace name={member.name} avatarUrl={member.avatarUrl} size={28} />
+                                  <span className="min-w-0">
+                                    <span className="block truncate text-sm font-medium text-[hsl(var(--foreground))]">{member.name}</span>
+                                    <span className="block truncate text-xs text-[hsl(var(--muted))]">{member.title || copy.titleFallback}</span>
+                                  </span>
                                 </span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                    </div>
+                              </label>
+                            );
+                          })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1182,7 +1434,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
             <Button type="button" variant="ghost" onClick={() => createDialogRef.current?.close()}>
               {copy.cancel}
             </Button>
-            <Button type="submit" disabled={groupSaving || !groupOptions.length}>
+            <Button type="submit" disabled={groupSaving || groupOptionsLoading || !groupOptions.length || !groupOptionsLoaded}>
               {groupSaving ? copy.groupCreating : copy.groupCreate}
             </Button>
           </div>

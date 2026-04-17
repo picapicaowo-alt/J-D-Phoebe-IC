@@ -1,13 +1,23 @@
 import { NextResponse } from "next/server";
 import type { AccessUser } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
-import { createMessageGroup } from "@/lib/direct-messages";
+import { createMessageGroup, getMessagingGroupOptions } from "@/lib/direct-messages";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user || !user.active) {
+    return jsonError("Unauthorized", 401);
+  }
+
+  const groupOptions = await getMessagingGroupOptions(user as AccessUser);
+  return NextResponse.json({ groupOptions, groupOptionsLoaded: true });
 }
 
 export async function POST(request: Request) {

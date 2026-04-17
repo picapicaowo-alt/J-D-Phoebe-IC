@@ -75,8 +75,6 @@ const managedGroupCoreSelect = {
 type DirectMessageRow = Prisma.DirectMessageGetPayload<{ include: typeof directMessageInclude }>;
 type GroupMessageRow = Prisma.MessageGroupMessageGetPayload<{ include: typeof groupMessageInclude }>;
 type GroupMembershipRow = Prisma.MessageGroupMemberGetPayload<{ include: typeof groupMembershipInclude }>;
-type ManagedGroupRow = Prisma.MessageGroupGetPayload<{ include: typeof managedGroupInclude }>;
-type ManagedGroupCoreRow = Prisma.MessageGroupGetPayload<{ select: typeof managedGroupCoreSelect }>;
 type DirectPreferenceRow = Prisma.DirectMessagePreferenceGetPayload<{
   select: { peerId: true; mutedAt: true };
 }>;
@@ -97,6 +95,14 @@ type LatestGroupMessageRef = {
 type GroupUnreadCountRow = {
   groupId: string;
   unreadCount: number;
+};
+type GroupThreadRecord = {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  company: { id: string; name: string; orgGroupId: string };
+  createdBy: { id: string; name: string; title: string | null; avatarUrl: string | null };
+  members: { userId: string; isAdmin: boolean; user: VisiblePeerRow }[];
 };
 
 export type ChatThreadType = "direct" | "group";
@@ -169,6 +175,7 @@ export type ChatPageData = {
   selectedThread: ChatThreadDetail | null;
   messages: ChatMessage[];
   groupOptions: ChatCompanyOption[];
+  groupOptionsLoaded: boolean;
   totalUnreadCount: number;
 };
 
@@ -392,35 +399,15 @@ async function listManageableCompanies(user: AccessUser) {
   });
 }
 
-async function listCompanyMessagingCandidates(companyId: string, currentUserId: string): Promise<ChatMemberOption[]> {
+async function validateCompanyMessagingMembers(companyId: string, currentUserId: string, memberIds: string[]) {
+  const uniqueMemberIds = uniq(memberIds);
+  if (!uniqueMemberIds.length) return;
+
   const rows = await prisma.user.findMany({
     where: {
       active: true,
       deletedAt: null,
-      OR: [
-        { id: currentUserId },
-        { companyMemberships: { some: { companyId } } },
-        { projectMemberships: { some: { project: { companyId } } } },
-      ],
-    },
-    orderBy: { name: "asc" },
-    select: memberSelect,
-  });
-
-  return rows.map((row) =>
-    toMemberOption({
-      ...row,
-      isAdmin: false,
-      isCreator: false,
-    }),
-  );
-}
-
-async function listCompanyMessagingCandidateIds(companyId: string, currentUserId: string): Promise<string[]> {
-  const rows = await prisma.user.findMany({
-    where: {
-      active: true,
-      deletedAt: null,
+      id: { in: uniqueMemberIds },
       OR: [
         { id: currentUserId },
         { companyMemberships: { some: { companyId } } },
@@ -430,7 +417,9 @@ async function listCompanyMessagingCandidateIds(companyId: string, currentUserId
     select: { id: true },
   });
 
-  return rows.map((row) => row.id);
+  if (rows.length !== uniqueMemberIds.length) {
+    throw new Error("One or more selected members are not eligible for this company group.");
+  }
 }
 
 async function buildGroupOptions(user: AccessUser): Promise<ChatCompanyOption[]> {
@@ -486,6 +475,14 @@ async function buildGroupOptions(user: AccessUser): Promise<ChatCompanyOption[]>
   }));
 }
 
+function buildGroupOptionShells(companies: { id: string; name: string }[]): ChatCompanyOption[] {
+  return companies.map((company) => ({
+    id: company.id,
+    name: company.name,
+    members: [],
+  }));
+}
+
 async function listDirectMessagePreferences(userId: string, peerIds: string[]): Promise<DirectPreferenceRow[]> {
   if (!peerIds.length) return [];
   return prisma.directMessagePreference.findMany({
@@ -537,6 +534,24 @@ async function findMessageGroupMembershipCore(userId: string, groupId: string) {
   });
 }
 
+async function findMessageGroupSendContext(userId: string, groupId: string) {
+  const cleanGroupId = String(groupId ?? "").trim();
+  if (!cleanGroupId) return null;
+
+  return prisma.messageGroupMember.findUnique({
+    where: { groupId_userId: { groupId: cleanGroupId, userId } },
+    select: {
+      groupId: true,
+      isAdmin: true,
+      group: {
+        select: {
+          createdById: true,
+        },
+      },
+    },
+  });
+}
+
 async function findManagedMessageGroupCore(user: AccessUser, groupId: string) {
   const cleanGroupId = String(groupId ?? "").trim();
   if (!cleanGroupId) return null;
@@ -547,26 +562,6 @@ async function findManagedMessageGroupCore(user: AccessUser, groupId: string) {
       ...(user.isSuperAdmin ? {} : { members: { some: { userId: user.id } } }),
     },
     select: managedGroupCoreSelect,
-  });
-
-  if (!group) return null;
-  if (!memberHasGroupAdminAccess(user, group)) {
-    throw new Error("You do not have permission to manage this group.");
-  }
-
-  return group;
-}
-
-async function findManagedMessageGroup(user: AccessUser, groupId: string) {
-  const cleanGroupId = String(groupId ?? "").trim();
-  if (!cleanGroupId) return null;
-
-  const group = await prisma.messageGroup.findFirst({
-    where: {
-      id: cleanGroupId,
-      ...(user.isSuperAdmin ? {} : { members: { some: { userId: user.id } } }),
-    },
-    include: managedGroupInclude,
   });
 
   if (!group) return null;
@@ -655,49 +650,76 @@ async function getGroupUnreadCounts(userId: string, groupIds: string[]) {
   return new Map(rows.map((row) => [row.groupId, Number(row.unreadCount)]));
 }
 
-function buildGroupThreadDetail(user: AccessUser, membership: GroupMembershipRow, latest: GroupMessageRow | null, unreadCount: number): ChatThreadDetail {
+function buildGroupThreadDetailFromGroupRecord(
+  user: AccessUser,
+  group: GroupThreadRecord,
+  latest: GroupMessageRow | null,
+  unreadCount: number,
+  mutedAt: Date | null,
+): ChatThreadDetail {
   const members = sortByName(
-    membership.group.members.map((member) =>
+    group.members.map((member) =>
       toMemberOption({
         ...member.user,
-        isAdmin: member.isAdmin || member.userId === membership.group.createdBy.id,
-        isCreator: member.userId === membership.group.createdBy.id,
+        isAdmin: member.isAdmin || member.userId === group.createdBy.id,
+        isCreator: member.userId === group.createdBy.id,
       }),
     ),
   );
-  const key = makeThreadKey("group", membership.groupId);
+  const key = makeThreadKey("group", group.id);
   return {
     key,
     type: "group",
-    id: membership.groupId,
-    name: membership.group.name,
-    subtitle: membership.group.company.name,
-    avatarUrl: membership.group.avatarUrl,
+    id: group.id,
+    name: group.name,
+    subtitle: group.company.name,
+    avatarUrl: group.avatarUrl,
     unreadCount,
     latestMessageAt: latest?.createdAt.toISOString() ?? null,
     latestMessageText: latest ? normalizeText(latest.body) : null,
     latestAttachmentCount: latest?.attachments.length ?? 0,
     latestMessageFromSelf: latest ? latest.senderId === user.id : false,
     canManage: memberHasGroupAdminAccess(user, {
-      createdById: membership.group.createdBy.id,
-      members: membership.group.members.map((member) => ({ userId: member.userId, isAdmin: member.isAdmin })),
+      createdById: group.createdBy.id,
+      members: group.members.map((member) => ({ userId: member.userId, isAdmin: member.isAdmin })),
     }),
     canMentionAll: memberHasGroupAdminAccess(user, {
-      createdById: membership.group.createdBy.id,
-      members: membership.group.members.map((member) => ({ userId: member.userId, isAdmin: member.isAdmin })),
+      createdById: group.createdBy.id,
+      members: group.members.map((member) => ({ userId: member.userId, isAdmin: member.isAdmin })),
     }),
-    isMuted: !!membership.mutedAt,
+    isMuted: !!mutedAt,
     memberCount: members.length,
-    companyId: membership.group.company.id,
-    companyName: membership.group.company.name,
+    companyId: group.company.id,
+    companyName: group.company.name,
     members,
-    creatorId: membership.group.createdBy.id,
+    creatorId: group.createdBy.id,
   };
 }
 
+function buildGroupThreadDetail(user: AccessUser, membership: GroupMembershipRow, latest: GroupMessageRow | null, unreadCount: number): ChatThreadDetail {
+  return buildGroupThreadDetailFromGroupRecord(user, membership.group, latest, unreadCount, membership.mutedAt);
+}
+
 function detailToSummary(detail: ChatThreadDetail): ChatThreadSummary {
-  const { members: _members, creatorId: _creatorId, ...summary } = detail;
-  return summary;
+  return {
+    key: detail.key,
+    type: detail.type,
+    id: detail.id,
+    name: detail.name,
+    subtitle: detail.subtitle,
+    avatarUrl: detail.avatarUrl,
+    unreadCount: detail.unreadCount,
+    latestMessageAt: detail.latestMessageAt,
+    latestMessageText: detail.latestMessageText,
+    latestAttachmentCount: detail.latestAttachmentCount,
+    latestMessageFromSelf: detail.latestMessageFromSelf,
+    canManage: detail.canManage,
+    canMentionAll: detail.canMentionAll,
+    isMuted: detail.isMuted,
+    memberCount: detail.memberCount,
+    companyId: detail.companyId,
+    companyName: detail.companyName,
+  };
 }
 
 async function buildDirectThreadDetail(user: AccessUser, peerId: string) {
@@ -895,16 +917,29 @@ export async function getThreadMessages(user: AccessUser, threadKey: string, lim
   return rows.reverse().map((row) => serializeGroupMessage(row, user.id));
 }
 
-export async function getMessagingPageData(user: AccessUser, preferredThreadKey?: string | null): Promise<ChatPageData> {
-  const [peers, memberships, groupOptions] = await Promise.all([
+export async function getMessagingGroupOptions(user: AccessUser): Promise<ChatCompanyOption[]> {
+  return buildGroupOptions(user);
+}
+
+export async function getMessagingPageData(
+  user: AccessUser,
+  preferredThreadKey?: string | null,
+  options?: { includeGroupOptions?: boolean },
+): Promise<ChatPageData> {
+  const includeGroupOptions = options?.includeGroupOptions ?? true;
+
+  const [peers, memberships, manageableCompanies, fullGroupOptions] = await Promise.all([
     listVisibleDirectPeers(user),
     prisma.messageGroupMember.findMany({
       where: { userId: user.id },
       include: groupMembershipInclude,
       orderBy: { createdAt: "asc" },
     }),
-    buildGroupOptions(user),
+    listManageableCompanies(user),
+    includeGroupOptions ? buildGroupOptions(user) : Promise.resolve(null),
   ]);
+
+  const groupOptions = fullGroupOptions ?? buildGroupOptionShells(manageableCompanies);
 
   const [{ summaries: directSummaries, details: directDetails }, { summaries: groupSummaries, details: groupDetails }] =
     await Promise.all([buildDirectThreadSummaries(user, peers), buildGroupThreadSummaries(user, memberships)]);
@@ -921,6 +956,7 @@ export async function getMessagingPageData(user: AccessUser, preferredThreadKey?
     selectedThread: selectedThreadKey ? details.get(selectedThreadKey) ?? null : null,
     messages: selectedThreadKey ? await getThreadMessages(user, selectedThreadKey) : [],
     groupOptions,
+    groupOptionsLoaded: includeGroupOptions,
     totalUnreadCount: threads.reduce((sum, thread) => sum + (thread.isMuted ? 0 : thread.unreadCount), 0),
   };
 }
@@ -1030,18 +1066,17 @@ async function createDirectThreadMessage(user: AccessUser, peerId: string, body:
 }
 
 async function createGroupThreadMessage(user: AccessUser, groupId: string, body: string, files: File[]) {
-  const membership = await findMessageGroupMembership(user, groupId);
-  if (!membership) {
+  const sendContext = await findMessageGroupSendContext(user.id, groupId);
+  if (!sendContext) {
     throw new Error("This group chat is not available.");
   }
 
   const text = normalizeText(body);
   if (
     containsAtAllMention(text) &&
-    !memberHasGroupAdminAccess(user, {
-      createdById: membership.group.createdBy.id,
-      members: membership.group.members.map((member) => ({ userId: member.userId, isAdmin: member.isAdmin })),
-    })
+    !user.isSuperAdmin &&
+    !sendContext.isAdmin &&
+    sendContext.group.createdById !== user.id
   ) {
     throw new Error("Only group admins, the group creator, or superadmins can use @all.");
   }
@@ -1051,29 +1086,30 @@ async function createGroupThreadMessage(user: AccessUser, groupId: string, body:
 
   const messageId = randomUUID();
   const attachmentData = await prepareUploads(files, messageId);
-  const created = await prisma.messageGroupMessage.create({
-    data: {
-      id: messageId,
-      groupId: membership.groupId,
-      senderId: user.id,
-      body: text,
-      attachments: {
-        create: attachmentData.map((attachment) => ({
-          fileName: attachment.fileName,
-          mimeType: attachment.mimeType,
-          sizeBytes: attachment.sizeBytes,
-          storageKey: attachment.storageKey,
-          blobUrl: attachment.blobUrl,
-        })),
+  const [created] = await prisma.$transaction([
+    prisma.messageGroupMessage.create({
+      data: {
+        id: messageId,
+        groupId: sendContext.groupId,
+        senderId: user.id,
+        body: text,
+        attachments: {
+          create: attachmentData.map((attachment) => ({
+            fileName: attachment.fileName,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            storageKey: attachment.storageKey,
+            blobUrl: attachment.blobUrl,
+          })),
+        },
       },
-    },
-    include: groupMessageInclude,
-  });
-
-  await prisma.messageGroupMember.update({
-    where: { groupId_userId: { groupId: membership.groupId, userId: user.id } },
-    data: { lastReadAt: new Date() },
-  });
+      include: groupMessageInclude,
+    }),
+    prisma.messageGroupMember.update({
+      where: { groupId_userId: { groupId: sendContext.groupId, userId: user.id } },
+      data: { lastReadAt: new Date() },
+    }),
+  ]);
 
   return serializeGroupMessage(created, user.id);
 }
@@ -1158,15 +1194,11 @@ export async function createMessageGroup(user: AccessUser, input: { companyId: s
     throw new Error("You do not have permission to create a group for this company.");
   }
 
-  const candidateIds = await listCompanyMessagingCandidateIds(companyId, user.id);
-  const allowedIds = new Set(candidateIds);
   const memberIds = uniq([...input.memberIds, user.id]);
   if (memberIds.length < 2) {
     throw new Error("Select at least two members for the group chat.");
   }
-  if (memberIds.some((id) => !allowedIds.has(id))) {
-    throw new Error("One or more selected members are not eligible for this company group.");
-  }
+  await validateCompanyMessagingMembers(companyId, user.id, memberIds);
 
   const now = new Date();
   const group = await prisma.messageGroup.create({
@@ -1184,13 +1216,10 @@ export async function createMessageGroup(user: AccessUser, input: { companyId: s
         })),
       },
     },
-    select: { id: true },
+    include: managedGroupInclude,
   });
 
-  const thread = await getGroupThreadDetail(user, group.id);
-  if (!thread) {
-    throw new Error("This group chat is not available.");
-  }
+  const thread = buildGroupThreadDetailFromGroupRecord(user, group, null, 0, null);
 
   return { threadKey: thread.key, thread };
 }
@@ -1208,21 +1237,18 @@ export async function updateMessageGroup(
   const name = normalizeText(input.name);
   if (!name) throw new Error("Group name is required.");
 
-  const candidateIds = await listCompanyMessagingCandidateIds(group.companyId, user.id);
-  const allowedIds = new Set([...candidateIds, ...group.members.map((member) => member.userId)]);
   const nextMemberIds = uniq([...input.memberIds, user.id, group.createdById]);
   const nextAdminIds = uniq(input.adminIds);
   if (nextMemberIds.length < 2) {
     throw new Error("Select at least two members for the group chat.");
-  }
-  if (nextMemberIds.some((id) => !allowedIds.has(id))) {
-    throw new Error("One or more selected members are not eligible for this company group.");
   }
   if (nextAdminIds.some((id) => !nextMemberIds.includes(id))) {
     throw new Error("Only current group members can be assigned as admins.");
   }
 
   const existingMemberIds = new Set(group.members.map((member) => member.userId));
+  const toValidate = nextMemberIds.filter((memberId) => !existingMemberIds.has(memberId));
+  await validateCompanyMessagingMembers(group.companyId, user.id, toValidate);
   const existingAdminIds = new Set(group.members.filter((member) => member.isAdmin).map((member) => member.userId));
   const toRemove = group.members.map((member) => member.userId).filter((memberId) => !nextMemberIds.includes(memberId));
   const toAdd = nextMemberIds.filter((memberId) => !existingMemberIds.has(memberId));

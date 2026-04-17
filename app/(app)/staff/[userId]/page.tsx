@@ -57,8 +57,6 @@ import { StaffOnboardingStatusCard } from "@/components/staff-onboarding-status-
 import { StaffObservationsPanel } from "@/components/staff-observations-panel";
 import { Badge } from "@/components/ui/badge";
 
-type StaffDetailTarget = NonNullable<Awaited<ReturnType<typeof loadStaffDetailTarget>>>;
-
 function isMissingColumnError(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022";
 }
@@ -85,10 +83,137 @@ function defaultAbilityScores() {
   };
 }
 
-async function loadStaffDetailTarget(actor: AccessUser, userId: string) {
-  const where: Prisma.UserWhereInput = {
+function staffDetailWhere(actor: AccessUser, userId: string): Prisma.UserWhereInput {
+  return {
     AND: [{ id: userId, deletedAt: null }, staffVisibilityWhere(actor)],
   };
+}
+
+async function loadStaffPageShellTarget(actor: AccessUser, userId: string) {
+  const where = staffDetailWhere(actor, userId);
+
+  try {
+    return await prisma.user.findFirst({
+      where,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        title: true,
+        active: true,
+        isSuperAdmin: true,
+        avatarUrl: true,
+        contactEmails: true,
+        phone: true,
+        signature: true,
+        birthday: true,
+        birthdayHidden: true,
+        mbti: true,
+        companionIntroCompletedAt: true,
+        groupMemberships: {
+          select: {
+            orgGroupId: true,
+          },
+        },
+        companyMemberships: {
+          select: {
+            companyId: true,
+            company: { select: { id: true, name: true, orgGroupId: true } },
+          },
+        },
+        memberOnboardings: {
+          select: {
+            id: true,
+            companyId: true,
+            deadlineAt: true,
+            completedAt: true,
+            company: { select: { name: true } },
+          },
+          orderBy: [{ deadlineAt: "asc" }, { createdAt: "asc" }],
+        },
+        projectMemberships: {
+          select: {
+            projectId: true,
+            project: {
+              select: {
+                id: true,
+                companyId: true,
+                company: { select: { orgGroupId: true } },
+              },
+            },
+          },
+        },
+        companionProfile: true,
+      },
+    });
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+    console.warn("[staff detail] using legacy-compatible shell query", error);
+
+    const legacyTarget = await prisma.user.findFirst({
+      where,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        title: true,
+        active: true,
+        isSuperAdmin: true,
+        groupMemberships: {
+          select: {
+            orgGroupId: true,
+          },
+        },
+        companyMemberships: {
+          select: {
+            companyId: true,
+            company: { select: { id: true, name: true, orgGroupId: true } },
+          },
+        },
+        memberOnboardings: {
+          select: {
+            id: true,
+            companyId: true,
+            deadlineAt: true,
+            completedAt: true,
+            company: { select: { name: true } },
+          },
+          orderBy: [{ deadlineAt: "asc" }, { createdAt: "asc" }],
+        },
+        projectMemberships: {
+          select: {
+            projectId: true,
+            project: {
+              select: {
+                id: true,
+                companyId: true,
+                company: { select: { orgGroupId: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!legacyTarget) return null;
+
+    return {
+      ...legacyTarget,
+      avatarUrl: null,
+      contactEmails: null,
+      phone: null,
+      signature: null,
+      birthday: null,
+      birthdayHidden: false,
+      mbti: null,
+      companionIntroCompletedAt: null,
+      companionProfile: null,
+    };
+  }
+}
+
+async function loadStaffDetailTarget(actor: AccessUser, userId: string) {
+  const where = staffDetailWhere(actor, userId);
 
   try {
     return await prisma.user.findFirst({
@@ -226,7 +351,7 @@ function StaffDetailDeferredFallback({ locale }: { locale: "en" | "zh" }) {
 
 async function StaffDetailDeferredPanels({
   actor,
-  target,
+  userId,
   locale,
   canSkipStaffOnboarding,
   canViewRecognition,
@@ -237,7 +362,7 @@ async function StaffDetailDeferredPanels({
   canManageTargetTrash,
 }: {
   actor: AccessUser;
-  target: StaffDetailTarget;
+  userId: string;
   locale: "en" | "zh";
   canSkipStaffOnboarding: boolean;
   canViewRecognition: boolean;
@@ -247,6 +372,9 @@ async function StaffDetailDeferredPanels({
   canSoftDeletePermission: boolean;
   canManageTargetTrash: boolean;
 }) {
+  const target = await loadStaffDetailTarget(actor, userId);
+  if (!target) notFound();
+
   const isAnyCompanyAdmin = actor.companyMemberships.some((m) => m.roleDefinition.key === "COMPANY_ADMIN");
   const isAnyGroupAdmin = actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN");
   const isAnyPm = actor.projectMemberships.some((m) => m.roleDefinition.key === "PROJECT_MANAGER");
@@ -820,7 +948,7 @@ export default async function StaffDetailPage({
   const canViewRecognition = canCreateRecognitionPermission || canReadRecognitionPermission;
   const canViewFeedback = isAnyAdmin(actor) && canReadFeedbackPermission;
 
-  const target = await loadStaffDetailTarget(actor, userId);
+  const target = await loadStaffPageShellTarget(actor, userId);
   if (!target) notFound();
   const canEditCompanionHere =
     isSuperAdmin(actor) || (actor.id === target.id && !target.companionIntroCompletedAt);
@@ -1104,7 +1232,7 @@ export default async function StaffDetailPage({
       <Suspense fallback={<StaffDetailDeferredFallback locale={locale} />}>
         <StaffDetailDeferredPanels
           actor={actor}
-          target={target}
+          userId={target.id}
           locale={locale}
           canSkipStaffOnboarding={canSkipStaffOnboarding}
           canViewRecognition={canViewRecognition}

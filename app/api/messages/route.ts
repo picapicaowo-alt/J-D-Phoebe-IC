@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const threadKey = String(url.searchParams.get("threadKey") ?? "").trim() || null;
-  const data = await getMessagingPageData(user as AccessUser, threadKey);
+  const data = await getMessagingPageData(user as AccessUser, threadKey, { includeGroupOptions: false });
   return NextResponse.json(data);
 }
 

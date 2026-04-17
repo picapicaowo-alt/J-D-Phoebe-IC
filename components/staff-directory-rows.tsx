@@ -120,9 +120,9 @@ export function StaffDirectoryRows({ rows, copy }: { rows: StaffDirectoryRowDTO[
                 <Link
                   className="text-base font-semibold text-[hsl(var(--foreground))] hover:underline"
                   href={`/staff/${s.id}`}
-                  prefetch={false}
                   onFocus={() => warmStaffRoute(s.id)}
                   onPointerEnter={() => warmStaffRoute(s.id)}
+                  onPointerDown={() => warmStaffRoute(s.id)}
                 >
                   {s.name}
                 </Link>
