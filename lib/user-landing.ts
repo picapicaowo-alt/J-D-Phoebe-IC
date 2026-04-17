@@ -14,14 +14,13 @@ export async function getPendingMemberOnboardingRoute(userId: string) {
   const pendingRoute = await findPendingMemberOnboardingRoute(userId);
   if (pendingRoute) return pendingRoute;
 
-  const [memberships, existingRuns] = await Promise.all([
-    prisma.companyMembership.findMany({ where: { userId }, select: { companyId: true } }),
-    prisma.memberOnboarding.findMany({ where: { userId }, select: { companyId: true } }),
+  const [membershipCount, existingRunCount] = await Promise.all([
+    prisma.companyMembership.count({ where: { userId } }),
+    prisma.memberOnboarding.count({ where: { userId } }),
   ]);
-  if (!memberships.length) return null;
+  if (!membershipCount) return null;
 
-  const existingCompanyIds = new Set(existingRuns.map((run) => run.companyId));
-  const hasMissingRuns = memberships.some((membership) => !existingCompanyIds.has(membership.companyId));
+  const hasMissingRuns = existingRunCount < membershipCount;
   if (!hasMissingRuns) return null;
 
   const { ensureAllMemberOnboardingsForUser } = await import("@/lib/member-onboarding");

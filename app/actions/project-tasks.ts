@@ -63,7 +63,6 @@ function scheduleTaskRollupRevalidate(projectId: string) {
     try {
       await syncProjectTaskRollups(projectId);
       revalidatePath(`/projects/${projectId}`);
-      revalidatePath("/projects");
       revalidatePath("/calendar");
     } catch (err) {
       console.error("[syncProjectTaskRollups]", projectId, err);
@@ -414,7 +413,6 @@ export async function addProjectTaskAction(formData: FormData) {
   });
 
   revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/projects");
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
@@ -491,7 +489,6 @@ export async function addProjectSubtaskAction(formData: FormData) {
   });
 
   revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/projects");
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
@@ -558,7 +555,6 @@ export async function updateWorkflowNodeMetaAction(formData: FormData) {
   });
 
   revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/projects");
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
@@ -611,7 +607,6 @@ export async function updateWorkflowNodeDetailsAction(formData: FormData) {
   });
 
   revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/projects");
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
@@ -665,7 +660,6 @@ export async function updateWorkflowNodeOperationalAction(formData: FormData) {
   });
 
   revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/projects");
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
@@ -724,7 +718,6 @@ export async function toggleProjectTaskLeafAction(formData: FormData) {
   });
 
   revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/projects");
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
@@ -752,7 +745,6 @@ export async function deleteProjectTaskAction(formData: FormData) {
   await session.save();
 
   revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/projects");
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
@@ -785,7 +777,6 @@ export async function deleteAllProjectTasksAction(formData: FormData) {
     data: { progressPercent: projectProgressPercentForStatusWithoutTasks(project.status) },
   });
   revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/projects");
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }
@@ -820,7 +811,6 @@ export async function undoLastProjectTaskDeletionAction(formData: FormData) {
   await session.save();
 
   revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/projects");
   revalidatePath("/calendar");
   scheduleTaskRollupRevalidate(projectId);
 }

@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentRedirectUser } from "@/lib/auth";
 import { isClerkEnabled } from "@/lib/clerk-config";
 import { getSignedInRedirectPath } from "@/lib/user-landing";
 
 export default async function RootPage() {
-  const user = await getCurrentUser();
+  const user = await getCurrentRedirectUser();
   if (user?.active) {
     redirect(
       await getSignedInRedirectPath({

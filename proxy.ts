@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { sessionOptions } from "@/lib/session";
 
 const isPublicRoute = createRouteMatcher([
   "/login(.*)",
@@ -20,7 +21,14 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
 
 export const proxy = clerkOn
   ? clerkProxy
-  : function proxy() {
+  : function proxy(request: NextRequest) {
+      if (request.nextUrl.pathname === "/") {
+        const hasSession = Boolean(request.cookies.get(sessionOptions.cookieName)?.value);
+        if (!hasSession) {
+          return NextResponse.redirect(new URL("/login", request.url));
+        }
+      }
+
       return NextResponse.next();
     };
 

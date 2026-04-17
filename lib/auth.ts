@@ -66,17 +66,29 @@ const shellUserSelect = {
   },
 } as const;
 
+const redirectUserSelect = {
+  id: true,
+  clerkId: true,
+  active: true,
+  mustChangePassword: true,
+  companionIntroCompletedAt: true,
+} as const;
+
 const USER_CACHE_TTL_MS = 30_000;
 const ACCESS_USER_CACHE_TAG = "access-user";
 
 type LoadedUser = Prisma.UserGetPayload<{ select: typeof userSelect }> | null;
 export type ShellUser = Prisma.UserGetPayload<{ select: typeof shellUserSelect }> | null;
+export type RedirectUser = Prisma.UserGetPayload<{ select: typeof redirectUserSelect }> | null;
 type UserCacheEntry = { user: LoadedUser; expiresAt: number };
+type RedirectUserCacheEntry = { user: RedirectUser; expiresAt: number };
 
 const userByIdCache = new Map<string, UserCacheEntry>();
 const userByClerkIdCache = new Map<string, UserCacheEntry>();
+const redirectUserByIdCache = new Map<string, RedirectUserCacheEntry>();
+const redirectUserByClerkIdCache = new Map<string, RedirectUserCacheEntry>();
 
-function readUserCache(cacheMap: Map<string, UserCacheEntry>, key: string) {
+function readExpiringCache<T>(cacheMap: Map<string, { user: T; expiresAt: number }>, key: string) {
   const hit = cacheMap.get(key);
   if (!hit) return null;
   if (hit.expiresAt <= Date.now()) {
@@ -94,11 +106,21 @@ function writeUserCache(user: LoadedUser) {
   return user;
 }
 
+function writeRedirectUserCache(user: RedirectUser) {
+  if (!user) return user;
+  const entry = { user, expiresAt: Date.now() + USER_CACHE_TTL_MS };
+  redirectUserByIdCache.set(user.id, entry);
+  if (user.clerkId) redirectUserByClerkIdCache.set(user.clerkId, entry);
+  return user;
+}
+
 function invalidateUserCache(user: { id: string; clerkId?: string | null } | string, clerkId?: string | null) {
   const id = typeof user === "string" ? user : user.id;
   const cid = typeof user === "string" ? clerkId : user.clerkId;
   userByIdCache.delete(id);
+  redirectUserByIdCache.delete(id);
   if (cid) userByClerkIdCache.delete(cid);
+  if (cid) redirectUserByClerkIdCache.delete(cid);
 }
 
 async function loadFreshUserById(id: string) {
@@ -135,8 +157,28 @@ const loadAccessUserByClerkIdCached = unstable_cache(
   { revalidate: 15, tags: [ACCESS_USER_CACHE_TAG] },
 );
 
+const loadRedirectUserByIdCached = unstable_cache(
+  async (id: string) =>
+    prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      select: redirectUserSelect,
+    }),
+  ["redirect-user-by-id"],
+  { revalidate: 15, tags: [ACCESS_USER_CACHE_TAG] },
+);
+
+const loadRedirectUserByClerkIdCached = unstable_cache(
+  async (clerkId: string) =>
+    prisma.user.findFirst({
+      where: { clerkId, deletedAt: null },
+      select: redirectUserSelect,
+    }),
+  ["redirect-user-by-clerk-id"],
+  { revalidate: 15, tags: [ACCESS_USER_CACHE_TAG] },
+);
+
 async function loadUserById(id: string) {
-  const cached = readUserCache(userByIdCache, id);
+  const cached = readExpiringCache(userByIdCache, id);
   if (cached !== null) return cached;
 
   const user = await loadAccessUserByIdCached(id);
@@ -144,11 +186,27 @@ async function loadUserById(id: string) {
 }
 
 async function loadUserByClerkId(clerkId: string) {
-  const cached = readUserCache(userByClerkIdCache, clerkId);
+  const cached = readExpiringCache(userByClerkIdCache, clerkId);
   if (cached !== null) return cached;
 
   const user = await loadAccessUserByClerkIdCached(clerkId);
   return writeUserCache(user);
+}
+
+async function loadRedirectUserById(id: string) {
+  const cached = readExpiringCache(redirectUserByIdCache, id);
+  if (cached !== null) return cached;
+
+  const user = await loadRedirectUserByIdCached(id);
+  return writeRedirectUserCache(user);
+}
+
+async function loadRedirectUserByClerkId(clerkId: string) {
+  const cached = readExpiringCache(redirectUserByClerkIdCache, clerkId);
+  if (cached !== null) return cached;
+
+  const user = await loadRedirectUserByClerkIdCached(clerkId);
+  return writeRedirectUserCache(user);
 }
 
 const loadShellUserByIdCached = unstable_cache(
@@ -207,6 +265,23 @@ async function getCurrentUserImpl() {
 
 /** Per-request dedupe so layouts and streamed children do not repeat the same Prisma load. */
 export const getCurrentUser = cache(getCurrentUserImpl);
+
+/**
+ * Lightweight current-user lookup for redirect-only flows such as `/`.
+ * Avoids loading the full membership graph when we only need landing decisions.
+ */
+export const getCurrentRedirectUser = cache(async function getCurrentRedirectUser(): Promise<RedirectUser> {
+  if (isClerkEnabled()) {
+    const { auth } = await import("@clerk/nextjs/server");
+    const { userId } = await auth();
+    if (!userId) return null;
+    return loadRedirectUserByClerkId(userId);
+  }
+
+  const session = await getAppSession();
+  if (!session.userId) return null;
+  return loadRedirectUserById(session.userId);
+});
 
 /**
  * Lightweight user payload for the app shell. This is safe to cache briefly because

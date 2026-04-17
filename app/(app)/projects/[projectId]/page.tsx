@@ -466,10 +466,14 @@ export default async function ProjectDetailPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ task?: string; section?: string; error?: string }>;
+  searchParams: Promise<{ task?: string; section?: string; error?: string; kq?: string; ks?: string }>;
 }) {
   const [user, { projectId }, sp] = await Promise.all([requireUser() as Promise<AccessUser>, params, searchParams]);
   const showKnowledgeCreateError = String(sp.error ?? "").trim() === "missing_content_or_url";
+  const knowledgeQuickQuery = String(sp.kq ?? "").trim();
+  const knowledgeQuickScope = String(sp.ks ?? "").trim().toLowerCase() === "company" ? "company" : "project";
+  const showCompanyKnowledgeQuickList = knowledgeQuickScope === "company";
+  const shouldRunQuickKnowledgeSearch = Boolean(knowledgeQuickQuery) || showCompanyKnowledgeQuickList;
   const localePromise = getLocale();
   const sessionPromise = getAppSession();
   const permissionPromise = Promise.all([
@@ -575,6 +579,78 @@ export default async function ProjectDetailPage({
               })
             : [],
         );
+  const quickKnowledgeResultsPromise: Promise<
+    {
+      id: string;
+      title: string;
+      summary: string | null;
+      layer: KnowledgeLayer;
+      author: { name: string };
+      project: { id: string; name: string } | null;
+    }[]
+  > = canManage
+    ? shouldRunQuickKnowledgeSearch
+      ? prisma.knowledgeAsset.findMany({
+          where: {
+            deletedAt: null,
+            ...(showCompanyKnowledgeQuickList ? { companyId: project.companyId } : { projectId: project.id }),
+            ...(knowledgeQuickQuery
+              ? {
+                  OR: [
+                    { title: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                    { titleEn: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                    { titleZh: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                    { summary: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                    { content: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                  ],
+                }
+              : {}),
+          },
+          select: {
+            id: true,
+            title: true,
+            summary: true,
+            layer: true,
+            author: { select: { name: true } },
+            project: { select: { id: true, name: true } },
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 40,
+        })
+      : Promise.resolve([])
+    : permissionPromise.then(([, canEditKnowledge, canReadKnowledge]) =>
+        canEditKnowledge || canReadKnowledge
+          ? shouldRunQuickKnowledgeSearch
+            ? prisma.knowledgeAsset.findMany({
+                where: {
+                  deletedAt: null,
+                  ...(showCompanyKnowledgeQuickList ? { companyId: project.companyId } : { projectId: project.id }),
+                  ...(knowledgeQuickQuery
+                    ? {
+                        OR: [
+                          { title: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                          { titleEn: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                          { titleZh: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                          { summary: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                          { content: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                        ],
+                      }
+                    : {}),
+                },
+                select: {
+                  id: true,
+                  title: true,
+                  summary: true,
+                  layer: true,
+                  author: { select: { name: true } },
+                  project: { select: { id: true, name: true } },
+                },
+                orderBy: { updatedAt: "desc" },
+                take: 40,
+              })
+            : Promise.resolve([])
+          : [],
+      );
   const sharedKnowledgeInboundPromise = canManage
     ? prisma.projectRelationSharedKnowledge.findMany({
         where: { relation: { toProjectId: project.id } },
@@ -773,6 +849,7 @@ export default async function ProjectDetailPage({
       projectRelations,
       projectFiles,
       ownKnowledge,
+      quickKnowledgeResults,
       sharedKnowledgeInbound,
       sharedAttachmentInbound,
       editableCompanies,
@@ -786,6 +863,7 @@ export default async function ProjectDetailPage({
       projectRelationsPromise,
       projectFilesPromise,
       ownKnowledgePromise,
+      quickKnowledgeResultsPromise,
       sharedKnowledgeInboundPromise,
       sharedAttachmentInboundPromise,
       editableCompaniesPromise,
@@ -1098,6 +1176,55 @@ export default async function ProjectDetailPage({
             {canEditKnowledge ? (
               <details className="rounded-md border border-[hsl(var(--border))] bg-black/[0.02] p-2 dark:bg-white/[0.02]">
                 <summary className="cursor-pointer text-sm font-medium">{t(locale, "projKnowledgeAddOnProject")}</summary>
+                <form action={`/projects/${project.id}#section-knowledge`} method="get" className="mt-2 grid gap-2 border-b border-[hsl(var(--border))] pb-3 md:grid-cols-4">
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "knowledgeSearch")}</label>
+                    <Input name="kq" defaultValue={knowledgeQuickQuery} placeholder={t(locale, "kbPlaceholderKeyword")} className="text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonScope")}</label>
+                    <Select name="ks" defaultValue={knowledgeQuickScope}>
+                      <option value="project">{t(locale, "scopeProject")}</option>
+                      <option value="company">{t(locale, "scopeCompany")}</option>
+                    </Select>
+                  </div>
+                  <div className="flex items-end">
+                    <FormSubmitButton type="submit" variant="secondary" className="h-9 w-full text-sm">
+                      {t(locale, "knowledgeSearch")}
+                    </FormSubmitButton>
+                  </div>
+                </form>
+                {(knowledgeQuickQuery || showCompanyKnowledgeQuickList) && (
+                  <div className="mt-2 space-y-2 border-b border-[hsl(var(--border))] pb-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted))]">
+                      {showCompanyKnowledgeQuickList ? `${project.company.name} · ${t(locale, "scopeCompany")}` : t(locale, "scopeProject")}
+                    </p>
+                    {quickKnowledgeResults.length ? (
+                      <ul className="max-h-44 space-y-1 overflow-y-auto rounded-md border border-[hsl(var(--border))] p-2 text-sm">
+                        {quickKnowledgeResults.map((asset) => (
+                          <li key={asset.id} className="rounded px-1 py-1 hover:bg-black/5 dark:hover:bg-white/10">
+                            <Link
+                              href={
+                                showCompanyKnowledgeQuickList
+                                  ? `/knowledge/browse?companyId=${project.companyId}&q=${encodeURIComponent(asset.title)}`
+                                  : `/knowledge/browse?projectId=${project.id}&q=${encodeURIComponent(asset.title)}`
+                              }
+                              className="font-medium underline-offset-2 hover:underline"
+                            >
+                              {asset.title}
+                            </Link>
+                            <div className="text-xs text-[hsl(var(--muted))]">
+                              {tKnowledgeLayer(locale, asset.layer)} · {t(locale, "kbByAuthor")} {asset.author.name}
+                              {asset.project ? ` · ${asset.project.name}` : ""}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-[hsl(var(--muted))]">{t(locale, "projKnowledgeEmpty")}</p>
+                    )}
+                  </div>
+                )}
                 {showKnowledgeCreateError ? (
                   <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
                     {t(locale, "kbCreateNeedsContentOrUrl")}
