@@ -41,13 +41,26 @@ export function isCompanyAdmin(user: AccessUser, companyId: string) {
   return false;
 }
 
+export function hasCompanyMembership(user: AccessUser, companyId: string) {
+  return user.companyMemberships.some((m) => m.companyId === companyId);
+}
+
+export function hasProjectMembership(user: AccessUser, projectId: string) {
+  return user.projectMemberships.some((m) => m.projectId === projectId);
+}
+
+export function hasProjectMembershipInCompany(user: AccessUser, companyId: string) {
+  return user.projectMemberships.some((m) => m.project.companyId === companyId);
+}
+
 export function canViewProject(
   user: AccessUser,
   project: { id: string; companyId: string; company: { orgGroupId: string }; deletedAt?: Date | null },
 ) {
   if (project.deletedAt) return false;
   if (user.isSuperAdmin) return true;
-  if (user.projectMemberships.some((m) => m.projectId === project.id)) return true;
+  if (hasProjectMembership(user, project.id)) return true;
+  if (hasCompanyMembership(user, project.companyId)) return true;
   if (isCompanyAdmin(user, project.companyId)) return true;
   return isGroupAdmin(user, project.company.orgGroupId);
 }
@@ -55,6 +68,8 @@ export function canViewProject(
 /** Create or manage projects at company scope (no project id yet). */
 export function canManageCompanyProjects(user: AccessUser, company: { id: string; orgGroupId: string }) {
   if (user.isSuperAdmin) return true;
+  if (hasCompanyMembership(user, company.id)) return true;
+  if (hasProjectMembershipInCompany(user, company.id)) return true;
   if (isCompanyAdmin(user, company.id)) return true;
   return isGroupAdmin(user, company.orgGroupId);
 }
@@ -64,11 +79,11 @@ export function canManageProject(
   project: { id: string; companyId: string; company: { orgGroupId: string } },
 ) {
   if (user.isSuperAdmin) return true;
+  if (hasCompanyMembership(user, project.companyId)) return true;
+  if (hasProjectMembership(user, project.id)) return true;
   if (isCompanyAdmin(user, project.companyId)) return true;
   if (isGroupAdmin(user, project.company.orgGroupId)) return true;
-  return user.projectMemberships.some(
-    (m) => m.projectId === project.id && m.roleDefinition.key === "PROJECT_MANAGER",
-  );
+  return false;
 }
 
 /** Drag/edit workflow graph (positions, edges) — not the same as org-wide project settings. */
@@ -97,17 +112,13 @@ export function canManageKnowledgeAsset(user: User, knowledge: { authorId: strin
 export function projectVisibilityWhere(user: AccessUser): Prisma.ProjectWhereInput {
   if (user.isSuperAdmin) return {};
 
-  const groupOrgIds = user.groupMemberships
-    .filter((m) => m.roleDefinition.key === "GROUP_ADMIN")
-    .map((m) => m.orgGroupId);
-  const companyAdminIds = user.companyMemberships
-    .filter((m) => m.roleDefinition.key === "COMPANY_ADMIN")
-    .map((m) => m.companyId);
+  const groupOrgIds = user.groupMemberships.map((m) => m.orgGroupId);
+  const companyIds = user.companyMemberships.map((m) => m.companyId);
   const projectIds = user.projectMemberships.map((m) => m.projectId);
 
   const OR: Prisma.ProjectWhereInput[] = [];
   if (groupOrgIds.length) OR.push({ company: { orgGroupId: { in: [...new Set(groupOrgIds)] } } });
-  if (companyAdminIds.length) OR.push({ companyId: { in: [...new Set(companyAdminIds)] } });
+  if (companyIds.length) OR.push({ companyId: { in: [...new Set(companyIds)] } });
   if (projectIds.length) OR.push({ id: { in: [...new Set(projectIds)] } });
 
   return OR.length ? { OR } : { id: { in: [] } };
@@ -116,17 +127,13 @@ export function projectVisibilityWhere(user: AccessUser): Prisma.ProjectWhereInp
 export function companyVisibilityWhere(user: AccessUser): Prisma.CompanyWhereInput {
   if (user.isSuperAdmin) return {};
 
-  const groupOrgIds = user.groupMemberships
-    .filter((m) => m.roleDefinition.key === "GROUP_ADMIN")
-    .map((m) => m.orgGroupId);
-  const companyAdminIds = user.companyMemberships
-    .filter((m) => m.roleDefinition.key === "COMPANY_ADMIN")
-    .map((m) => m.companyId);
+  const groupOrgIds = user.groupMemberships.map((m) => m.orgGroupId);
+  const companyIdsFromMemberships = user.companyMemberships.map((m) => m.companyId);
   const projectCompanyIds = user.projectMemberships.map((m) => m.project.companyId);
 
   const OR: Prisma.CompanyWhereInput[] = [];
   if (groupOrgIds.length) OR.push({ orgGroupId: { in: [...new Set(groupOrgIds)] } });
-  const companyIds = [...new Set([...companyAdminIds, ...projectCompanyIds])];
+  const companyIds = [...new Set([...companyIdsFromMemberships, ...projectCompanyIds])];
   if (companyIds.length) OR.push({ id: { in: companyIds } });
 
   return OR.length ? { OR } : { id: { in: [] } };
