@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Multi-Company Progress Tracker",
+  title: "J D Phoebe Group",
   description: "Prototype workspace for projects, tasks, blockers, and deadlines.",
 };
 
