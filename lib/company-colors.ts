@@ -85,10 +85,9 @@ export function getCompanyColorChipClassName(color: string | null | undefined) {
 export function getCompanyColorChipStyle(color: string | null | undefined) {
   const rgb = color ? hexToRgb(color) : null;
   if (!rgb) return undefined;
-  const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
   return {
     borderColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.45)`,
     backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)`,
-    color: luminance >= 0.68 ? "rgb(24 24 27)" : "rgb(248 250 252)",
+    color: "rgb(39 39 42)",
   };
 }
