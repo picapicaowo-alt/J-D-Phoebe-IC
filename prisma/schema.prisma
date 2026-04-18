@@ -4,10 +4,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  /// Same DB, non-transaction pooler URL (Supabase: Session pooler :5432). Locally copy `DATABASE_URL`.
-  directUrl = env("DIRECT_URL")
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 // --- Lifecycle (separate per entity as required) ---
@@ -249,7 +247,7 @@ model RolePermission {
 model OrgGroup {
   id           String         @id @default(cuid())
   name         String
-  introduction String?
+  introduction String?        @db.Text
   status       OrgGroupStatus @default(ACTIVE)
   archivedAt   DateTime?
   deletedAt    DateTime?
@@ -267,14 +265,14 @@ model Company {
   name                     String
   companyType              String?
   companyColor             String?
-  introduction             String?
+  introduction             String?       @db.Text
   /// Public URL or app-relative path to uploaded logo (internal identity).
-  logoUrl                  String?
+  logoUrl                  String?       @db.Text
   status                   CompanyStatus @default(ACTIVE)
   /// HR onboarding pack (e.g. Google Drive); shown to new members assigned to this company.
-  onboardingPackageUrl     String?
+  onboardingPackageUrl     String?       @db.Text
   /// Optional onboarding video URL (direct .mp4 or https page); watch progress is tracked for members.
-  onboardingVideoUrl       String?
+  onboardingVideoUrl       String?       @db.Text
   onboardingPackageVersion String        @default("v1")
   onboardingDeadlineDays   Int           @default(14)
   archivedAt               DateTime?
@@ -300,9 +298,9 @@ model CompanyOnboardingMaterial {
   id                  String      @id @default(cuid())
   companyId           String
   title               String?
-  description         String?
-  packageUrl          String
-  videoUrl            String?
+  description         String?     @db.Text
+  packageUrl          String      @db.Text
+  videoUrl            String?     @db.Text
   packageVersion      String      @default("v1")
   deadlineDays        Int         @default(14)
   packageAttachmentId String?
@@ -359,9 +357,9 @@ model User {
   name                      String
   title                     String?
   /// Short public signature shown on staff cards and profile surfaces.
-  signature                 String?
+  signature                 String?   @db.Text
   /// Extra contact emails (comma / semicolon separated); login email stays in `email`.
-  contactEmails             String?
+  contactEmails             String?   @db.Text
   phone                     String?
   /// Optional birthday stored as YYYY-MM-DD to avoid timezone shifts on date-only values.
   birthday                  String?
@@ -375,7 +373,7 @@ model User {
   mustChangePassword        Boolean   @default(false)
   isSuperAdmin              Boolean   @default(false)
   /// Public URL or app-relative path to uploaded avatar.
-  avatarUrl                 String?
+  avatarUrl                 String?   @db.Text
   /// First-login companion picker completed; null means redirect to onboarding.
   companionIntroCompletedAt DateTime?
   /// First authenticated app session (for onboarding audit).
@@ -532,7 +530,7 @@ model Project {
   id              String        @id @default(cuid())
   companyId       String
   name            String
-  description     String?
+  description     String?       @db.Text
   ownerId         String
   status          ProjectStatus @default(PLANNING)
   priority        Priority      @default(MEDIUM)
@@ -578,7 +576,7 @@ model ProjectRelation {
   fromProjectId String
   toProjectId   String
   relationType  ProjectRelationType
-  note          String?
+  note          String?             @db.Text
   createdAt     DateTime            @default(now())
 
   fromProject       Project                           @relation("ProjectRelationFrom", fields: [fromProjectId], references: [id], onDelete: Cascade)
@@ -642,7 +640,7 @@ model WorkflowNode {
   parentNodeId    String?
   nodeType        WorkflowNodeType
   title           String
-  description     String?
+  description     String?            @db.Text
   status          WorkflowNodeStatus @default(NOT_STARTED)
   progressPercent Int                @default(0)
   posX            Float              @default(0)
@@ -651,15 +649,16 @@ model WorkflowNode {
   archivedAt      DateTime?
   deletedAt       DateTime?
   dueAt           DateTime?
-  operationalLabels WorkflowNodeLabel[] @default([])
+  /// JSON array of WorkflowNodeLabel values. PG-array → MySQL JSON to preserve identical field name.
+  operationalLabels Json             @default("[]")
   waitingOnUserId  String?
   waitingOnExternalName String?
-  waitingDetails   String?
+  waitingDetails   String?           @db.Text
   waitingStartedAt DateTime?
   approverUserId   String?
   approvalRequestedAt DateTime?
   approvalCompletedAt DateTime?
-  nextAction       String?
+  nextAction       String?           @db.Text
   isProjectBottleneck Boolean        @default(false)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
@@ -745,15 +744,15 @@ model Attachment {
   previousVersionId String?
   resourceKind      AttachmentResourceKind @default(FILE)
   /// When resourceKind is EXTERNAL_URL, this is the canonical href (Drive, docs, etc.).
-  externalUrl       String?
+  externalUrl       String?                @db.Text
   fileName          String
   mimeType          String?
   sizeBytes         Int                    @default(0)
   /// Required for FILE; null for EXTERNAL_URL until uploads return in a later phase.
-  storageKey        String?
-  blobUrl           String?
-  description       String?
-  labels            String?
+  storageKey        String?                @db.Text
+  blobUrl           String?                @db.Text
+  description       String?                @db.Text
+  labels            String?                @db.Text
   titleEn           String?
   titleZh           String?
   uploadedById      String
@@ -789,8 +788,8 @@ model MemberOutput {
   title       String
   titleEn     String?
   titleZh     String?
-  description String?
-  labels      String?
+  description String?   @db.Text
+  labels      String?   @db.Text
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -816,7 +815,7 @@ model RecognitionEvent {
   tagCategory       RecognitionTagCategory
   secondaryLabelKey String                 @default("")
   tagLabel          String?
-  message           String?
+  message           String?                @db.Text
   createdAt         DateTime               @default(now())
 
   fromUser       User?           @relation("RecognitionFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
@@ -839,7 +838,7 @@ model FeedbackEvent {
   knowledgeAssetId  String?
   category          FeedbackCategory
   secondaryLabelKey String
-  message           String?
+  message           String?          @db.Text
   createdAt         DateTime         @default(now())
 
   fromUser       User?           @relation("FeedbackFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
@@ -914,11 +913,11 @@ model KnowledgeAsset {
   title      String
   titleEn    String?
   titleZh    String?
-  summary    String?
-  content    String
+  summary    String?        @db.Text
+  content    String         @db.LongText
   layer      KnowledgeLayer
-  tags       String?
-  sourceUrl  String?
+  tags       String?        @db.Text
+  sourceUrl  String?        @db.Text
   language   String?        @default("mixed")
   reuseCount Int            @default(0)
   createdAt  DateTime       @default(now())
@@ -960,9 +959,9 @@ model AuditLogEntry {
   entityId   String
   action     String
   field      String?
-  oldValue   String?
-  newValue   String?
-  meta       String?
+  oldValue   String?         @db.Text
+  newValue   String?         @db.Text
+  meta       String?         @db.Text
   createdAt  DateTime        @default(now())
 
   actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
@@ -976,8 +975,8 @@ model MemberOnboarding {
   userId                      String
   companyId                   String
   companyOnboardingMaterialId String?
-  packageUrl                  String
-  videoUrl                    String?
+  packageUrl                  String    @db.Text
+  videoUrl                    String?   @db.Text
   packageVersion              String
   deadlineAt                  DateTime
   completedAt                 DateTime?
@@ -1047,7 +1046,7 @@ model LifecycleTriggerFire {
   windowEnd           DateTime
   triggeredAt         DateTime  @default(now())
   /// JSON array of FeedbackEvent or RecognitionEvent ids (strings).
-  sourceEventIds      String
+  sourceEventIds      String    @db.Text
   followUpCompletedAt DateTime?
 
   rule    LifecycleTriggerRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
@@ -1076,8 +1075,8 @@ model InAppNotification {
   userId    String
   kind      String
   title     String
-  body      String?
-  href      String?
+  body      String?   @db.Text
+  href      String?   @db.Text
   readAt    DateTime?
   metadata  Json?
   createdAt DateTime  @default(now())
@@ -1091,7 +1090,7 @@ model DirectMessage {
   id          String    @id @default(cuid())
   senderId    String
   recipientId String
-  body        String?
+  body        String?   @db.Text
   readAt      DateTime?
   createdAt   DateTime  @default(now())
 
@@ -1111,8 +1110,8 @@ model DirectMessageAttachment {
   fileName  String
   mimeType  String?
   sizeBytes Int      @default(0)
-  storageKey String?
-  blobUrl   String?
+  storageKey String? @db.Text
+  blobUrl   String?  @db.Text
   createdAt DateTime @default(now())
 
   message DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
@@ -1124,7 +1123,7 @@ model MessageGroup {
   id          String   @id @default(cuid())
   companyId   String
   name        String
-  avatarUrl   String?
+  avatarUrl   String?  @db.Text
   createdById String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -1178,7 +1177,7 @@ model MessageGroupMessage {
   id        String    @id @default(cuid())
   groupId   String
   senderId  String
-  body      String?
+  body      String?   @db.Text
   createdAt DateTime  @default(now())
 
   group       MessageGroup                  @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -1195,8 +1194,8 @@ model MessageGroupMessageAttachment {
   fileName  String
   mimeType  String?
   sizeBytes Int      @default(0)
-  storageKey String?
-  blobUrl   String?
+  storageKey String? @db.Text
+  blobUrl   String?  @db.Text
   createdAt DateTime @default(now())
 
   message MessageGroupMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
@@ -1213,7 +1212,7 @@ model OffboardingRun {
   startedAt            DateTime          @default(now())
   completedAt          DateTime?
   accountDeactivatedAt DateTime?
-  notes                String?
+  notes                String?           @db.Text
 
   user      User                       @relation("OffboardingSubject", fields: [userId], references: [id], onDelete: Cascade)
   company   Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -1256,7 +1255,7 @@ model CalendarLabel {
 model CalendarEvent {
   id                      String             @id @default(cuid())
   title                   String
-  description             String?
+  description             String?            @db.Text
   startsAt                DateTime
   endsAt                  DateTime
   timezone                String             @default("UTC")
@@ -1265,9 +1264,9 @@ model CalendarEvent {
   labelId                 String?
   sourceKind              CalendarSourceKind @default(MANUAL)
   sourceId                String?
-  meetUrl                 String?
-  /// Guest emails without user accounts (e.g. external interviews).
-  externalAttendeeEmails  String[]           @default([])
+  meetUrl                 String?            @db.Text
+  /// JSON array of guest emails without user accounts (e.g. external interviews). PG text[] → MySQL JSON.
+  externalAttendeeEmails  Json               @default("[]")
   externalCalendarEventId String?
   createdAt               DateTime           @default(now())
   updatedAt               DateTime           @updatedAt

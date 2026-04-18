@@ -1,4 +1,4 @@
-import type { WorkflowNodeLabel, WorkflowNodeStatus, WorkflowNodeType } from "@prisma/client";
+import type { Prisma, WorkflowNodeLabel, WorkflowNodeStatus, WorkflowNodeType } from "@prisma/client";
 
 export const WORKFLOW_NODE_LABELS: WorkflowNodeLabel[] = [
   "WAITING_ON_RESPONSE",
@@ -77,6 +77,29 @@ export function normalizeOperationalLabels(rawLabels: string[]): WorkflowNodeLab
     }
   }
   return WORKFLOW_NODE_LABELS.filter((label) => unique.has(label));
+}
+
+/**
+ * MySQL 1:1 migration: `WorkflowNode.operationalLabels` is stored as `Json` (was PG `enum[]`).
+ * Coerce Prisma's `JsonValue` reads back into a typed `WorkflowNodeLabel[]`.
+ */
+export function decodeOperationalLabels(value: Prisma.JsonValue | null | undefined): WorkflowNodeLabel[] {
+  if (!Array.isArray(value)) return [];
+  const known = new Set<string>(WORKFLOW_NODE_LABELS as string[]);
+  const out: WorkflowNodeLabel[] = [];
+  for (const item of value) {
+    if (typeof item === "string" && known.has(item)) {
+      out.push(item as WorkflowNodeLabel);
+    }
+  }
+  return out;
+}
+
+/** Convenience: copy a Prisma row replacing the `JsonValue` operationalLabels with the decoded array. */
+export function withDecodedOperationalLabels<T extends { operationalLabels: Prisma.JsonValue }>(
+  row: T,
+): Omit<T, "operationalLabels"> & { operationalLabels: WorkflowNodeLabel[] } {
+  return { ...row, operationalLabels: decodeOperationalLabels(row.operationalLabels) };
 }
 
 export function isWaitingNode(node: WorkflowNodeOperationalShape) {

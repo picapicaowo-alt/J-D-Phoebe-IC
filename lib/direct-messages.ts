@@ -576,23 +576,26 @@ async function getLatestDirectMessagesByPeer(userId: string, peerIds: string[]) 
   if (!peerIds.length) return new Map<string, DirectMessageRow>();
 
   const refs = await prisma.$queryRaw<LatestDirectMessageRef[]>(Prisma.sql`
-    SELECT DISTINCT ON ("peerId")
-      "peerId",
-      id
-    FROM (
+    SELECT peerId, id FROM (
       SELECT
-        dm.id,
-        dm."createdAt",
-        CASE
-          WHEN dm."senderId" = ${userId} THEN dm."recipientId"
-          ELSE dm."senderId"
-        END AS "peerId"
-      FROM "DirectMessage" dm
-      WHERE
-        (dm."senderId" = ${userId} AND dm."recipientId" IN (${Prisma.join(peerIds)}))
-        OR (dm."recipientId" = ${userId} AND dm."senderId" IN (${Prisma.join(peerIds)}))
-    ) ranked
-    ORDER BY "peerId", "createdAt" DESC, id DESC
+        ranked.id,
+        ranked.peerId,
+        ROW_NUMBER() OVER (PARTITION BY ranked.peerId ORDER BY ranked.createdAt DESC, ranked.id DESC) AS rn
+      FROM (
+        SELECT
+          dm.id,
+          dm.createdAt,
+          CASE
+            WHEN dm.senderId = ${userId} THEN dm.recipientId
+            ELSE dm.senderId
+          END AS peerId
+        FROM DirectMessage dm
+        WHERE
+          (dm.senderId = ${userId} AND dm.recipientId IN (${Prisma.join(peerIds)}))
+          OR (dm.recipientId = ${userId} AND dm.senderId IN (${Prisma.join(peerIds)}))
+      ) ranked
+    ) numbered
+    WHERE rn = 1
   `);
 
   if (!refs.length) return new Map<string, DirectMessageRow>();
@@ -610,12 +613,15 @@ async function getLatestGroupMessagesByGroup(groupIds: string[]) {
   if (!groupIds.length) return new Map<string, GroupMessageRow>();
 
   const refs = await prisma.$queryRaw<LatestGroupMessageRef[]>(Prisma.sql`
-    SELECT DISTINCT ON ("groupId")
-      "groupId",
-      id
-    FROM "MessageGroupMessage"
-    WHERE "groupId" IN (${Prisma.join(groupIds)})
-    ORDER BY "groupId", "createdAt" DESC, id DESC
+    SELECT groupId, id FROM (
+      SELECT
+        groupId,
+        id,
+        ROW_NUMBER() OVER (PARTITION BY groupId ORDER BY createdAt DESC, id DESC) AS rn
+      FROM MessageGroupMessage
+      WHERE groupId IN (${Prisma.join(groupIds)})
+    ) numbered
+    WHERE rn = 1
   `);
 
   if (!refs.length) return new Map<string, GroupMessageRow>();
@@ -634,21 +640,21 @@ async function getGroupUnreadCounts(userId: string, groupIds: string[]) {
 
   const rows = await prisma.$queryRaw<GroupUnreadCountRow[]>(Prisma.sql`
     SELECT
-      mgm."groupId",
-      COUNT(*)::int AS "unreadCount"
-    FROM "MessageGroupMessage" mgm
-    INNER JOIN "MessageGroupMember" mgmb
-      ON mgmb."groupId" = mgm."groupId"
-      AND mgmb."userId" = ${userId}
-    INNER JOIN "User" sender
-      ON sender.id = mgm."senderId"
+      mgm.groupId AS groupId,
+      CAST(COUNT(*) AS SIGNED) AS unreadCount
+    FROM MessageGroupMessage mgm
+    INNER JOIN MessageGroupMember mgmb
+      ON mgmb.groupId = mgm.groupId
+      AND mgmb.userId = ${userId}
+    INNER JOIN User sender
+      ON sender.id = mgm.senderId
     WHERE
-      mgm."groupId" IN (${Prisma.join(groupIds)})
-      AND mgm."senderId" <> ${userId}
+      mgm.groupId IN (${Prisma.join(groupIds)})
+      AND mgm.senderId <> ${userId}
       AND sender.active = true
-      AND sender."deletedAt" IS NULL
-      AND (mgmb."lastReadAt" IS NULL OR mgm."createdAt" > mgmb."lastReadAt")
-    GROUP BY mgm."groupId"
+      AND sender.deletedAt IS NULL
+      AND (mgmb.lastReadAt IS NULL OR mgm.createdAt > mgmb.lastReadAt)
+    GROUP BY mgm.groupId
   `);
 
   return new Map(rows.map((row) => [row.groupId, Number(row.unreadCount)]));
@@ -1393,19 +1399,19 @@ export async function getMessagingUnreadCount(userId: string) {
       select: { peerId: true },
     }),
     prisma.$queryRaw<{ unreadCount: number }[]>(Prisma.sql`
-      SELECT COUNT(*)::int AS "unreadCount"
-      FROM "MessageGroupMessage" mgm
-      INNER JOIN "MessageGroupMember" mgmb
-        ON mgmb."groupId" = mgm."groupId"
-        AND mgmb."userId" = ${userId}
-        AND mgmb."mutedAt" IS NULL
-      INNER JOIN "User" sender
-        ON sender.id = mgm."senderId"
+      SELECT CAST(COUNT(*) AS SIGNED) AS unreadCount
+      FROM MessageGroupMessage mgm
+      INNER JOIN MessageGroupMember mgmb
+        ON mgmb.groupId = mgm.groupId
+        AND mgmb.userId = ${userId}
+        AND mgmb.mutedAt IS NULL
+      INNER JOIN User sender
+        ON sender.id = mgm.senderId
       WHERE
-        mgm."senderId" <> ${userId}
+        mgm.senderId <> ${userId}
         AND sender.active = true
-        AND sender."deletedAt" IS NULL
-        AND (mgmb."lastReadAt" IS NULL OR mgm."createdAt" > mgmb."lastReadAt")
+        AND sender.deletedAt IS NULL
+        AND (mgmb.lastReadAt IS NULL OR mgm.createdAt > mgmb.lastReadAt)
     `),
   ]);
 

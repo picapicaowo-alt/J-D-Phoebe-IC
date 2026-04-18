@@ -15,6 +15,7 @@ import {
   WAITING_LABELS,
   hasAnyOperationalLabel,
   normalizeOperationalLabels,
+  withDecodedOperationalLabels,
 } from "@/lib/workflow-node-operations";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
@@ -57,7 +58,7 @@ type ProjectStaffDirectoryEntry = {
   email: string;
 };
 
-/** Run rollup + second revalidate after the response is sent so mutations return fast (avoids Vercel / PgBouncer timeouts). */
+/** Run rollup + second revalidate after the response is sent so mutations return fast on serverless platforms. */
 function scheduleTaskRollupRevalidate(projectId: string) {
   after(async () => {
     try {
@@ -412,7 +413,7 @@ export async function addProjectTaskAction(formData: FormData) {
         nodeId: createdNode.id,
         nodeTitle: createdNode.title,
         previousState: null,
-        nextState: createdNode,
+        nextState: withDecodedOperationalLabels(createdNode),
       });
     } catch (err) {
       console.error("[addProjectTaskAction.notifications]", projectId, err);
@@ -493,7 +494,7 @@ export async function addProjectSubtaskAction(formData: FormData) {
         nodeId: createdNode.id,
         nodeTitle: createdNode.title,
         previousState: null,
-        nextState: createdNode,
+        nextState: withDecodedOperationalLabels(createdNode),
       });
     } catch (err) {
       console.error("[addProjectSubtaskAction.notifications]", projectId, err);
@@ -559,8 +560,8 @@ export async function updateWorkflowNodeMetaAction(formData: FormData) {
       projectName: project.name,
       nodeId: updatedNode.id,
       nodeTitle: updatedNode.title,
-      previousState: node,
-      nextState: updatedNode,
+      previousState: withDecodedOperationalLabels(node),
+      nextState: withDecodedOperationalLabels(updatedNode),
     });
   });
 
@@ -611,8 +612,8 @@ export async function updateWorkflowNodeDetailsAction(formData: FormData) {
       projectName: project.name,
       nodeId: updatedNode.id,
       nodeTitle: updatedNode.title,
-      previousState: node,
-      nextState: updatedNode,
+      previousState: withDecodedOperationalLabels(node),
+      nextState: withDecodedOperationalLabels(updatedNode),
     });
   });
 
@@ -664,8 +665,8 @@ export async function updateWorkflowNodeOperationalAction(formData: FormData) {
       projectName: project.name,
       nodeId: updatedNode.id,
       nodeTitle: updatedNode.title,
-      previousState: node,
-      nextState: updatedNode,
+      previousState: withDecodedOperationalLabels(node),
+      nextState: withDecodedOperationalLabels(updatedNode),
     });
   });
 

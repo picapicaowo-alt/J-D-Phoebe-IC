@@ -85,10 +85,10 @@ export async function StaffDirectoryBody({
   if (q) {
       whereClauses.push({
         OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { email: { contains: q, mode: "insensitive" } },
-          { title: { contains: q, mode: "insensitive" } },
-          { signature: { contains: q, mode: "insensitive" } },
+          { name: { contains: q } },
+          { email: { contains: q } },
+          { title: { contains: q } },
+          { signature: { contains: q } },
         ],
       });
   }

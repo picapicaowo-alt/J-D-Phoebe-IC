@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * Temporary DB connectivity check for production debugging.
- * Remove or protect once Vercel + Supabase are stable.
+ * Issues a `SELECT 1` against MySQL through Prisma.
  */
 export async function GET() {
   try {

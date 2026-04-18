@@ -11,6 +11,13 @@ export type AppSessionData = {
   taskUndo?: TaskUndoPayload;
 };
 
+function resolveCookieSecure(): boolean {
+  const explicit = process.env.SESSION_COOKIE_SECURE?.toLowerCase();
+  if (explicit === "true" || explicit === "1") return true;
+  if (explicit === "false" || explicit === "0") return false;
+  return process.env.NODE_ENV === "production";
+}
+
 export const sessionOptions: SessionOptions = {
   password:
     process.env.SESSION_SECRET ??
@@ -18,7 +25,7 @@ export const sessionOptions: SessionOptions = {
   cookieName: "jdphoebe_session",
   cookieOptions: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: resolveCookieSecure(),
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 14,

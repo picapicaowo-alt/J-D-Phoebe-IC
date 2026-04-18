@@ -63,6 +63,7 @@ import {
   isBlockedNode,
   isOverdueNode,
   isPendingApprovalNode,
+  withDecodedOperationalLabels,
 } from "@/lib/workflow-node-operations";
 import {
   ProjectProgressBar,
@@ -603,11 +604,11 @@ export default async function ProjectDetailPage({
             ...(knowledgeQuickQuery
               ? {
                   OR: [
-                    { title: { contains: knowledgeQuickQuery, mode: "insensitive" } },
-                    { titleEn: { contains: knowledgeQuickQuery, mode: "insensitive" } },
-                    { titleZh: { contains: knowledgeQuickQuery, mode: "insensitive" } },
-                    { summary: { contains: knowledgeQuickQuery, mode: "insensitive" } },
-                    { content: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                    { title: { contains: knowledgeQuickQuery } },
+                    { titleEn: { contains: knowledgeQuickQuery } },
+                    { titleZh: { contains: knowledgeQuickQuery } },
+                    { summary: { contains: knowledgeQuickQuery } },
+                    { content: { contains: knowledgeQuickQuery } },
                   ],
                 }
               : {}),
@@ -634,11 +635,11 @@ export default async function ProjectDetailPage({
                   ...(knowledgeQuickQuery
                     ? {
                         OR: [
-                          { title: { contains: knowledgeQuickQuery, mode: "insensitive" } },
-                          { titleEn: { contains: knowledgeQuickQuery, mode: "insensitive" } },
-                          { titleZh: { contains: knowledgeQuickQuery, mode: "insensitive" } },
-                          { summary: { contains: knowledgeQuickQuery, mode: "insensitive" } },
-                          { content: { contains: knowledgeQuickQuery, mode: "insensitive" } },
+                          { title: { contains: knowledgeQuickQuery } },
+                          { titleEn: { contains: knowledgeQuickQuery } },
+                          { titleZh: { contains: knowledgeQuickQuery } },
+                          { summary: { contains: knowledgeQuickQuery } },
+                          { content: { contains: knowledgeQuickQuery } },
                         ],
                       }
                     : {}),
@@ -823,7 +824,7 @@ export default async function ProjectDetailPage({
       canEditWorkflow(user, project) ||
       user.projectMemberships.some((m) => m.projectId === project.id));
 
-  const taskRows = buildProjectTaskRows(project.nodes);
+  const taskRows = buildProjectTaskRows(project.nodes.map(withDecodedOperationalLabels));
   const projectMemberOptions = project.memberships.map((m) => ({ id: m.userId, name: m.user.name }));
   const labelMemberOptions = staff.length ? staff : projectMemberOptions;
   const focusedTask = findTaskById(taskRows, String(sp.task ?? "").trim() || null);

@@ -5,7 +5,7 @@
  * (for example `.env.production.local` after `vercel env pull`) can override
  * both so Prisma CLI commands target the same database as the running app.
  *
- * Then sets DIRECT_URL from DATABASE_URL when DIRECT_URL is still unset.
+ * Targets MySQL via `DATABASE_URL` (mysql://...); no DIRECT_URL needed.
  */
 import { readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -71,10 +71,6 @@ if (overrideName) {
     console.error(`[prisma-env] PRISMA_ENV_FILE not found: ${overridePath}`);
     process.exit(1);
   }
-}
-
-if (!process.env.DIRECT_URL && process.env.DATABASE_URL) {
-  process.env.DIRECT_URL = process.env.DATABASE_URL;
 }
 
 const prismaArgs = process.argv.slice(2);
