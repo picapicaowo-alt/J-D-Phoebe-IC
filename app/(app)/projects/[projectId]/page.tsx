@@ -50,6 +50,7 @@ import { UserFace } from "@/components/user-face";
 import { DetailsHashOpener } from "@/components/details-hash-opener";
 import { ProjectDetailActionTabs, ProjectDetailBreadcrumbs } from "@/components/project-detail-nav";
 import { ProjectEditForm } from "@/components/project-edit-form";
+import { ProjectDescriptionToggle } from "@/components/project-description-toggle";
 import { type ProjectTaskRow } from "@/components/project-tasks-panel";
 import {
   formatWorkflowNodeLabel,
@@ -1971,9 +1972,7 @@ export default async function ProjectDetailPage({
           ) : null}
           <div className="min-w-0 flex-1 space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight text-[hsl(var(--foreground))]">{project.name}</h1>
-            {project.description ? (
-              <p className="text-sm text-[hsl(var(--muted))]">{project.description}</p>
-            ) : null}
+            {project.description ? <ProjectDescriptionToggle description={project.description} /> : null}
             <p className="text-sm text-[hsl(var(--muted))]">
               {project.company.name} · <ProjectLiveStatusText baseStatus={project.status} locale={locale} /> · {tPriority(locale, project.priority)}
             </p>
