@@ -6,7 +6,9 @@ import { userHasPermission } from "@/lib/permissions";
 import type { AccessUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { Card, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { UserFace } from "@/components/user-face";
 import { getLocale } from "@/lib/locale";
 import { t, type MessageKey } from "@/lib/messages";
 import { leaderboardTotals, type LeaderboardScope } from "@/lib/leaderboard-query";
@@ -90,13 +92,6 @@ function rankBadge(locale: "en" | "zh", i: number) {
   return <span className="w-6 text-center text-sm font-semibold text-zinc-400">{i + 1}</span>;
 }
 
-function initials(name: string) {
-  const p = name.trim().split(/\s+/).filter(Boolean);
-  if (!p.length) return "?";
-  if (p.length === 1) return p[0]!.slice(0, 2).toUpperCase();
-  return (p[0]![0]! + p[p.length - 1]![0]!).toUpperCase();
-}
-
 export default async function LeaderboardPage({
   searchParams,
 }: {
@@ -141,10 +136,10 @@ export default async function LeaderboardPage({
   });
 
   const users = await prisma.user.findMany({
-    where: { id: { in: totals.map((r) => r.userId) }, deletedAt: null },
-    select: { id: true, name: true },
+    where: { id: { in: totals.map((r) => r.userId) } },
+    select: { id: true, name: true, avatarUrl: true, deletedAt: true },
   });
-  const nameById = new Map(users.map((u) => [u.id, u.name]));
+  const userById = new Map(users.map((u) => [u.id, u]));
 
   const companies = await prisma.company.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } });
   const projects = await prisma.project.findMany({
@@ -278,20 +273,31 @@ export default async function LeaderboardPage({
         <ol className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {totals.length ? (
             totals.map((row, i) => {
-              const nm = nameById.get(row.userId) ?? row.userId;
+              const userRow = userById.get(row.userId);
+              const nm = userRow?.name ?? row.userId;
+              const isDeleted = Boolean(userRow?.deletedAt);
               return (
-                <li key={row.userId} className="flex items-center gap-4 px-5 py-4">
+                <li
+                  key={row.userId}
+                  className={`flex items-center gap-4 px-5 py-4 ${isDeleted ? "opacity-75" : ""}`}
+                >
                   <div className="flex w-10 shrink-0 justify-center">{rankBadge(locale, i)}</div>
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-xs font-bold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-                    {initials(nm)}
-                  </div>
+                  <UserFace name={nm} avatarUrl={userRow?.avatarUrl} size={40} className="shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <Link
-                      href={`/staff/${row.userId}`}
-                      className="truncate font-semibold text-zinc-900 hover:underline dark:text-zinc-50"
-                    >
-                      {nm}
-                    </Link>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isDeleted ? (
+                        <span className="truncate font-semibold text-zinc-500 dark:text-zinc-400">{nm}</span>
+                      ) : (
+                        <Link href={`/staff/${row.userId}`} className="truncate font-semibold text-zinc-900 hover:underline dark:text-zinc-50">
+                          {nm}
+                        </Link>
+                      )}
+                      {isDeleted ? (
+                        <Badge tone="warn" className="shrink-0">
+                          {t(locale, "lbDeletedStaff")}
+                        </Badge>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="shrink-0 text-right">
                     <p className={`text-xl font-bold tabular-nums ${CAT_SCORE[cat]}`}>{row.total}</p>
