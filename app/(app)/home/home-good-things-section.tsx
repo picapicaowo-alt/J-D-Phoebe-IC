@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import type { AccessUser } from "@/lib/access";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -7,16 +8,149 @@ import { getLocale } from "@/lib/locale";
 import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
 import { t, tRecognitionTagCategory } from "@/lib/messages";
 
+type HomeRecognition = {
+  id: string;
+  createdAt: Date;
+  tagCategory: Parameters<typeof tRecognitionTagCategory>[1];
+  secondaryLabelKey: string;
+  tagLabel: string | null;
+  message: string | null;
+  project: {
+    name: string;
+    company: {
+      name: string;
+    };
+  } | null;
+  fromUser: {
+    name: string;
+  } | null;
+  toUser: {
+    name: string;
+  };
+};
+
 export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
   const locale = await getLocale();
-  const [latestRec, companion] = await Promise.all([
-    prisma.recognitionEvent.findFirst({
-      where: { toUserId: user.id },
-      include: { project: true, fromUser: true },
+  const companyIds = [...new Set(user.companyMemberships.map((membership) => membership.companyId))];
+  const recentWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const recognitionSelect = {
+    id: true,
+    createdAt: true,
+    tagCategory: true,
+    secondaryLabelKey: true,
+    tagLabel: true,
+    message: true,
+    project: {
+      select: {
+        name: true,
+        company: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    },
+    fromUser: {
+      select: {
+        name: true,
+      },
+    },
+    toUser: {
+      select: {
+        name: true,
+      },
+    },
+  } as const;
+
+  const [selfRecognitions, companion, companyRecognitions] = await Promise.all([
+    prisma.recognitionEvent.findMany({
+      where: { toUserId: user.id, createdAt: { gte: recentWindowStart } },
+      select: recognitionSelect,
       orderBy: { createdAt: "desc" },
+      take: 4,
     }),
     prisma.companionProfile.findUnique({ where: { userId: user.id } }),
+    Promise.all(
+      companyIds.map((companyId) =>
+        prisma.recognitionEvent.findFirst({
+          where: { project: { companyId } },
+          select: recognitionSelect,
+          orderBy: { createdAt: "desc" },
+        }),
+      ),
+    ),
   ]);
+
+  const pinnedRecognition = selfRecognitions[0] ?? null;
+  const pinnedRecognitionCount = selfRecognitions.length;
+  const companyRecognitionRows = companyRecognitions.filter((recognition): recognition is HomeRecognition => recognition !== null);
+  const recognitionFeed: HomeRecognition[] = [...companyRecognitionRows]
+    .filter((recognition, index, all) => all.findIndex((candidate) => candidate.id === recognition.id) === index)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  function RecognitionCard({
+    recognition,
+    pinned = false,
+    countLink,
+  }: {
+    recognition: HomeRecognition;
+    pinned?: boolean;
+    countLink?: string;
+  }) {
+    const recipientName = recognition.toUser?.name ?? (locale === "zh" ? "你" : "You");
+    const companyName = recognition.project?.company?.name ?? t(locale, "commonCompany");
+    const projectName = recognition.project?.name ?? t(locale, "kbGeneralProject");
+    return (
+      <div
+        className={[
+          "rounded-xl border p-4 text-base",
+          pinned
+            ? "border-violet-100 bg-violet-50/40 dark:border-violet-900/40 dark:bg-violet-950/20"
+            : "border-zinc-100 bg-white/80 dark:border-zinc-800 dark:bg-zinc-950/20",
+        ].join(" ")}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 font-medium text-zinc-900 dark:text-zinc-100">{recipientName}</div>
+              {countLink && pinnedRecognitionCount > 1 ? (
+                <Link
+                  href={countLink}
+                  className="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 text-xs font-semibold text-zinc-600 transition hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:text-zinc-50"
+                >
+                  x{Math.min(pinnedRecognitionCount, 4)}
+                </Link>
+              ) : null}
+            </div>
+            <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              {t(locale, "commonCompany")} · {companyName} · {t(locale, "commonProject")} · {projectName}
+            </div>
+          </div>
+          {pinned ? (
+            <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center text-rose-500" aria-hidden>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 21s-7-4.35-9.5-8.71C.76 8.88 2.13 5.5 5.55 4.4c1.86-.6 3.92-.07 5.36 1.37l1.09 1.09 1.09-1.09c1.44-1.44 3.5-1.97 5.36-1.37 3.42 1.1 4.79 4.48 3.05 7.89C19 16.65 12 21 12 21z" />
+              </svg>
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">
+          {recognition.secondaryLabelKey
+            ? displayRecognitionSecondary(recognition.tagCategory, recognition.secondaryLabelKey, locale)
+            : (recognition.tagLabel ?? "")}
+        </div>
+        <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          {tRecognitionTagCategory(locale, recognition.tagCategory)}
+        </div>
+        <p className="mt-2 text-base text-zinc-700 dark:text-zinc-300">
+          {recognition.message ?? t(locale, "homeRecognizedDefault")}
+        </p>
+        <div className="mt-2 text-sm text-zinc-400">
+          {t(locale, "homeFrom")} {recognition.fromUser?.name ?? "—"}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Card className="space-y-3 border-zinc-200/90 p-5">
@@ -28,22 +162,16 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
         </span>
         <CardTitle className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{t(locale, "homeGoodThingsToday")}</CardTitle>
       </div>
-      {latestRec ? (
-        <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4 text-base dark:border-violet-900/40 dark:bg-violet-950/20">
-          <div className="font-medium text-zinc-900 dark:text-zinc-100">
-            {latestRec.secondaryLabelKey
-              ? displayRecognitionSecondary(latestRec.tagCategory, latestRec.secondaryLabelKey, locale)
-              : (latestRec.tagLabel ?? "")}
-          </div>
-          <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            {tRecognitionTagCategory(locale, latestRec.tagCategory)} · {latestRec.project?.name ?? t(locale, "kbGeneralProject")}
-          </div>
-          <p className="mt-2 text-base text-zinc-700 dark:text-zinc-300">{latestRec.message ?? t(locale, "homeRecognizedDefault")}</p>
-          <div className="mt-2 text-sm text-zinc-400">
-            {t(locale, "homeFrom")} {latestRec.fromUser?.name ?? "—"}
-          </div>
+      {pinnedRecognition ? (
+        <RecognitionCard recognition={pinnedRecognition} pinned countLink={`/staff/${user.id}`} />
+      ) : null}
+      {recognitionFeed.length ? (
+        <div className="max-h-[18rem] space-y-3 overflow-y-auto pr-1">
+          {recognitionFeed.map((recognition) => (
+            <RecognitionCard key={recognition.id} recognition={recognition} />
+          ))}
         </div>
-      ) : (
+      ) : pinnedRecognition ? null : (
         <p className="text-base text-zinc-500 dark:text-zinc-400">{t(locale, "homeNoRecognition")}</p>
       )}
       {companion ? (

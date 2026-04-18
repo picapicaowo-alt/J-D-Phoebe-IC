@@ -1,12 +1,12 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useLayoutEffect } from "react";
 import { usePathname } from "next/navigation";
 
 function DetailsHashOpenerInner() {
   const pathname = usePathname();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const applyHash = () => {
       const id = window.location.hash.replace(/^#/, "");
       if (!id) return;

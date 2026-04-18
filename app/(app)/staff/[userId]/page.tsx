@@ -56,6 +56,7 @@ import { StaffAvatarPreview } from "@/components/staff-avatar-preview";
 import { StaffOnboardingStatusCard } from "@/components/staff-onboarding-status-card";
 import { StaffObservationsPanel } from "@/components/staff-observations-panel";
 import { Badge } from "@/components/ui/badge";
+import { sortByLabel } from "@/lib/utils";
 
 function isMissingColumnError(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022";
@@ -390,6 +391,12 @@ async function StaffDetailDeferredPanels({
 }) {
   const target = await loadStaffDetailTarget(actor, userId);
   if (!target) notFound();
+  const sortedCompanyMemberships = sortByLabel(
+    target.companyMemberships.map((membership) => ({
+      label: `${membership.company.name}${membership.department ? ` · ${membership.department.name}` : ""}`,
+      membership,
+    })),
+  );
 
   const isAnyCompanyAdmin = actor.companyMemberships.some((m) => m.roleDefinition.key === "COMPANY_ADMIN");
   const isAnyGroupAdmin = actor.groupMemberships.some((m) => m.roleDefinition.key === "GROUP_ADMIN");
@@ -753,7 +760,7 @@ async function StaffDetailDeferredPanels({
         <Card className="p-4">
           <CardTitle>{t(locale, "projCompanyMemberships")}</CardTitle>
           <ul className="mt-2 space-y-2 text-sm">
-            {target.companyMemberships.map((m) => {
+            {sortedCompanyMemberships.map(({ membership: m }) => {
               const onboarding = onboardingByCompanyId.get(m.companyId);
               const canManageThisCompanyMembership = manageableCompanyIds.has(m.companyId);
               return (
@@ -983,7 +990,13 @@ export default async function StaffDetailPage({
     : false;
   const onboardingByCompanyId = new Map(target.memberOnboardings.map((ob) => [ob.companyId, ob]));
   const pendingOnboardings = target.memberOnboardings.filter((ob) => !ob.completedAt);
-  const onboardingAdminRows = target.companyMemberships.map((membership) => {
+  const sortedCompanyMemberships = sortByLabel(
+    target.companyMemberships.map((membership) => ({
+      label: membership.company.name,
+      membership,
+    })),
+  );
+  const onboardingAdminRows = sortedCompanyMemberships.map(({ membership }) => {
     const onboarding = onboardingByCompanyId.get(membership.companyId);
     return {
       companyId: membership.companyId,

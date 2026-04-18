@@ -14,6 +14,7 @@ import { StaffDirectoryFilters } from "@/components/staff-directory-filters";
 import { RoutePrefetcher } from "@/components/route-prefetcher";
 import { ensureRbacCatalog } from "@/lib/rbac-sync";
 import { DEMO_SUPERADMIN_EMAILS } from "@/lib/demo-superadmins";
+import { sortByLabel } from "@/lib/utils";
 
 const ACTIVE_PROJECT_STATUSES = ["PLANNING", "ACTIVE", "AT_RISK", "ON_HOLD"] as const;
 
@@ -275,10 +276,12 @@ export async function StaffDirectoryBody({
             isSuperAdmin: s.isSuperAdmin,
             activeProjectCount: s.projectMemberships.length,
             onboarding: onboardingBadgeText(s.memberOnboardings, locale),
-            companies: s.companyMemberships.map((m) => ({
-              key: m.id,
-              label: `${m.company.name}${m.department ? ` · ${m.department.name}` : ""}`,
-            })),
+            companies: sortByLabel(
+              s.companyMemberships.map((m) => ({
+                key: m.id,
+                label: `${m.company.name}${m.department ? ` · ${m.department.name}` : ""}`,
+              })),
+            ),
             contactLine:
               [readOptionalString(s, "contactEmails"), readOptionalString(s, "phone")].filter(Boolean).join(" · ").trim() || null,
             labels: [
