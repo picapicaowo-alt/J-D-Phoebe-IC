@@ -1,4 +1,5 @@
 import type { Locale } from "@/lib/locale";
+import { getZonedDaySerial } from "@/lib/timezone";
 import path from "node:path";
 import * as XLSX from "xlsx";
 
@@ -95,9 +96,9 @@ function stableIndex(seed: string, len: number) {
   return Math.abs(h) % len;
 }
 
-/** One pep talk per user per calendar day (UTC), deterministic. */
-export function companionPepTalkForDay(locale: Locale, userId: string, day = new Date()): string {
-  const ymd = day.toISOString().slice(0, 10);
+/** One pep talk per user per local calendar day, deterministic in the chosen timezone. */
+export function companionPepTalkForDay(locale: Locale, userId: string, timeZone = "UTC", day = new Date()): string {
+  const ymd = getZonedDaySerial(day, timeZone) ?? day.toISOString().slice(0, 10);
   const pool = loadQuotePool();
   const i = stableIndex(`${userId}:${ymd}`, pool.length);
   const row = pool[i] ?? pool[0];

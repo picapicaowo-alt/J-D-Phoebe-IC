@@ -62,7 +62,7 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
             </p>
             <p className="text-base leading-relaxed text-zinc-700 dark:text-zinc-200">
               <span className="font-medium text-zinc-900 dark:text-zinc-100">{t(locale, "homeCompanionEncouragement")}: </span>
-              {companionPepTalkForDay(locale, user.id)}
+              {companionPepTalkForDay(locale, user.id, user.timezone)}
             </p>
           </div>
         </div>

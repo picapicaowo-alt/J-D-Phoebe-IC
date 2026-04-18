@@ -6,12 +6,12 @@ import { userHasPermission } from "@/lib/permissions";
 import type { AccessUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { Card, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { UserFace } from "@/components/user-face";
 import { getLocale } from "@/lib/locale";
 import { t, type MessageKey } from "@/lib/messages";
 import { leaderboardTotals, type LeaderboardScope } from "@/lib/leaderboard-query";
+import { DEMO_SUPERADMIN_EMAILS } from "@/lib/demo-superadmins";
 
 function startOfWeekUTC(ref = new Date()) {
   const d = new Date(ref);
@@ -136,10 +136,11 @@ export default async function LeaderboardPage({
   });
 
   const users = await prisma.user.findMany({
-    where: { id: { in: totals.map((r) => r.userId) } },
-    select: { id: true, name: true, avatarUrl: true, deletedAt: true },
+    where: { id: { in: totals.map((r) => r.userId) }, deletedAt: null, NOT: { email: { in: [...DEMO_SUPERADMIN_EMAILS] } } },
+    select: { id: true, name: true, avatarUrl: true },
   });
   const userById = new Map(users.map((u) => [u.id, u]));
+  const visibleTotals = totals.filter((row) => userById.has(row.userId));
 
   const companies = await prisma.company.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } });
   const projects = await prisma.project.findMany({
@@ -271,33 +272,18 @@ export default async function LeaderboardPage({
           </p>
         </div>
         <ol className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {totals.length ? (
-            totals.map((row, i) => {
+          {visibleTotals.length ? (
+            visibleTotals.map((row, i) => {
               const userRow = userById.get(row.userId);
               const nm = userRow?.name ?? row.userId;
-              const isDeleted = Boolean(userRow?.deletedAt);
               return (
-                <li
-                  key={row.userId}
-                  className={`flex items-center gap-4 px-5 py-4 ${isDeleted ? "opacity-75" : ""}`}
-                >
+                <li key={row.userId} className="flex items-center gap-4 px-5 py-4">
                   <div className="flex w-10 shrink-0 justify-center">{rankBadge(locale, i)}</div>
                   <UserFace name={nm} avatarUrl={userRow?.avatarUrl} size={40} className="shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {isDeleted ? (
-                        <span className="truncate font-semibold text-zinc-500 dark:text-zinc-400">{nm}</span>
-                      ) : (
-                        <Link href={`/staff/${row.userId}`} className="truncate font-semibold text-zinc-900 hover:underline dark:text-zinc-50">
-                          {nm}
-                        </Link>
-                      )}
-                      {isDeleted ? (
-                        <Badge tone="warn" className="shrink-0">
-                          {t(locale, "lbDeletedStaff")}
-                        </Badge>
-                      ) : null}
-                    </div>
+                    <Link href={`/staff/${row.userId}`} className="truncate font-semibold text-zinc-900 hover:underline dark:text-zinc-50">
+                      {nm}
+                    </Link>
                   </div>
                   <div className="shrink-0 text-right">
                     <p className={`text-xl font-bold tabular-nums ${CAT_SCORE[cat]}`}>{row.total}</p>

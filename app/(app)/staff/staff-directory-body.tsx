@@ -13,6 +13,7 @@ import { StaffDirectoryRows } from "@/components/staff-directory-rows";
 import { StaffDirectoryFilters } from "@/components/staff-directory-filters";
 import { RoutePrefetcher } from "@/components/route-prefetcher";
 import { ensureRbacCatalog } from "@/lib/rbac-sync";
+import { DEMO_SUPERADMIN_EMAILS } from "@/lib/demo-superadmins";
 
 const ACTIVE_PROJECT_STATUSES = ["PLANNING", "ACTIVE", "AT_RISK", "ON_HOLD"] as const;
 
@@ -75,7 +76,11 @@ export async function StaffDirectoryBody({
   const companyFilter = companyFilterRaw && companies.some((company) => company.id === companyFilterRaw) ? companyFilterRaw : "";
   const visibleCompanyIds = companies.map((company) => company.id);
 
-  const whereClauses: Prisma.UserWhereInput[] = [{ deletedAt: null }, staffVisibilityWhere(user)];
+  const whereClauses: Prisma.UserWhereInput[] = [
+    { deletedAt: null },
+    staffVisibilityWhere(user),
+    { NOT: { email: { in: [...DEMO_SUPERADMIN_EMAILS] } } },
+  ];
   if (q) {
       whereClauses.push({
         OR: [
@@ -114,7 +119,9 @@ export async function StaffDirectoryBody({
   else if (activeFilter === "inactive") whereClauses.push({ active: false });
 
   const where: Prisma.UserWhereInput = whereClauses.length === 1 ? whereClauses[0]! : { AND: whereClauses };
-  const totalAllPromise = prisma.user.count({ where: { deletedAt: null, ...staffVisibilityWhere(user) } });
+  const totalAllPromise = prisma.user.count({
+    where: { deletedAt: null, ...staffVisibilityWhere(user), NOT: { email: { in: [...DEMO_SUPERADMIN_EMAILS] } } },
+  });
 
   const loadStaffAndDepartments = async () => {
     try {
