@@ -6,6 +6,7 @@ import { getCompanionManifest } from "@/lib/companion-manifest";
 import { companionPepTalkForDay } from "@/lib/companion-pep-talks";
 import { getLocale } from "@/lib/locale";
 import { t, tRecognitionTagCategory } from "@/lib/messages";
+import { DEMO_SUPERADMIN_EMAILS } from "@/lib/demo-superadmins";
 
 type HomeRecognition = {
   id: string;
@@ -46,8 +47,8 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
       where: {
         toUserId: user.id,
         createdAt: { gte: recentWindowStart },
-        toUser: { deletedAt: null, isSuperAdmin: false },
-        OR: [{ fromUserId: null }, { fromUser: { deletedAt: null, isSuperAdmin: false } }],
+        toUser: { deletedAt: null, NOT: { email: { in: [...DEMO_SUPERADMIN_EMAILS] } } },
+        OR: [{ fromUserId: null }, { fromUser: { deletedAt: null, NOT: { email: { in: [...DEMO_SUPERADMIN_EMAILS] } } } }],
       },
       select: recognitionSelect,
       orderBy: { createdAt: "desc" },
@@ -59,8 +60,8 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
         prisma.recognitionEvent.findFirst({
           where: {
             project: { companyId },
-            toUser: { deletedAt: null, isSuperAdmin: false },
-            OR: [{ fromUserId: null }, { fromUser: { deletedAt: null, isSuperAdmin: false } }],
+            toUser: { deletedAt: null, NOT: { email: { in: [...DEMO_SUPERADMIN_EMAILS] } } },
+            OR: [{ fromUserId: null }, { fromUser: { deletedAt: null, NOT: { email: { in: [...DEMO_SUPERADMIN_EMAILS] } } } }],
           },
           select: recognitionSelect,
           orderBy: { createdAt: "desc" },
@@ -85,8 +86,8 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
     pinned?: boolean;
     countLink?: string;
   }) {
-    const recipientName = recognition.toUser.name;
     const categoryLabel = tRecognitionTagCategory(locale, recognition.tagCategory);
+    const categoryLine = locale === "zh" ? categoryLabel : `for ${categoryLabel.toLowerCase()}`;
     return (
       <div
         className={[
@@ -97,35 +98,25 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
         ].join(" ")}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="min-w-0 text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                {recipientName} received a recognition! ✨
-              </div>
-              {countLink && pinnedRecognitionCount > 1 ? (
-                <Link
-                  href={countLink}
-                  className="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 text-xs font-semibold text-zinc-600 transition hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:text-zinc-50"
-                >
-                  x{Math.min(pinnedRecognitionCount, 4)}
-                </Link>
-              ) : null}
-              {pinned ? (
-                <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-rose-500" aria-hidden>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 21s-7-4.35-9.5-8.71C.76 8.88 2.13 5.5 5.55 4.4c1.86-.6 3.92-.07 5.36 1.37l1.09 1.09 1.09-1.09c1.44-1.44 3.5-1.97 5.36-1.37 3.42 1.1 4.79 4.48 3.05 7.89C19 16.65 12 21 12 21z" />
-                  </svg>
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              {locale === "zh" ? categoryLabel : `for ${categoryLabel.toLowerCase()}`}
-            </div>
+          <div className="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">{categoryLine}</div>
+          <div className="flex shrink-0 items-center gap-2">
+            {countLink && pinnedRecognitionCount > 1 ? (
+              <Link
+                href={countLink}
+                className="rounded-full border border-zinc-200 px-2 py-0.5 text-xs font-semibold text-zinc-600 transition hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:text-zinc-50"
+              >
+                x{Math.min(pinnedRecognitionCount, 4)}
+              </Link>
+            ) : null}
+            {pinned ? (
+              <span className="inline-flex h-4 w-4 items-center justify-center text-rose-500" aria-hidden>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 21s-7-4.35-9.5-8.71C.76 8.88 2.13 5.5 5.55 4.4c1.86-.6 3.92-.07 5.36 1.37l1.09 1.09 1.09-1.09c1.44-1.44 3.5-1.97 5.36-1.37 3.42 1.1 4.79 4.48 3.05 7.89C19 16.65 12 21 12 21z" />
+                </svg>
+              </span>
+            ) : null}
           </div>
         </div>
-        <p className="mt-2 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-          {recognition.message ?? t(locale, "homeRecognizedDefault")}
-        </p>
         <div className="mt-2 text-sm text-zinc-400">
           {t(locale, "homeFrom")} {recognition.fromUser?.name ?? "—"}
         </div>

@@ -16,7 +16,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <div className="flex justify-center pb-5">
             <BrandMark />
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-4 pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-2">
             <Link href="/home" className="font-display text-xl font-semibold tracking-[-0.02em] text-zinc-900 dark:text-zinc-50 sm:text-2xl">
               Internal Management
             </Link>
@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               </Suspense>
             </div>
           </div>
-          <div className="pt-4">
+          <div className="pt-2">
             <Suspense fallback={<AppShellNavSkeleton />}>
               <AppShellPrimaryNav locale={locale} />
             </Suspense>
