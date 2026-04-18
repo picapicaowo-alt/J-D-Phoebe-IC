@@ -1030,7 +1030,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         </div>
       </div>
 
-      <div className="grid items-stretch gap-6 lg:grid-cols-[340px,minmax(0,1fr)]">
+      <div className="grid items-stretch gap-6 lg:h-[calc(100dvh-13rem)] lg:grid-cols-[340px,minmax(0,1fr)]">
         <Card className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-[hsl(var(--border))] p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--border))] px-5 py-4">
             <CardTitle className="font-display text-lg">{copy.threads}</CardTitle>
@@ -1114,7 +1114,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
               {copy.noConversation}
             </div>
           ) : (
-            <div className="flex min-h-[640px] flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[hsl(var(--border))] px-6 py-5">
                 <div className="flex items-start gap-3">
                   <UserFace name={selectedThread.name} avatarUrl={selectedThread.avatarUrl} size={44} />
