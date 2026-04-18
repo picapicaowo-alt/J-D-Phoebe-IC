@@ -259,7 +259,7 @@ async function loadStaffDetailTarget(actor: AccessUser, userId: string) {
             id: true,
             companyId: true,
             roleDefinitionId: true,
-            company: { select: { id: true, name: true, orgGroupId: true } },
+            company: { select: { id: true, name: true, orgGroupId: true, companyColor: true } },
             roleDefinition: { select: { id: true, key: true, displayName: true } },
           },
         },
