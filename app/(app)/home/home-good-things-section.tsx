@@ -5,22 +5,13 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { getCompanionManifest } from "@/lib/companion-manifest";
 import { companionPepTalkForDay } from "@/lib/companion-pep-talks";
 import { getLocale } from "@/lib/locale";
-import { displayRecognitionSecondary } from "@/lib/recognition-catalog";
 import { t, tRecognitionTagCategory } from "@/lib/messages";
 
 type HomeRecognition = {
   id: string;
   createdAt: Date;
   tagCategory: Parameters<typeof tRecognitionTagCategory>[1];
-  secondaryLabelKey: string;
-  tagLabel: string | null;
   message: string | null;
-  project: {
-    name: string;
-    company: {
-      name: string;
-    };
-  } | null;
   fromUser: {
     name: string;
   } | null;
@@ -37,19 +28,7 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
     id: true,
     createdAt: true,
     tagCategory: true,
-    secondaryLabelKey: true,
-    tagLabel: true,
     message: true,
-    project: {
-      select: {
-        name: true,
-        company: {
-          select: {
-            name: true,
-          },
-        },
-      },
-    },
     fromUser: {
       select: {
         name: true,
@@ -67,8 +46,8 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
       where: {
         toUserId: user.id,
         createdAt: { gte: recentWindowStart },
-        toUser: { deletedAt: null },
-        OR: [{ fromUserId: null }, { fromUser: { deletedAt: null } }],
+        toUser: { deletedAt: null, isSuperAdmin: false },
+        OR: [{ fromUserId: null }, { fromUser: { deletedAt: null, isSuperAdmin: false } }],
       },
       select: recognitionSelect,
       orderBy: { createdAt: "desc" },
@@ -80,8 +59,8 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
         prisma.recognitionEvent.findFirst({
           where: {
             project: { companyId },
-            toUser: { deletedAt: null },
-            OR: [{ fromUserId: null }, { fromUser: { deletedAt: null } }],
+            toUser: { deletedAt: null, isSuperAdmin: false },
+            OR: [{ fromUserId: null }, { fromUser: { deletedAt: null, isSuperAdmin: false } }],
           },
           select: recognitionSelect,
           orderBy: { createdAt: "desc" },
@@ -107,11 +86,7 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
     countLink?: string;
   }) {
     const recipientName = recognition.toUser.name;
-    const companyName = recognition.project?.company?.name ?? t(locale, "commonCompany");
-    const projectName = recognition.project?.name ?? t(locale, "kbGeneralProject");
-    const recognitionLabel = recognition.secondaryLabelKey
-      ? displayRecognitionSecondary(recognition.tagCategory, recognition.secondaryLabelKey, locale)
-      : (recognition.tagLabel ?? "");
+    const categoryLabel = tRecognitionTagCategory(locale, recognition.tagCategory);
     return (
       <div
         className={[
@@ -124,7 +99,7 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="min-w-0 text-lg font-medium text-zinc-900 dark:text-zinc-100">
+              <div className="min-w-0 text-sm font-medium text-zinc-900 dark:text-zinc-100">
                 {recipientName} received a recognition! ✨
               </div>
               {countLink && pinnedRecognitionCount > 1 ? (
@@ -136,24 +111,17 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
                 </Link>
               ) : null}
               {pinned ? (
-                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-rose-500" aria-hidden>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-rose-500" aria-hidden>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 21s-7-4.35-9.5-8.71C.76 8.88 2.13 5.5 5.55 4.4c1.86-.6 3.92-.07 5.36 1.37l1.09 1.09 1.09-1.09c1.44-1.44 3.5-1.97 5.36-1.37 3.42 1.1 4.79 4.48 3.05 7.89C19 16.65 12 21 12 21z" />
                   </svg>
                 </span>
               ) : null}
             </div>
-            <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              {t(locale, "commonCompany")} · {companyName} · {t(locale, "commonProject")} · {projectName}
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              {locale === "zh" ? categoryLabel : `for ${categoryLabel.toLowerCase()}`}
             </div>
           </div>
-        </div>
-        <div className="mt-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
-          {countLink ? "for " : ""}
-          {recognitionLabel}
-        </div>
-        <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          {tRecognitionTagCategory(locale, recognition.tagCategory)}
         </div>
         <p className="mt-2 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
           {recognition.message ?? t(locale, "homeRecognizedDefault")}

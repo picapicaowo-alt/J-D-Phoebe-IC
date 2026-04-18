@@ -228,6 +228,20 @@ export async function updateCompanyAction(formData: FormData) {
   revalidatePath("/group");
 }
 
+export async function updateCompanyColorAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  await assertPermission(user, "company.update");
+  const companyId = requireString(formData, "companyId");
+  await requireCompanyForUpdate(user, companyId);
+  const companyColor = normalizeCompanyColor(formData.get("companyColor"));
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data: { companyColor },
+  });
+  revalidateCompanyPaths(companyId);
+}
+
 export async function clearCompanyColorAction(formData: FormData) {
   const user = (await requireUser()) as AccessUser;
   await assertPermission(user, "company.update");
