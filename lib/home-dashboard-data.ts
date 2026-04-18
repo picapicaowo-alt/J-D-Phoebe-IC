@@ -2,6 +2,7 @@ import { cache } from "react";
 import type { Priority, ProjectStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canViewProject, projectVisibilityWhere, type AccessUser } from "@/lib/access";
+import { withDecodedOperationalLabels } from "@/lib/workflow-node-operations";
 
 /** Single projects fetch per request; shared by priorities, execution counts, and snapshot drilldowns. */
 export const getHomeDashboardVisibleProjects = cache(async function getHomeDashboardVisibleProjects(user: AccessUser) {
@@ -34,7 +35,7 @@ export const getHomeDashboardVisibleWorkflowNodes = cache(async function getHome
   const { visibleIds } = await getHomeDashboardVisibleProjects(user);
   if (!visibleIds.length) return [];
 
-  return prisma.workflowNode.findMany({
+  const rows = await prisma.workflowNode.findMany({
     where: {
       deletedAt: null,
       projectId: { in: visibleIds },
@@ -62,6 +63,7 @@ export const getHomeDashboardVisibleWorkflowNodes = cache(async function getHome
     },
     orderBy: [{ updatedAt: "desc" }],
   });
+  return rows.map(withDecodedOperationalLabels);
 });
 
 export const getHomeDashboardVisibleWorkflowNodeSignals = cache(async function getHomeDashboardVisibleWorkflowNodeSignals(
@@ -70,7 +72,7 @@ export const getHomeDashboardVisibleWorkflowNodeSignals = cache(async function g
   const { visibleIds } = await getHomeDashboardVisibleProjects(user);
   if (!visibleIds.length) return [];
 
-  return prisma.workflowNode.findMany({
+  const rows = await prisma.workflowNode.findMany({
     where: {
       deletedAt: null,
       projectId: { in: visibleIds },
@@ -86,6 +88,7 @@ export const getHomeDashboardVisibleWorkflowNodeSignals = cache(async function g
     },
     orderBy: [{ updatedAt: "desc" }],
   });
+  return rows.map(withDecodedOperationalLabels);
 });
 
 export function projectPriorityScore(p: { deadline: Date | null; priority: Priority; status: ProjectStatus }, nowMs: number): number {

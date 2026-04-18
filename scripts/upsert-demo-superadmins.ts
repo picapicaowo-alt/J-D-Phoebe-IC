@@ -48,10 +48,6 @@ function loadEnv() {
     const overridePath = path.isAbsolute(overrideName) ? overrideName : path.join(root, overrideName);
     loadEnvFile(overridePath, true);
   }
-
-  if (!process.env.DIRECT_URL && process.env.DATABASE_URL) {
-    process.env.DIRECT_URL = process.env.DATABASE_URL;
-  }
 }
 
 async function main() {

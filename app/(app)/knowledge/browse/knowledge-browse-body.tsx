@@ -188,15 +188,15 @@ export async function KnowledgeBrowseBody({
     ...(projectFilter ? { projectId: projectFilter } : {}),
     ...(companyFilter ? { companyId: companyFilter } : {}),
     ...(authorFilter ? { authorId: authorFilter } : {}),
-    ...(tagFilter ? { tags: { contains: tagFilter, mode: "insensitive" as const } } : {}),
+    ...(tagFilter ? { tags: { contains: tagFilter } } : {}),
     ...(q
       ? {
           OR: [
-            { title: { contains: q, mode: "insensitive" as const } },
-            { titleEn: { contains: q, mode: "insensitive" as const } },
-            { titleZh: { contains: q, mode: "insensitive" as const } },
-            { summary: { contains: q, mode: "insensitive" as const } },
-            { content: { contains: q, mode: "insensitive" as const } },
+            { title: { contains: q } },
+            { titleEn: { contains: q } },
+            { titleZh: { contains: q } },
+            { summary: { contains: q } },
+            { content: { contains: q } },
           ],
         }
       : {}),

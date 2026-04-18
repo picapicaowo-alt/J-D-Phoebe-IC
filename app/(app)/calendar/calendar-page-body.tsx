@@ -10,6 +10,7 @@ import { CalendarSourceKind } from "@prisma/client";
 import { CalendarDashboardClient } from "@/components/calendar-dashboard-client";
 import { calendarHref, parseSlotDay } from "@/lib/calendar-nav";
 import { ensureDefaultCalendarLabels } from "@/lib/calendar-labels";
+import { decodeStringArray } from "@/lib/json-arrays";
 import {
   buildDatetimeLocalValue,
   getMonthRangeInTimeZone,
@@ -263,7 +264,7 @@ export async function CalendarPageBody({
           projectId: bootstrapEventRow.projectId ?? null,
           labelId: bootstrapEventRow.labelId ?? null,
           attendeeIds: bootstrapEventRow.attendees.map((a) => a.userId),
-          externalAttendeeEmails: bootstrapEventRow.externalAttendeeEmails ?? [],
+          externalAttendeeEmails: decodeStringArray(bootstrapEventRow.externalAttendeeEmails),
         }
       : null;
 
@@ -317,7 +318,7 @@ export async function CalendarPageBody({
     label: eventLabel(ev.label, !!ev.projectId),
     href: null,
     attendeeIds: ev.attendees.map((a) => a.userId),
-    externalAttendeeEmails: ev.externalAttendeeEmails ?? [],
+    externalAttendeeEmails: decodeStringArray(ev.externalAttendeeEmails),
   }));
   const monthProjectDeadlineEvents = monthProjectDeadlines
     .filter((p) => p.deadline)
@@ -397,7 +398,7 @@ export async function CalendarPageBody({
     sourceKind: ev.sourceKind,
     meetUrl: ev.meetUrl,
     project: ev.project ? { id: ev.project.id, name: ev.project.name } : null,
-    externalCount: ev.externalAttendeeEmails?.length ?? 0,
+    externalCount: decodeStringArray(ev.externalAttendeeEmails).length,
     label: eventLabel(ev.label, !!ev.projectId),
     href: null,
     isGenerated: false,
@@ -413,7 +414,7 @@ export async function CalendarPageBody({
             projectId: ev.projectId ?? null,
             labelId: ev.labelId ?? null,
             attendeeIds: ev.attendees.map((a) => a.userId),
-            externalAttendeeEmails: ev.externalAttendeeEmails ?? [],
+            externalAttendeeEmails: decodeStringArray(ev.externalAttendeeEmails),
           }
         : null,
   }));

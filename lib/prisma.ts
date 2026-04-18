@@ -7,7 +7,7 @@ const globalForPrisma = globalThis as unknown as {
 
 /**
  * Single PrismaClient per Node/Vercel instance (avoids connection storms in serverless).
- * Point `DATABASE_URL` at Supabase Transaction pooler (:6543) with `?pgbouncer=true`; use `DIRECT_URL` for migrations.
+ * `DATABASE_URL` must be a MySQL DSN (mysql://user:pass@host:3306/db).
  */
 const hasCompatibleClient = globalForPrisma.prisma && globalForPrisma.prismaCtor === PrismaClient;
 if (globalForPrisma.prisma && !hasCompatibleClient) {
