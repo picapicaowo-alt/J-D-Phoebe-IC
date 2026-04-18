@@ -96,6 +96,23 @@ function copyFor(locale: "en" | "zh") {
         mutedLabel: "已静音",
         mute: "静音通知",
         unmute: "恢复通知",
+        select: "多选",
+        selectionCount: (count: number) => `已选 ${count} 条`,
+        selectionEmpty: "选择要操作的消息",
+        deleteSelection: "删除",
+        forwardSelection: "转发",
+        cancelSelection: "取消多选",
+        deleting: "删除中…",
+        deleteSelectionConfirm: (count: number) => `确认删除选中的 ${count} 条消息吗？此操作不可撤销。`,
+        deleteSelectionError: "删除失败，请稍后再试。",
+        forwardDialogTitle: "转发到…",
+        forwardDialogHint: "选择要转发到的私聊或群聊。",
+        forwardConfirm: "转发",
+        forwarding: "转发中…",
+        forwardError: "转发失败，请稍后再试。",
+        forwardNoTargets: "暂无可转发的聊天。",
+        forwardSearchPlaceholder: "搜索聊天…",
+        forwardSelectTarget: "请选择一个聊天。",
       }
     : {
         title: "Messaging",
@@ -156,6 +173,24 @@ function copyFor(locale: "en" | "zh") {
         mutedLabel: "Muted",
         mute: "Mute notifications",
         unmute: "Unmute notifications",
+        select: "Select",
+        selectionCount: (count: number) => `${count} selected`,
+        selectionEmpty: "Tap a message to select",
+        deleteSelection: "Delete",
+        forwardSelection: "Forward",
+        cancelSelection: "Cancel",
+        deleting: "Deleting…",
+        deleteSelectionConfirm: (count: number) =>
+          `Delete the ${count} selected message${count === 1 ? "" : "s"}? This cannot be undone.`,
+        deleteSelectionError: "Could not delete the messages. Please try again.",
+        forwardDialogTitle: "Forward to…",
+        forwardDialogHint: "Choose the direct or group chat you want to forward to.",
+        forwardConfirm: "Forward",
+        forwarding: "Forwarding…",
+        forwardError: "Could not forward the messages. Please try again.",
+        forwardNoTargets: "No chats available to forward to.",
+        forwardSearchPlaceholder: "Search chats…",
+        forwardSelectTarget: "Please pick a chat first.",
       };
 }
 
@@ -329,6 +364,13 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
   const [memberListQuery, setMemberListQuery] = useState("");
   const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(() => new Set());
+  const [bulkActionBusy, setBulkActionBusy] = useState(false);
+  const [bulkActionError, setBulkActionError] = useState<string | null>(null);
+  const [forwardTargetKey, setForwardTargetKey] = useState<string | null>(null);
+  const [forwardSearchQuery, setForwardSearchQuery] = useState("");
+  const forwardDialogRef = useRef<HTMLDialogElement>(null);
   const threadsRef = useRef(initialData.threads);
   const selectedThreadRef = useRef<string | null>(initialData.selectedThreadKey);
   const groupOptionsLoadedRef = useRef(initialData.groupOptionsLoaded);
@@ -549,6 +591,153 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
     }
   }, [selectedThreadKey, threads]);
 
+  useEffect(() => {
+    setSelectionMode(false);
+    setSelectedMessageIds(new Set());
+    setBulkActionError(null);
+  }, [selectedThreadKey]);
+
+  function toggleMessageSelection(messageId: string) {
+    if (!messageId) return;
+    setSelectedMessageIds((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }
+
+  function enterSelectionMode() {
+    setSelectionMode(true);
+    setSelectedMessageIds(new Set());
+    setBulkActionError(null);
+  }
+
+  function exitSelectionMode() {
+    setSelectionMode(false);
+    setSelectedMessageIds(new Set());
+    setBulkActionError(null);
+  }
+
+  async function handleBulkDelete() {
+    if (!selectedThreadKey || selectedMessageIds.size === 0 || bulkActionBusy) return;
+    const ids = [...selectedMessageIds];
+    if (!window.confirm(copy.deleteSelectionConfirm(ids.length))) return;
+
+    const threadKey = selectedThreadKey;
+    setBulkActionBusy(true);
+    setBulkActionError(null);
+    try {
+      const response = await fetch("/api/messages/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadKey, messageIds: ids }),
+      });
+      const data = await readJson<{ ok?: boolean; deletedIds?: string[]; error?: string }>(response);
+      if (!response.ok || !data?.ok) {
+        setBulkActionError(data?.error ?? copy.deleteSelectionError);
+        return;
+      }
+      const deletedIds = new Set(data.deletedIds ?? ids);
+      updateThreadMessages(threadKey, (current) => current.filter((message) => !deletedIds.has(message.id)));
+      setSelectedMessageIds(new Set());
+      setSelectionMode(false);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("messages:refresh", { detail: { threadKey } }));
+      }
+    } catch {
+      setBulkActionError(copy.deleteSelectionError);
+    } finally {
+      setBulkActionBusy(false);
+    }
+  }
+
+  function openForwardDialog() {
+    if (!selectedThreadKey || selectedMessageIds.size === 0) return;
+    setForwardTargetKey(null);
+    setForwardSearchQuery("");
+    setBulkActionError(null);
+    if (!forwardDialogRef.current?.open) {
+      forwardDialogRef.current?.showModal();
+    }
+  }
+
+  async function handleForwardSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedThreadKey || selectedMessageIds.size === 0 || bulkActionBusy) return;
+    if (!forwardTargetKey) {
+      setBulkActionError(copy.forwardSelectTarget);
+      return;
+    }
+
+    const sourceThreadKey = selectedThreadKey;
+    const targetThreadKey = forwardTargetKey;
+    const ids = [...selectedMessageIds];
+    setBulkActionBusy(true);
+    setBulkActionError(null);
+
+    try {
+      const response = await fetch("/api/messages/forward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceThreadKey, targetThreadKey, messageIds: ids }),
+      });
+      const data = await readJson<{ ok?: boolean; targetThreadKey?: string; messages?: ChatMessage[]; error?: string }>(
+        response,
+      );
+      if (!response.ok || !data?.ok) {
+        setBulkActionError(data?.error ?? copy.forwardError);
+        return;
+      }
+
+      const forwardedMessages = data.messages ?? [];
+      const cached = threadDataCacheRef.current.get(targetThreadKey);
+      if (cached && forwardedMessages.length > 0) {
+        let nextMessages = cached.messages;
+        for (const message of forwardedMessages) {
+          nextMessages = insertMessage(nextMessages, message);
+        }
+        threadDataCacheRef.current.set(targetThreadKey, { ...cached, messages: nextMessages });
+        if (selectedThreadRef.current === targetThreadKey) {
+          setMessages(nextMessages);
+        }
+      }
+
+      if (forwardedMessages.length > 0) {
+        const last = forwardedMessages[forwardedMessages.length - 1]!;
+        setThreads((current) =>
+          sortThreads(
+            current.map((thread) =>
+              thread.key === targetThreadKey
+                ? {
+                    ...thread,
+                    latestMessageAt: last.createdAt,
+                    latestMessageText: last.body,
+                    latestAttachmentCount: last.attachments.length,
+                    latestMessageFromSelf: true,
+                  }
+                : thread,
+            ),
+          ),
+        );
+      }
+
+      forwardDialogRef.current?.close();
+      setSelectedMessageIds(new Set());
+      setSelectionMode(false);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("messages:refresh", { detail: { threadKey: sourceThreadKey } }));
+      }
+    } catch {
+      setBulkActionError(copy.forwardError);
+    } finally {
+      setBulkActionBusy(false);
+    }
+  }
+
   const applyIncomingMessage = useEffectEvent((incoming: ChatMessage) => {
     const cachedThread = threadDataCacheRef.current.get(incoming.threadKey);
     if (cachedThread) {
@@ -590,6 +779,15 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
       notifyUnreadChanged();
     }
   });
+
+  useEffect(() => {
+    function onRefresh(event: Event) {
+      const detail = (event as CustomEvent<{ threadKey?: string | null }>).detail;
+      void refreshPage(detail?.threadKey ?? null, { silent: true });
+    }
+    window.addEventListener("messages:refresh", onRefresh as EventListener);
+    return () => window.removeEventListener("messages:refresh", onRefresh as EventListener);
+  }, []);
 
   useEffect(() => {
     const source = new EventSource("/api/messages/stream");
@@ -1148,27 +1346,62 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {selectedThread.type === "group" ? (
-                    <Button type="button" variant="secondary" onClick={openMemberListDialog}>
-                      <span className="inline-flex items-center gap-2">
-                        <svg viewBox="0 0 20 20" className="h-4 w-4 fill-current" aria-hidden="true">
-                          <path d="M6.25 9a2.75 2.75 0 1 0 0-5.5A2.75 2.75 0 0 0 6.25 9Zm7.5 0a2.75 2.75 0 1 0 0-5.5A2.75 2.75 0 0 0 13.75 9ZM3 15.25c0-1.8 1.46-3.25 3.25-3.25h.5c1.79 0 3.25 1.45 3.25 3.25V17H3v-1.75Zm7 1.75v-1.75c0-.84-.22-1.64-.62-2.33.53-.6 1.31-.92 2.12-.92h.5c1.8 0 3.25 1.45 3.25 3.25V17H10Z" />
-                        </svg>
-                        <span>
-                          {copy.memberList} {selectedThread.memberCount ? `(${selectedThread.memberCount})` : ""}
-                        </span>
+                  {selectionMode ? (
+                    <>
+                      <span className="text-sm font-medium text-[hsl(var(--foreground))]">
+                        {selectedMessageIds.size > 0 ? copy.selectionCount(selectedMessageIds.size) : copy.selectionEmpty}
                       </span>
-                    </Button>
-                  ) : null}
-                  <Button type="button" variant="secondary" onClick={() => void handleToggleMute(!selectedThread.isMuted)}>
-                    {selectedThread.isMuted ? copy.unmute : copy.mute}
-                  </Button>
-                  {selectedThread.type === "group" && selectedThread.canManage ? (
-                    <Button type="button" variant="secondary" onClick={openManageGroupDialog}>
-                      {copy.manageGroup}
-                    </Button>
-                  ) : null}
-                  {loadingConversation ? <p className="text-sm text-[hsl(var(--muted))]">{copy.loading}</p> : null}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={openForwardDialog}
+                        disabled={bulkActionBusy || selectedMessageIds.size === 0}
+                      >
+                        {copy.forwardSelection}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="text-rose-600 hover:text-rose-700"
+                        onClick={() => void handleBulkDelete()}
+                        disabled={bulkActionBusy || selectedMessageIds.size === 0}
+                      >
+                        {bulkActionBusy ? copy.deleting : copy.deleteSelection}
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={exitSelectionMode} disabled={bulkActionBusy}>
+                        {copy.cancelSelection}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      {selectedThread.type === "group" ? (
+                        <Button type="button" variant="secondary" onClick={openMemberListDialog}>
+                          <span className="inline-flex items-center gap-2">
+                            <svg viewBox="0 0 20 20" className="h-4 w-4 fill-current" aria-hidden="true">
+                              <path d="M6.25 9a2.75 2.75 0 1 0 0-5.5A2.75 2.75 0 0 0 6.25 9Zm7.5 0a2.75 2.75 0 1 0 0-5.5A2.75 2.75 0 0 0 13.75 9ZM3 15.25c0-1.8 1.46-3.25 3.25-3.25h.5c1.79 0 3.25 1.45 3.25 3.25V17H3v-1.75Zm7 1.75v-1.75c0-.84-.22-1.64-.62-2.33.53-.6 1.31-.92 2.12-.92h.5c1.8 0 3.25 1.45 3.25 3.25V17H10Z" />
+                            </svg>
+                            <span>
+                              {copy.memberList} {selectedThread.memberCount ? `(${selectedThread.memberCount})` : ""}
+                            </span>
+                          </span>
+                        </Button>
+                      ) : null}
+                      <Button type="button" variant="secondary" onClick={() => void handleToggleMute(!selectedThread.isMuted)}>
+                        {selectedThread.isMuted ? copy.unmute : copy.mute}
+                      </Button>
+                      {messages.length > 0 ? (
+                        <Button type="button" variant="secondary" onClick={enterSelectionMode}>
+                          {copy.select}
+                        </Button>
+                      ) : null}
+                      {selectedThread.type === "group" && selectedThread.canManage ? (
+                        <Button type="button" variant="secondary" onClick={openManageGroupDialog}>
+                          {copy.manageGroup}
+                        </Button>
+                      ) : null}
+                      {loadingConversation ? <p className="text-sm text-[hsl(var(--muted))]">{copy.loading}</p> : null}
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1178,8 +1411,42 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                     {copy.noMessages}
                   </div>
                 ) : (
-                  messages.map((message) => (
-                    <div key={message.id} className={cn("flex gap-3", message.isOwn ? "justify-end" : "justify-start")}>
+                  messages.map((message) => {
+                    const isSelectable = selectionMode && !message.pending;
+                    const isSelected = selectionMode && selectedMessageIds.has(message.id);
+                    const handleRowClick = (event: React.MouseEvent<HTMLDivElement>) => {
+                      if (!isSelectable) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      toggleMessageSelection(message.id);
+                    };
+                    return (
+                    <div
+                      key={message.id}
+                      className={cn(
+                        "flex items-start gap-3 rounded-[24px] transition",
+                        message.isOwn ? "justify-end" : "justify-start",
+                        isSelectable ? "cursor-pointer px-2 py-2" : "",
+                        isSelected ? "bg-[hsl(var(--primary))]/10" : isSelectable ? "hover:bg-black/[0.03] dark:hover:bg-white/[0.04]" : "",
+                      )}
+                      onClick={handleRowClick}
+                    >
+                      {selectionMode ? (
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "mt-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold",
+                            isSelected
+                              ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-white"
+                              : message.pending
+                                ? "border-[hsl(var(--border))] text-transparent opacity-40"
+                                : "border-[hsl(var(--border))] text-transparent",
+                            message.isOwn ? "order-last" : "",
+                          )}
+                        >
+                          ✓
+                        </span>
+                      ) : null}
                       {!message.isOwn ? <UserFace name={message.senderName} avatarUrl={message.senderAvatarUrl} size={36} className="mt-1" /> : null}
                       <div className={cn("max-w-[min(100%,46rem)]", message.isOwn ? "items-end" : "items-start")}>
                       {!message.isOwn && selectedThread.type === "group" ? (
@@ -1267,8 +1534,12 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
                         </p>
                       </div>
                     </div>
-                  ))
+                    );
+                  })
                 )}
+                {bulkActionError ? (
+                  <p className="text-sm text-[hsl(var(--error))]">{bulkActionError}</p>
+                ) : null}
               </div>
 
               <div className="border-t border-[hsl(var(--border))] px-5 py-4">
@@ -1681,6 +1952,120 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
             )}
           </div>
         </div>
+      </dialog>
+
+      <dialog
+        ref={forwardDialogRef}
+        className="app-modal-dialog z-50 w-[min(100vw-2rem,480px)] overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+        onClick={(event) => {
+          if (event.target === event.currentTarget && !bulkActionBusy) forwardDialogRef.current?.close();
+        }}
+      >
+        <form onSubmit={handleForwardSubmit} className="flex max-h-[min(calc(100dvh-1rem),640px)] flex-col">
+          <div className="flex items-start justify-between gap-4 border-b border-[hsl(var(--border))] px-5 py-4">
+            <div>
+              <h3 className="font-display text-xl font-semibold text-[hsl(var(--foreground))]">{copy.forwardDialogTitle}</h3>
+              <p className="mt-1 text-sm text-[hsl(var(--muted))]">{copy.forwardDialogHint}</p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                if (bulkActionBusy) return;
+                forwardDialogRef.current?.close();
+              }}
+            >
+              {copy.close}
+            </Button>
+          </div>
+
+          <div className="border-b border-[hsl(var(--border))] px-5 py-4">
+            <Input
+              value={forwardSearchQuery}
+              onChange={(event) => setForwardSearchQuery(event.target.value)}
+              placeholder={copy.forwardSearchPlaceholder}
+            />
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+            {(() => {
+              const normalized = forwardSearchQuery.trim().toLowerCase();
+              const available = threads.filter((thread) => thread.key !== selectedThreadKey);
+              const matching = normalized
+                ? available.filter((thread) =>
+                    [thread.name, thread.subtitle, thread.companyName]
+                      .filter(Boolean)
+                      .some((value) => String(value).toLowerCase().includes(normalized)),
+                  )
+                : available;
+
+              if (matching.length === 0) {
+                return (
+                  <div className="rounded-[18px] border border-dashed border-[hsl(var(--border))] px-4 py-5 text-sm text-[hsl(var(--muted))]">
+                    {available.length === 0 ? copy.forwardNoTargets : copy.noSearchResults}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-2">
+                  {matching.map((thread) => {
+                    const subtitle =
+                      thread.type === "group"
+                        ? [thread.companyName, thread.memberCount ? copy.membersCount(thread.memberCount) : null]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : thread.subtitle || copy.titleFallback;
+                    const active = forwardTargetKey === thread.key;
+                    return (
+                      <button
+                        key={thread.key}
+                        type="button"
+                        onClick={() => setForwardTargetKey(thread.key)}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-[18px] border px-3 py-3 text-left transition",
+                          active
+                            ? "border-[hsl(var(--primary))]/45 bg-[hsl(var(--primary))]/10"
+                            : "border-[hsl(var(--border))] hover:border-[hsl(var(--primary))]/30 hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
+                        )}
+                      >
+                        <UserFace name={thread.name} avatarUrl={thread.avatarUrl} size={36} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-semibold text-[hsl(var(--foreground))]">{thread.name}</span>
+                            <Badge tone={thread.type === "group" ? "info" : "neutral"}>
+                              {thread.type === "group" ? copy.groupLabel : copy.directLabel}
+                            </Badge>
+                          </div>
+                          <p className="mt-0.5 truncate text-xs text-[hsl(var(--muted))]">{subtitle}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {bulkActionError ? <p className="mt-4 text-sm text-[hsl(var(--error))]">{bulkActionError}</p> : null}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-[hsl(var(--border))] px-5 py-4">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                if (bulkActionBusy) return;
+                forwardDialogRef.current?.close();
+              }}
+              disabled={bulkActionBusy}
+            >
+              {copy.cancel}
+            </Button>
+            <Button type="submit" disabled={bulkActionBusy || !forwardTargetKey || selectedMessageIds.size === 0}>
+              {bulkActionBusy ? copy.forwarding : copy.forwardConfirm}
+            </Button>
+          </div>
+        </form>
       </dialog>
     </div>
   );

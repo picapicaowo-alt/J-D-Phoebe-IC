@@ -1389,6 +1389,252 @@ export async function deleteMessageGroup(user: AccessUser, groupId: string) {
   return { ok: true, threadKey: makeThreadKey("group", group.id) };
 }
 
+function sanitizeMessageIds(rawIds: unknown): string[] {
+  if (!Array.isArray(rawIds)) return [];
+  const ids = new Set<string>();
+  for (const raw of rawIds) {
+    const clean = String(raw ?? "").trim();
+    if (clean) ids.add(clean);
+  }
+  return [...ids];
+}
+
+export async function deleteThreadMessages(user: AccessUser, threadKey: string, rawMessageIds: unknown) {
+  const parsed = parseThreadKey(threadKey);
+  if (!parsed) throw new Error("Missing thread key.");
+
+  const ids = sanitizeMessageIds(rawMessageIds);
+  if (ids.length === 0) throw new Error("Select at least one message.");
+  if (ids.length > 200) throw new Error("You can only delete up to 200 messages at a time.");
+
+  if (parsed.type === "direct") {
+    const peer = await findMessagePeer(user, parsed.id);
+    if (!peer) throw new Error("The selected teammate is not available for messaging.");
+
+    const rows = await prisma.directMessage.findMany({
+      where: {
+        id: { in: ids },
+        OR: [
+          { senderId: user.id, recipientId: peer.id },
+          { senderId: peer.id, recipientId: user.id },
+        ],
+      },
+      select: { id: true, senderId: true },
+    });
+
+    if (rows.length !== ids.length) {
+      throw new Error("Some of the selected messages are no longer available.");
+    }
+
+    const disallowed = rows.filter((row) => row.senderId !== user.id && !user.isSuperAdmin);
+    if (disallowed.length > 0) {
+      throw new Error("You do not have permission to delete some of the selected messages.");
+    }
+
+    const result = await prisma.directMessage.deleteMany({
+      where: { id: { in: rows.map((row) => row.id) } },
+    });
+
+    return {
+      ok: true,
+      threadKey: makeThreadKey("direct", peer.id),
+      deletedCount: result.count,
+      deletedIds: rows.map((row) => row.id),
+    };
+  }
+
+  const membership = await findMessageGroupSendContext(user.id, parsed.id);
+  if (!membership && !user.isSuperAdmin) {
+    throw new Error("This group chat is not available.");
+  }
+
+  const rows = await prisma.messageGroupMessage.findMany({
+    where: { id: { in: ids }, groupId: parsed.id },
+    select: { id: true, senderId: true },
+  });
+
+  if (rows.length !== ids.length) {
+    throw new Error("Some of the selected messages are no longer available.");
+  }
+
+  const canManageAll =
+    user.isSuperAdmin ||
+    (membership != null && (membership.isAdmin || membership.group.createdById === user.id));
+
+  if (!canManageAll) {
+    const disallowed = rows.filter((row) => row.senderId !== user.id);
+    if (disallowed.length > 0) {
+      throw new Error("You can only delete your own messages in this group.");
+    }
+  }
+
+  const result = await prisma.messageGroupMessage.deleteMany({
+    where: { id: { in: rows.map((row) => row.id) } },
+  });
+
+  return {
+    ok: true,
+    threadKey: makeThreadKey("group", parsed.id),
+    deletedCount: result.count,
+    deletedIds: rows.map((row) => row.id),
+  };
+}
+
+type ForwardableAttachment = {
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  storageKey: string | null;
+  blobUrl: string | null;
+};
+
+type ForwardableMessage = {
+  id: string;
+  body: string | null;
+  createdAt: Date;
+  attachments: ForwardableAttachment[];
+};
+
+async function loadSourceMessagesForForward(
+  user: AccessUser,
+  sourceThreadKey: string,
+  ids: string[],
+): Promise<ForwardableMessage[]> {
+  const parsed = parseThreadKey(sourceThreadKey);
+  if (!parsed) throw new Error("Missing thread key.");
+
+  if (parsed.type === "direct") {
+    const peer = await findMessagePeer(user, parsed.id);
+    if (!peer) throw new Error("The source chat is not available.");
+    return prisma.directMessage.findMany({
+      where: {
+        id: { in: ids },
+        OR: [
+          { senderId: user.id, recipientId: peer.id },
+          { senderId: peer.id, recipientId: user.id },
+        ],
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        body: true,
+        createdAt: true,
+        attachments: {
+          select: { fileName: true, mimeType: true, sizeBytes: true, storageKey: true, blobUrl: true },
+        },
+      },
+    });
+  }
+
+  const membership = await findMessageGroupMembershipCore(user.id, parsed.id);
+  if (!membership && !user.isSuperAdmin) {
+    throw new Error("The source chat is not available.");
+  }
+
+  return prisma.messageGroupMessage.findMany({
+    where: { id: { in: ids }, groupId: parsed.id },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      body: true,
+      createdAt: true,
+      attachments: {
+        select: { fileName: true, mimeType: true, sizeBytes: true, storageKey: true, blobUrl: true },
+      },
+    },
+  });
+}
+
+export async function forwardThreadMessages(
+  user: AccessUser,
+  sourceThreadKey: string,
+  targetThreadKey: string,
+  rawMessageIds: unknown,
+) {
+  const targetParsed = parseThreadKey(targetThreadKey);
+  if (!targetParsed) throw new Error("Missing target thread.");
+  if (!parseThreadKey(sourceThreadKey)) throw new Error("Missing source thread.");
+
+  const ids = sanitizeMessageIds(rawMessageIds);
+  if (ids.length === 0) throw new Error("Select at least one message to forward.");
+  if (ids.length > 50) throw new Error("You can only forward up to 50 messages at a time.");
+
+  const sources = await loadSourceMessagesForForward(user, sourceThreadKey, ids);
+  if (sources.length !== ids.length) {
+    throw new Error("Some of the selected messages are no longer available.");
+  }
+
+  const nonEmpty = sources.filter((source) => {
+    const text = normalizeText(source.body);
+    return text != null || source.attachments.length > 0;
+  });
+  if (nonEmpty.length === 0) {
+    throw new Error("Nothing to forward from the selected messages.");
+  }
+
+  const created: ChatMessage[] = [];
+
+  if (targetParsed.type === "direct") {
+    const peer = await findMessagePeer(user, targetParsed.id);
+    if (!peer) throw new Error("The target chat is not available.");
+
+    for (const source of nonEmpty) {
+      const row = await prisma.directMessage.create({
+        data: {
+          senderId: user.id,
+          recipientId: peer.id,
+          body: normalizeText(source.body),
+          attachments: source.attachments.length
+            ? {
+                create: source.attachments.map((attachment) => ({
+                  fileName: attachment.fileName,
+                  mimeType: attachment.mimeType,
+                  sizeBytes: attachment.sizeBytes,
+                  storageKey: attachment.storageKey,
+                  blobUrl: attachment.blobUrl,
+                })),
+              }
+            : undefined,
+        },
+        include: directMessageInclude,
+      });
+      created.push(serializeDirectMessage(row, user.id));
+    }
+  } else {
+    const sendContext = await findMessageGroupSendContext(user.id, targetParsed.id);
+    if (!sendContext) throw new Error("The target chat is not available.");
+
+    for (const source of nonEmpty) {
+      const row = await prisma.messageGroupMessage.create({
+        data: {
+          groupId: sendContext.groupId,
+          senderId: user.id,
+          body: normalizeText(source.body),
+          attachments: source.attachments.length
+            ? {
+                create: source.attachments.map((attachment) => ({
+                  fileName: attachment.fileName,
+                  mimeType: attachment.mimeType,
+                  sizeBytes: attachment.sizeBytes,
+                  storageKey: attachment.storageKey,
+                  blobUrl: attachment.blobUrl,
+                })),
+              }
+            : undefined,
+        },
+        include: groupMessageInclude,
+      });
+      created.push(serializeGroupMessage(row, user.id));
+    }
+  }
+
+  return {
+    ok: true,
+    targetThreadKey: makeThreadKey(targetParsed.type, targetParsed.id),
+    messages: created,
+  };
+}
+
 export async function getMessagingUnreadCount(userId: string) {
   const [mutedDirectPreferences, groupRows] = await Promise.all([
     prisma.directMessagePreference.findMany({

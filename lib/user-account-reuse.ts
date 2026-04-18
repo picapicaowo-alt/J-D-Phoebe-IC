@@ -6,6 +6,7 @@ const reusableUserSelect = {
   active: true,
   deletedAt: true,
   isSuperAdmin: true,
+  passwordHash: true,
   _count: {
     select: {
       groupMemberships: true,
@@ -42,7 +43,10 @@ function hasNoAccessAssignments(candidate: ReusableUserCandidate) {
 
 export function canReuseUserAccount(candidate: ReusableUserCandidate | null) {
   if (!candidate || candidate.isSuperAdmin) return false;
-  return Boolean(candidate.deletedAt) || hasNoAccessAssignments(candidate);
+  if (Boolean(candidate.deletedAt)) return true;
+  // Only treat no-membership accounts as reusable if they never completed registration (no password set).
+  // This prevents re-registration of active self-registered users who just haven't been assigned yet.
+  return hasNoAccessAssignments(candidate) && !candidate.passwordHash;
 }
 
 export async function reprovisionReusableUser(
