@@ -665,7 +665,9 @@ export async function KnowledgeBrowseBody({
                 {rows.map((a) => {
                   const canMutateKb = canCreate && canManageKnowledgeAsset(user, a);
                   const canDeleteKb = user.isSuperAdmin;
-                  const descRaw = (a.summary ?? a.content ?? "").replace(/\s+/g, " ").trim();
+                  const summaryRaw = (a.summary ?? "").trim();
+                  const contentRaw = (a.content ?? "").trim();
+                  const descRaw = (summaryRaw || contentRaw).replace(/\s+/g, " ").trim();
                   const descShort = descRaw.slice(0, 180);
                   const attachUrl = a.attachments.map((x) => x.externalUrl).find((u) => u && String(u).trim());
                   const openHref = ((a.sourceUrl ?? "").trim() || (attachUrl ?? "").trim()) || null;
@@ -691,6 +693,27 @@ export async function KnowledgeBrowseBody({
                             {descShort}
                             {descRaw.length > 180 ? "…" : ""}
                           </p>
+                        ) : null}
+                        {summaryRaw || contentRaw ? (
+                          <details className="mt-2 rounded-md border border-dashed border-[hsl(var(--border))] text-sm">
+                            <summary className="cursor-pointer select-none px-3 py-2 font-medium text-[hsl(var(--foreground))]">
+                              {t(locale, "kbViewFullDetails")}
+                            </summary>
+                            <div className="space-y-2 border-t border-[hsl(var(--border))] px-3 py-2">
+                              {summaryRaw ? (
+                                <div className="space-y-1">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonSummary")}</p>
+                                  <p className="whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]/90">{summaryRaw}</p>
+                                </div>
+                              ) : null}
+                              {contentRaw && contentRaw !== summaryRaw ? (
+                                <div className="space-y-1">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonContent")}</p>
+                                  <p className="whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]/90">{contentRaw}</p>
+                                </div>
+                              ) : null}
+                            </div>
+                          </details>
                         ) : null}
                         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[hsl(var(--muted))]">
                           <span>
