@@ -14,7 +14,7 @@ export function LocaleToggleHeader({ locale }: { locale: Locale }) {
     <form action={setLocaleAction}>
       <input type="hidden" name="locale" value={nextLocale} />
       <input type="hidden" name="next" value={pathname} />
-      <FormSubmitButton type="submit" variant="ghost" className="h-8 rounded-full px-3 text-xs font-medium">
+      <FormSubmitButton type="submit" variant="ghost" className="h-8 translate-y-px rounded-full px-3 text-xs font-medium">
         {label}
       </FormSubmitButton>
     </form>

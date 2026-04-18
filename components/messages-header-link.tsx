@@ -110,7 +110,7 @@ export function MessagesHeaderLink({
         router.prefetch("/messages");
       }}
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition",
+        "inline-flex translate-y-px items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition",
         count > 0
           ? "border-[hsl(var(--primary))]/25 bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]"
           : "border-[hsl(var(--border))] text-[hsl(var(--muted))] hover:bg-black/[0.04] hover:text-[hsl(var(--foreground))] dark:hover:bg-white/[0.06]",

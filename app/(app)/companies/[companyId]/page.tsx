@@ -23,7 +23,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { CompanyStatus } from "@prisma/client";
-import { COMPANY_COLOR_OPTIONS, getCompanyColorChipClassName, getCompanyColorLabel } from "@/lib/company-colors";
+import { getCompanyColorInputValue, getCompanyColorLabel } from "@/lib/company-colors";
 import { getLocale } from "@/lib/locale";
 import { t, tCompanyStatus, tKnowledgeLayer, tProjectStatus } from "@/lib/messages";
 
@@ -190,34 +190,25 @@ export default async function CompanyDetailPage({
               <p className="text-xs font-medium">Company color</p>
               <p className="text-xs text-[hsl(var(--muted))]">Shown on staff and project company tags. Current: {getCompanyColorLabel(company.companyColor)}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <form action={clearCompanyColorAction}>
-                <input type="hidden" name="companyId" value={company.id} />
-                <FormSubmitButton type="submit" variant="secondary" className="h-8 rounded-full text-xs">
-                  Default grey
-                </FormSubmitButton>
-              </form>
-              {COMPANY_COLOR_OPTIONS.filter((option) => option.value !== "slate").map((option) => {
-                const active = company.companyColor === option.value;
-                return (
-                  <form key={option.value} action={updateCompanyColorAction}>
-                    <input type="hidden" name="companyId" value={company.id} />
-                    <input type="hidden" name="companyColor" value={option.value} />
-                    <FormSubmitButton
-                      type="submit"
-                      variant="secondary"
-                      className={[
-                        "h-8 rounded-full text-xs",
-                        getCompanyColorChipClassName(option.value),
-                        active ? "ring-2 ring-offset-2 ring-[hsl(var(--ring))]" : "",
-                      ].join(" ")}
-                    >
-                      {option.label}
-                    </FormSubmitButton>
-                  </form>
-                );
-              })}
-            </div>
+            <form action={updateCompanyColorAction} className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="companyId" value={company.id} />
+              <input
+                type="color"
+                name="companyColor"
+                defaultValue={getCompanyColorInputValue(company.companyColor)}
+                className="h-9 w-10 cursor-pointer rounded border border-[hsl(var(--border))] bg-transparent p-1"
+                aria-label="Company color"
+              />
+              <FormSubmitButton type="submit" variant="secondary" className="h-9 text-xs">
+                {t(locale, "btnSave")}
+              </FormSubmitButton>
+            </form>
+            <form action={clearCompanyColorAction}>
+              <input type="hidden" name="companyId" value={company.id} />
+              <FormSubmitButton type="submit" variant="secondary" className="h-8 rounded-full text-xs">
+                Default grey
+              </FormSubmitButton>
+            </form>
           </div>
 
           <div className="flex flex-wrap gap-2 border-t border-[hsl(var(--border))] pt-4">

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { getCompanyColorChipClassName } from "@/lib/company-colors";
+import { getCompanyColorChipClassName, getCompanyColorChipStyle } from "@/lib/company-colors";
 
 type Props = {
   name: string;
@@ -15,12 +15,17 @@ const baseClassName = "inline-flex items-center whitespace-nowrap rounded-full b
 
 export function CompanyChip({ name, color, href, className }: Props) {
   const chipClassName = cn(baseClassName, getCompanyColorChipClassName(color), className);
+  const chipStyle = getCompanyColorChipStyle(color);
   if (href) {
     return (
-      <Link href={href} prefetch={false} className={chipClassName}>
+      <Link href={href} prefetch={false} className={chipClassName} style={chipStyle}>
         {name}
       </Link>
     );
   }
-  return <span className={chipClassName}>{name}</span>;
+  return (
+    <span className={chipClassName} style={chipStyle}>
+      {name}
+    </span>
+  );
 }

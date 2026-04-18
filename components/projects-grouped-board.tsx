@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { setProjectGroupMembershipAction } from "@/app/actions/project-group";
+import { CompanyChip } from "@/components/company-chip";
 export type ProjectGroupRow = { id: string; name: string; sortOrder: number };
 
 export type GroupedProjectCard = {
@@ -11,6 +12,7 @@ export type GroupedProjectCard = {
   name: string;
   companyId: string;
   companyName: string;
+  companyColor?: string | null;
   ownerName: string;
   statusLabel: string;
   priorityLabel: string;
@@ -174,8 +176,12 @@ export function ProjectsGroupedBoard({
           <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
             {p.name}
           </Link>
-          <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
-            {p.companyName} · {copy.ownerPrefix} {p.ownerName}
+          <div className="mt-1 flex flex-wrap items-center gap-1 text-sm leading-6 text-[hsl(var(--muted))]">
+            <CompanyChip name={p.companyName} color={p.companyColor} className="text-[11px]" />
+            <span>·</span>
+            <span>
+              {copy.ownerPrefix} {p.ownerName}
+            </span>
           </div>
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-sm leading-6 text-[hsl(var(--foreground))]">
             <span>{p.statusLabel}</span>

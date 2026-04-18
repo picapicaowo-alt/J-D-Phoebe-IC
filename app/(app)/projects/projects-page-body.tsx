@@ -30,6 +30,7 @@ import { ProjectsGroupedBoard, type GroupedProjectCard, type ProjectGroupRow } f
 import { RoutePrefetcher } from "@/components/route-prefetcher";
 import { softDeleteProjectsBulkAction } from "@/app/actions/trash";
 import { buildDatetimeLocalValue, getZonedDateParts, parseDatetimeLocalInTimeZone } from "@/lib/timezone";
+import { CompanyChip } from "@/components/company-chip";
 
 const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const STATUSES: ProjectStatus[] = [
@@ -168,7 +169,7 @@ export async function ProjectsPageBody({
       projectGroupId: true,
       groupSortOrder: true,
       deletedAt: true,
-      company: { select: { id: true, name: true, orgGroupId: true } },
+      company: { select: { id: true, name: true, orgGroupId: true, companyColor: true } },
       owner: { select: { id: true, name: true } },
       department: { select: { id: true, name: true } },
       projectGroup: { select: { id: true, name: true } },
@@ -192,6 +193,7 @@ export async function ProjectsPageBody({
     name: p.name,
     companyId: p.companyId,
     companyName: p.company.name,
+    companyColor: p.company.companyColor,
     ownerName: p.owner.name,
     statusLabel: tProjectStatus(locale, p.status),
     priorityLabel: tPriority(locale, p.priority),
@@ -224,12 +226,16 @@ export async function ProjectsPageBody({
           <Link className="text-base font-semibold hover:underline" href={`/projects/${p.id}`}>
             {p.name}
           </Link>
-          <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
-            {p.company.name} · {t(locale, "projectsOwnerPrefix")} {p.owner.name}
+          <div className="mt-1 flex flex-wrap items-center gap-1 text-sm leading-6 text-[hsl(var(--muted))]">
+            <CompanyChip name={p.company.name} color={p.company.companyColor} className="text-[11px]" />
+            <span>·</span>
+            <span>
+              {t(locale, "projectsOwnerPrefix")} {p.owner.name}
+            </span>
             {p.department ? (
               <>
-                {" · "}
-                {p.department.name}
+                <span>·</span>
+                <span>{p.department.name}</span>
               </>
             ) : null}
           </div>

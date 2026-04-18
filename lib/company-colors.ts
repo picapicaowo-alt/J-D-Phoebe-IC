@@ -1,28 +1,66 @@
 export const COMPANY_COLOR_OPTIONS = [
-  { value: "slate", label: "Grey" },
-  { value: "blue", label: "Blue" },
-  { value: "cyan", label: "Cyan" },
-  { value: "emerald", label: "Green" },
-  { value: "amber", label: "Amber" },
-  { value: "orange", label: "Orange" },
-  { value: "rose", label: "Rose" },
-  { value: "violet", label: "Violet" },
+  { value: "slate", label: "Grey", hex: "#71717a" },
+  { value: "blue", label: "Blue", hex: "#3b82f6" },
+  { value: "cyan", label: "Cyan", hex: "#06b6d4" },
+  { value: "emerald", label: "Green", hex: "#10b981" },
+  { value: "amber", label: "Amber", hex: "#f59e0b" },
+  { value: "orange", label: "Orange", hex: "#f97316" },
+  { value: "rose", label: "Rose", hex: "#f43f5e" },
+  { value: "violet", label: "Violet", hex: "#8b5cf6" },
 ] as const;
 
 export type CompanyColorValue = (typeof COMPANY_COLOR_OPTIONS)[number]["value"];
 
 const COMPANY_COLOR_LABELS = new Map(COMPANY_COLOR_OPTIONS.map((option) => [option.value, option.label] as const));
+const COMPANY_COLOR_HEX = new Map(COMPANY_COLOR_OPTIONS.map((option) => [option.value, option.hex] as const));
+const HEX_COLOR_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
-export function normalizeCompanyColor(raw: FormDataEntryValue | string | null | undefined): CompanyColorValue | null {
-  const value = String(raw ?? "").trim();
-  return COMPANY_COLOR_LABELS.has(value as CompanyColorValue) ? (value as CompanyColorValue) : null;
+function normalizeHexColor(value: string | null | undefined): string | null {
+  const v = String(value ?? "").trim().toLowerCase();
+  if (!HEX_COLOR_RE.test(v)) return null;
+  if (v.length === 4) {
+    return `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`;
+  }
+  return v;
+}
+
+function hexToRgb(hex: string) {
+  const normalized = normalizeHexColor(hex);
+  if (!normalized) return null;
+  const r = Number.parseInt(normalized.slice(1, 3), 16);
+  const g = Number.parseInt(normalized.slice(3, 5), 16);
+  const b = Number.parseInt(normalized.slice(5, 7), 16);
+  return { r, g, b };
+}
+
+export function normalizeCompanyColor(raw: FormDataEntryValue | string | null | undefined): string | null {
+  const value = String(raw ?? "").trim().toLowerCase();
+  if (COMPANY_COLOR_LABELS.has(value as CompanyColorValue)) return value as CompanyColorValue;
+  return normalizeHexColor(value);
 }
 
 export function getCompanyColorLabel(color: string | null | undefined) {
-  return color ? COMPANY_COLOR_LABELS.get(color as CompanyColorValue) ?? "Grey" : "Grey";
+  if (!color) return "Grey";
+  const known = COMPANY_COLOR_LABELS.get(color as CompanyColorValue);
+  if (known) return known;
+  const hex = normalizeHexColor(color);
+  if (hex) return `Custom (${hex.toUpperCase()})`;
+  return "Grey";
+}
+
+export function getCompanyColorInputValue(color: string | null | undefined) {
+  const hex = normalizeHexColor(color);
+  if (hex) return hex;
+  if (color && COMPANY_COLOR_HEX.has(color as CompanyColorValue)) {
+    return COMPANY_COLOR_HEX.get(color as CompanyColorValue)!;
+  }
+  return COMPANY_COLOR_HEX.get("slate")!;
 }
 
 export function getCompanyColorChipClassName(color: string | null | undefined) {
+  if (normalizeHexColor(color)) {
+    return "border-transparent";
+  }
   switch (color) {
     case "blue":
       return "border-blue-500/20 bg-blue-500/12 text-blue-800 dark:border-blue-400/30 dark:bg-blue-400/15 dark:text-blue-100";
@@ -44,3 +82,13 @@ export function getCompanyColorChipClassName(color: string | null | undefined) {
   }
 }
 
+export function getCompanyColorChipStyle(color: string | null | undefined) {
+  const rgb = color ? hexToRgb(color) : null;
+  if (!rgb) return undefined;
+  const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+  return {
+    borderColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.45)`,
+    backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)`,
+    color: luminance >= 0.68 ? "rgb(24 24 27)" : "rgb(248 250 252)",
+  };
+}
