@@ -46,6 +46,7 @@ import {
   mergeRoleIdSets,
 } from "@/lib/scoped-role-access";
 import { ensureRbacCatalog } from "@/lib/rbac-sync";
+import { CompanyChip } from "@/components/company-chip";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -119,7 +120,7 @@ async function loadStaffPageShellTarget(actor: AccessUser, userId: string) {
         companyMemberships: {
           select: {
             companyId: true,
-            company: { select: { id: true, name: true, orgGroupId: true } },
+            company: { select: { id: true, name: true, orgGroupId: true, companyColor: true } },
           },
         },
         memberOnboardings: {
@@ -273,7 +274,7 @@ async function loadStaffDetailTarget(actor: AccessUser, userId: string) {
                 id: true,
                 name: true,
                 companyId: true,
-                company: { select: { id: true, name: true, orgGroupId: true } },
+                company: { select: { id: true, name: true, orgGroupId: true, companyColor: true } },
               },
             },
           },
@@ -766,8 +767,9 @@ async function StaffDetailDeferredPanels({
               return (
                 <li key={m.id} className="space-y-2 rounded-md border border-[hsl(var(--border))] p-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span>
-                      {m.company.name} — {m.roleDefinition.displayName}
+                    <span className="flex flex-wrap items-center gap-2">
+                      <CompanyChip name={m.company.name} color={m.company.companyColor} href={`/companies/${m.companyId}`} />
+                      <span>— {m.roleDefinition.displayName}</span>
                       {m.department ? (
                         <span className="text-[hsl(var(--muted))]">
                           {" "}

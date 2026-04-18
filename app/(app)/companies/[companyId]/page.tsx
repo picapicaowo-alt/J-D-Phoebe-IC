@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  clearCompanyColorAction,
   archiveCompanyAction,
   restoreCompanyAction,
   updateCompanyAction,
@@ -21,6 +22,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { CompanyStatus } from "@prisma/client";
+import { COMPANY_COLOR_OPTIONS, getCompanyColorLabel } from "@/lib/company-colors";
 import { getLocale } from "@/lib/locale";
 import { t, tCompanyStatus, tKnowledgeLayer, tProjectStatus } from "@/lib/messages";
 
@@ -162,6 +164,18 @@ export default async function CompanyDetailPage({
               <Input name="companyType" defaultValue={company.companyType ?? ""} />
             </div>
             <div className="space-y-1">
+              <label className="text-xs font-medium">Company color</label>
+              <Select name="companyColor" defaultValue={company.companyColor ?? ""}>
+                <option value="">Default grey</option>
+                {COMPANY_COLOR_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-[hsl(var(--muted))]">Shown on staff and project company tags. Current: {getCompanyColorLabel(company.companyColor)}</p>
+            </div>
+            <div className="space-y-1">
               <label className="text-xs font-medium">{t(locale, "companyIntroduction")}</label>
               <textarea
                 name="introduction"
@@ -182,6 +196,14 @@ export default async function CompanyDetailPage({
             </div>
             <FormSubmitButton type="submit">{t(locale, "btnSave")}</FormSubmitButton>
           </form>
+          {company.companyColor ? (
+            <form action={clearCompanyColorAction}>
+              <input type="hidden" name="companyId" value={company.id} />
+              <FormSubmitButton type="submit" variant="secondary" className="h-8 text-xs">
+                Remove color
+              </FormSubmitButton>
+            </form>
+          ) : null}
 
           <div className="flex flex-wrap gap-2 border-t border-[hsl(var(--border))] pt-4">
             {company.status !== "ARCHIVED" ? (

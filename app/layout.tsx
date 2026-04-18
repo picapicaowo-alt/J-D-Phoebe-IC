@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "J D Phoebe Group",
+  title: "Internal Management",
   description: "Prototype workspace for projects, tasks, blockers, and deadlines.",
 };
 

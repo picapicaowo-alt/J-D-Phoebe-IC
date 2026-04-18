@@ -64,7 +64,12 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
 
   const [selfRecognitions, companion, companyRecognitions] = await Promise.all([
     prisma.recognitionEvent.findMany({
-      where: { toUserId: user.id, createdAt: { gte: recentWindowStart } },
+      where: {
+        toUserId: user.id,
+        createdAt: { gte: recentWindowStart },
+        toUser: { deletedAt: null },
+        OR: [{ fromUserId: null }, { fromUser: { deletedAt: null } }],
+      },
       select: recognitionSelect,
       orderBy: { createdAt: "desc" },
       take: 4,
@@ -73,7 +78,11 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
     Promise.all(
       companyIds.map((companyId) =>
         prisma.recognitionEvent.findFirst({
-          where: { project: { companyId } },
+          where: {
+            project: { companyId },
+            toUser: { deletedAt: null },
+            OR: [{ fromUserId: null }, { fromUser: { deletedAt: null } }],
+          },
           select: recognitionSelect,
           orderBy: { createdAt: "desc" },
         }),
@@ -97,13 +106,16 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
     pinned?: boolean;
     countLink?: string;
   }) {
-    const recipientName = recognition.toUser?.name ?? (locale === "zh" ? "你" : "You");
+    const recipientName = recognition.toUser.name;
     const companyName = recognition.project?.company?.name ?? t(locale, "commonCompany");
     const projectName = recognition.project?.name ?? t(locale, "kbGeneralProject");
+    const recognitionLabel = recognition.secondaryLabelKey
+      ? displayRecognitionSecondary(recognition.tagCategory, recognition.secondaryLabelKey, locale)
+      : (recognition.tagLabel ?? "");
     return (
       <div
         className={[
-          "rounded-xl border p-4 text-base",
+          "rounded-xl border p-4",
           pinned
             ? "border-violet-100 bg-violet-50/40 dark:border-violet-900/40 dark:bg-violet-950/20"
             : "border-zinc-100 bg-white/80 dark:border-zinc-800 dark:bg-zinc-950/20",
@@ -111,8 +123,10 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 font-medium text-zinc-900 dark:text-zinc-100">{recipientName}</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="min-w-0 text-lg font-medium text-zinc-900 dark:text-zinc-100">
+                {recipientName} received a recognition! ✨
+              </div>
               {countLink && pinnedRecognitionCount > 1 ? (
                 <Link
                   href={countLink}
@@ -121,28 +135,27 @@ export async function HomeGoodThingsSection({ user }: { user: AccessUser }) {
                   x{Math.min(pinnedRecognitionCount, 4)}
                 </Link>
               ) : null}
+              {pinned ? (
+                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-rose-500" aria-hidden>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 21s-7-4.35-9.5-8.71C.76 8.88 2.13 5.5 5.55 4.4c1.86-.6 3.92-.07 5.36 1.37l1.09 1.09 1.09-1.09c1.44-1.44 3.5-1.97 5.36-1.37 3.42 1.1 4.79 4.48 3.05 7.89C19 16.65 12 21 12 21z" />
+                  </svg>
+                </span>
+              ) : null}
             </div>
             <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
               {t(locale, "commonCompany")} · {companyName} · {t(locale, "commonProject")} · {projectName}
             </div>
           </div>
-          {pinned ? (
-            <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center text-rose-500" aria-hidden>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 21s-7-4.35-9.5-8.71C.76 8.88 2.13 5.5 5.55 4.4c1.86-.6 3.92-.07 5.36 1.37l1.09 1.09 1.09-1.09c1.44-1.44 3.5-1.97 5.36-1.37 3.42 1.1 4.79 4.48 3.05 7.89C19 16.65 12 21 12 21z" />
-              </svg>
-            </span>
-          ) : null}
         </div>
-        <div className="mt-2 font-medium text-zinc-900 dark:text-zinc-100">
-          {recognition.secondaryLabelKey
-            ? displayRecognitionSecondary(recognition.tagCategory, recognition.secondaryLabelKey, locale)
-            : (recognition.tagLabel ?? "")}
+        <div className="mt-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+          {countLink ? "for " : ""}
+          {recognitionLabel}
         </div>
         <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
           {tRecognitionTagCategory(locale, recognition.tagCategory)}
         </div>
-        <p className="mt-2 text-base text-zinc-700 dark:text-zinc-300">
+        <p className="mt-2 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
           {recognition.message ?? t(locale, "homeRecognizedDefault")}
         </p>
         <div className="mt-2 text-sm text-zinc-400">

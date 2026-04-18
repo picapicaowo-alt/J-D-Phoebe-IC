@@ -280,6 +280,7 @@ export async function StaffDirectoryBody({
               s.companyMemberships.map((m) => ({
                 key: m.id,
                 label: `${m.company.name}${m.department ? ` · ${m.department.name}` : ""}`,
+                color: m.company.companyColor,
               })),
             ),
             contactLine:

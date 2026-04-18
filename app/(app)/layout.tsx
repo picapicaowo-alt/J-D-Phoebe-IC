@@ -11,18 +11,23 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))] bg-[hsl(var(--card))]/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-container flex-col gap-3 px-5 py-3 sm:px-6">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <BrandMark />
+        <div className="mx-auto flex max-w-container flex-col px-5 py-3 sm:px-6">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-4 pb-5">
+            <div aria-hidden />
+            <div className="justify-self-center">
+              <BrandMark />
+            </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2 text-base text-[hsl(var(--muted))]">
               <Suspense fallback={<div className="h-8 w-40 animate-pulse rounded-full bg-[hsl(var(--muted))]/25" />}>
                 <AppShellHeaderControls locale={locale} />
               </Suspense>
             </div>
           </div>
-          <Suspense fallback={<AppShellNavSkeleton />}>
-            <AppShellPrimaryNav locale={locale} />
-          </Suspense>
+          <div className="pt-4">
+            <Suspense fallback={<AppShellNavSkeleton />}>
+              <AppShellPrimaryNav locale={locale} />
+            </Suspense>
+          </div>
         </div>
       </header>
       <div className="mx-auto max-w-container px-5 py-8 sm:px-6">{children}</div>

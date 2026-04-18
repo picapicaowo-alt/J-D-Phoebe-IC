@@ -58,7 +58,7 @@ export default async function SetupAccountPage({
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-16">
       <div className="mb-8 space-y-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">J.D. Phoebe Group</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Internal Management</h1>
         <p className="text-sm text-[hsl(var(--muted))]">Internal management platform (prototype)</p>
       </div>
 

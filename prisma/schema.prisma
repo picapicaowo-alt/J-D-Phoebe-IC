@@ -266,6 +266,7 @@ model Company {
   orgGroupId               String
   name                     String
   companyType              String?
+  companyColor             String?
   introduction             String?
   /// Public URL or app-relative path to uploaded logo (internal identity).
   logoUrl                  String?

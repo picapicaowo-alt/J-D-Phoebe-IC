@@ -15,6 +15,7 @@ import {
   serializeResolvedCompanyOnboardingMaterial,
 } from "@/lib/company-onboarding-materials";
 import { storeUploadedFile } from "@/lib/file-storage";
+import { normalizeCompanyColor } from "@/lib/company-colors";
 import { backfillMemberOnboardingsForCompany } from "@/lib/member-onboarding";
 import { assertPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -159,6 +160,8 @@ function revalidateCompanyPaths(companyId: string) {
   revalidatePath(`/companies/${companyId}`);
   revalidatePath("/companies");
   revalidatePath("/group");
+  revalidatePath("/staff");
+  revalidatePath("/projects");
 }
 
 export async function createCompanyAction(formData: FormData) {
@@ -169,10 +172,11 @@ export async function createCompanyAction(formData: FormData) {
 
   const name = requireString(formData, "name");
   const companyType = String(formData.get("companyType") ?? "").trim() || null;
+  const companyColor = normalizeCompanyColor(formData.get("companyColor"));
   const introduction = String(formData.get("introduction") ?? "").trim() || null;
 
   const c = await prisma.company.create({
-    data: { orgGroupId, name, companyType, introduction, status: CompanyStatus.ACTIVE },
+    data: { orgGroupId, name, companyType, companyColor, introduction, status: CompanyStatus.ACTIVE },
   });
   await writeAudit({
     actorId: user.id,
@@ -193,6 +197,7 @@ export async function updateCompanyAction(formData: FormData) {
 
   const name = requireString(formData, "name");
   const companyType = String(formData.get("companyType") ?? "").trim() || null;
+  const companyColor = normalizeCompanyColor(formData.get("companyColor"));
   const introduction = String(formData.get("introduction") ?? "").trim() || null;
   const status = requireString(formData, "status") as CompanyStatus;
 
@@ -213,6 +218,7 @@ export async function updateCompanyAction(formData: FormData) {
     data: {
       name,
       companyType,
+      companyColor,
       introduction,
       status,
     },
@@ -220,6 +226,19 @@ export async function updateCompanyAction(formData: FormData) {
   revalidatePath(`/companies/${companyId}`);
   revalidatePath("/companies");
   revalidatePath("/group");
+}
+
+export async function clearCompanyColorAction(formData: FormData) {
+  const user = (await requireUser()) as AccessUser;
+  await assertPermission(user, "company.update");
+  const companyId = requireString(formData, "companyId");
+  await requireCompanyForUpdate(user, companyId);
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data: { companyColor: null },
+  });
+  revalidateCompanyPaths(companyId);
 }
 
 async function renameMaterialAttachments(params: {

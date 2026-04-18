@@ -40,6 +40,7 @@ import { canManageProjectMemberships } from "@/lib/scoped-role-access";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { CompanyChip } from "@/components/company-chip";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { calendarHref } from "@/lib/calendar-nav";
@@ -424,7 +425,7 @@ async function loadProjectCore(projectId: string) {
       departmentId: true,
       projectGroupId: true,
       deletedAt: true,
-      company: { select: { id: true, name: true, logoUrl: true, orgGroupId: true } },
+      company: { select: { id: true, name: true, logoUrl: true, orgGroupId: true, companyColor: true } },
       owner: { select: { id: true, name: true, avatarUrl: true } },
       memberships: {
         select: {
@@ -528,7 +529,7 @@ export default async function ProjectDetailPage({
               name: true,
               ownerId: true,
               companyId: true,
-              company: { select: { id: true, name: true, orgGroupId: true } },
+              company: { select: { id: true, name: true, orgGroupId: true, companyColor: true } },
             },
           },
           sharedKnowledge: { select: { knowledgeAsset: { select: { id: true } } } },
@@ -546,7 +547,7 @@ export default async function ProjectDetailPage({
               name: true,
               ownerId: true,
               companyId: true,
-              company: { select: { id: true, name: true, orgGroupId: true } },
+              company: { select: { id: true, name: true, orgGroupId: true, companyColor: true } },
             },
           },
           sharedKnowledge: { select: { knowledgeAsset: { select: { id: true } } } },
@@ -1973,9 +1974,15 @@ export default async function ProjectDetailPage({
           <div className="min-w-0 flex-1 space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight text-[hsl(var(--foreground))]">{project.name}</h1>
             {project.description ? <ProjectDescriptionToggle description={project.description} /> : null}
-            <p className="text-sm text-[hsl(var(--muted))]">
-              {project.company.name} · <ProjectLiveStatusText baseStatus={project.status} locale={locale} /> · {tPriority(locale, project.priority)}
-            </p>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-[hsl(var(--muted))]">
+              <CompanyChip name={project.company.name} color={project.company.companyColor} href={`/companies/${project.companyId}`} />
+              <span>·</span>
+              <span>
+                <ProjectLiveStatusText baseStatus={project.status} locale={locale} />
+              </span>
+              <span>·</span>
+              <span>{tPriority(locale, project.priority)}</span>
+            </div>
             {project.deadline ? (
               <p className="text-xs text-[hsl(var(--muted))]">
                 {projectDeadlineText} · {timeLeft.text}
@@ -2016,7 +2023,7 @@ export default async function ProjectDetailPage({
             </div>
             <div className="space-y-1">
               <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "commonCompany")}</p>
-              <p className="font-medium text-[hsl(var(--foreground))]">{project.company.name}</p>
+              <CompanyChip name={project.company.name} color={project.company.companyColor} href={`/companies/${project.companyId}`} className="text-xs" />
             </div>
             <div className="space-y-1">
               <p className="text-xs font-normal text-slate-500 dark:text-slate-400">{t(locale, "projMetricDaysLeft")}</p>

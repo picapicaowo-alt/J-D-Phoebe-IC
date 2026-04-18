@@ -6,6 +6,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { StaffAvatarPreview } from "@/components/staff-avatar-preview";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CompanyChip } from "@/components/company-chip";
 import { cn } from "@/lib/utils";
 
 export type StaffDirectoryRowDTO = {
@@ -20,7 +21,7 @@ export type StaffDirectoryRowDTO = {
   activeProjectCount: number;
   contactLine?: string | null;
   onboarding: { label: string; tone: "done" | "pending" | "none" };
-  companies: { key: string; label: string }[];
+  companies: { key: string; label: string; color?: string | null }[];
   labels?: { key: string; label: string; tone?: "neutral" | "good" | "warn" | "bad" | "info" | "violet" }[];
 };
 
@@ -141,12 +142,11 @@ export function StaffDirectoryRows({ rows, copy }: { rows: StaffDirectoryRowDTO[
                 <div className="mt-2 flex flex-wrap gap-2">
                   {s.companies.length ? (
                     s.companies.map((m) => (
-                      <span
+                      <CompanyChip
                         key={m.key}
-                        className="inline-flex rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/10 px-2.5 py-0.5 text-xs text-[hsl(var(--foreground))]"
-                      >
-                        {m.label}
-                      </span>
+                        name={m.label}
+                        color={m.color}
+                      />
                     ))
                   ) : (
                     <span className="text-xs text-[hsl(var(--muted))]">{copy.emDash}</span>
