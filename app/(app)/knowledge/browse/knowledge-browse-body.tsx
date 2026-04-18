@@ -694,27 +694,6 @@ export async function KnowledgeBrowseBody({
                             {descRaw.length > 180 ? "…" : ""}
                           </p>
                         ) : null}
-                        {summaryRaw || contentRaw ? (
-                          <details className="mt-2 rounded-md border border-dashed border-[hsl(var(--border))] text-sm">
-                            <summary className="cursor-pointer select-none px-3 py-2 font-medium text-[hsl(var(--foreground))]">
-                              {t(locale, "kbViewFullDetails")}
-                            </summary>
-                            <div className="space-y-2 border-t border-[hsl(var(--border))] px-3 py-2">
-                              {summaryRaw ? (
-                                <div className="space-y-1">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonSummary")}</p>
-                                  <p className="whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]/90">{summaryRaw}</p>
-                                </div>
-                              ) : null}
-                              {contentRaw && contentRaw !== summaryRaw ? (
-                                <div className="space-y-1">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonContent")}</p>
-                                  <p className="whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]/90">{contentRaw}</p>
-                                </div>
-                              ) : null}
-                            </div>
-                          </details>
-                        ) : null}
                         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[hsl(var(--muted))]">
                           <span>
                             {t(locale, "kbMetaContributor")}: {a.author.name}
@@ -748,6 +727,14 @@ export async function KnowledgeBrowseBody({
                       className={`flex flex-wrap gap-2 ${hubEntryLayout ? "mt-4 items-center justify-between gap-y-3" : "mt-2"}`}
                     >
                       <div className="flex flex-wrap items-center gap-2">
+                        {hubEntryLayout && (summaryRaw || contentRaw) ? (
+                          <OpenDialogButton
+                            dialogId={`kb-view-${a.id}`}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-transparent px-3 text-sm font-medium text-[hsl(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10"
+                          >
+                            {t(locale, "projKnowledgeViewDetails")}
+                          </OpenDialogButton>
+                        ) : null}
                         {hubEntryLayout && openHref ? (
                           <a
                             href={openHref}
@@ -833,7 +820,7 @@ export async function KnowledgeBrowseBody({
                             label={t(locale, "kbDialogClose")}
                           />
                         </div>
-                        <form action={updateKnowledgeAssetAction} className="max-h-[calc(90vh-120px)] space-y-3 overflow-y-auto p-4">
+                        <form action={updateKnowledgeAssetAction} className="max-h-[calc(90vh-120px)] space-y-3 overflow-y-auto px-4 pb-6 pt-4">
                           <input type="hidden" name="id" value={a.id} />
                           <input type="hidden" name="titleEn" value={a.titleEn ?? ""} />
                           <input type="hidden" name="titleZh" value={a.titleZh ?? ""} />
@@ -913,6 +900,38 @@ export async function KnowledgeBrowseBody({
                             />
                           </div>
                         </form>
+                      </dialog>
+                    ) : null}
+                    {hubEntryLayout && (summaryRaw || contentRaw) ? (
+                      <dialog
+                        id={`kb-view-${a.id}`}
+                        className="app-modal-dialog z-50 max-h-[min(90vh,640px)] w-[min(100vw-2rem,560px)] overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-0 shadow-2xl backdrop:bg-black/40"
+                      >
+                        <div className="flex items-start justify-between gap-2 border-b border-[hsl(var(--border))] px-4 py-3">
+                          <div>
+                            <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">{t(locale, "projKnowledgeViewDetails")}</h3>
+                            <p className="text-sm text-[hsl(var(--muted))]">{a.title}</p>
+                          </div>
+                          <CloseDialogButton
+                            dialogId={`kb-view-${a.id}`}
+                            className="rounded-lg px-2 py-1 text-sm text-[hsl(var(--muted))] hover:bg-black/5 dark:hover:bg-white/10"
+                            label={t(locale, "kbDialogClose")}
+                          />
+                        </div>
+                        <div className="max-h-[calc(90vh-110px)] space-y-3 overflow-y-auto p-4">
+                          {summaryRaw ? (
+                            <div className="space-y-1">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonSummary")}</p>
+                              <p className="whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]/90">{summaryRaw}</p>
+                            </div>
+                          ) : null}
+                          {contentRaw && contentRaw !== summaryRaw ? (
+                            <div className="space-y-1">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted))]">{t(locale, "commonContent")}</p>
+                              <p className="whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]/90">{contentRaw}</p>
+                            </div>
+                          ) : null}
+                        </div>
                       </dialog>
                     ) : null}
                     {canMutateKb && !hubEntryLayout ? (

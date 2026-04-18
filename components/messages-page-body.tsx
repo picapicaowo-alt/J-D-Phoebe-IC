@@ -1030,8 +1030,8 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[340px,minmax(0,1fr)]">
-        <Card className="rounded-[24px] border border-[hsl(var(--border))] p-0">
+      <div className="grid items-stretch gap-6 lg:grid-cols-[340px,minmax(0,1fr)]">
+        <Card className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-[hsl(var(--border))] p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--border))] px-5 py-4">
             <CardTitle className="font-display text-lg">{copy.threads}</CardTitle>
             {groupOptions.length ? (
@@ -1043,7 +1043,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
           <div className="border-b border-[hsl(var(--border))] px-4 py-3">
             <Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
           </div>
-          <div className="max-h-[72vh] overflow-y-auto p-3">
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
             {!threads.length ? (
               <div className="space-y-3 rounded-[18px] border border-dashed border-[hsl(var(--border))] px-4 py-5 text-sm text-[hsl(var(--muted))]">
                 <p>{copy.noThreads}</p>
@@ -1108,7 +1108,7 @@ export function MessagesPageBody({ locale, currentUserId, initialData }: Props) 
           </div>
         </Card>
 
-        <Card className="rounded-[28px] border border-[hsl(var(--border))] p-0">
+        <Card className="flex min-h-0 flex-col overflow-hidden rounded-[28px] border border-[hsl(var(--border))] p-0">
           {!selectedThread ? (
             <div className="flex min-h-[640px] items-center justify-center px-6 text-center text-sm text-[hsl(var(--muted))]">
               {copy.noConversation}
