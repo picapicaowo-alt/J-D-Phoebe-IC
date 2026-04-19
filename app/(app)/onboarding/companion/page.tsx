@@ -10,6 +10,7 @@ import { t } from "@/lib/messages";
 import { prisma } from "@/lib/prisma";
 import { formatTimeZoneInputValue, getTimeZoneInputOptions } from "@/lib/timezone";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { OnboardingAvatarUpload } from "@/components/onboarding-avatar-upload";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -102,20 +103,7 @@ export default async function CompanionOnboardingPage({
           ) : (
             <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "onboardCompanionAvatarRequired")}</p>
           )}
-          <form action={uploadUserAvatarAction} encType="multipart/form-data" className="flex flex-wrap items-end gap-2">
-            <input type="hidden" name="userId" value={user.id} />
-            <input type="hidden" name="returnTo" value="/onboarding/companion" />
-            <input
-              type="file"
-              name="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              required={!user.avatarUrl}
-              className="max-w-xs text-sm"
-            />
-            <FormSubmitButton type="submit" variant="secondary" className="h-10 text-sm">
-              {user.avatarUrl ? t(locale, "btnSave") : t(locale, "onboardCompanionUploadAvatar")}
-            </FormSubmitButton>
-          </form>
+          <OnboardingAvatarUpload userId={user.id} uploadAction={uploadUserAvatarAction} />
         </div>
         <form action={updateCompanionAction} className="space-y-4">
           <input type="hidden" name="next" value="home" />
@@ -177,6 +165,9 @@ export default async function CompanionOnboardingPage({
           <FormSubmitButton type="submit" className="w-full" disabled={companySelectionBlocked || !user.avatarUrl}>
             {t(locale, "onboardCompanionSave")}
           </FormSubmitButton>
+          {!user.avatarUrl && !companySelectionBlocked ? (
+            <p className="text-sm text-[hsl(var(--muted))]">{t(locale, "onboardCompanionErrAvatarRequired")}</p>
+          ) : null}
         </form>
       </Card>
     </div>
